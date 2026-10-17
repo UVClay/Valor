@@ -15,7 +15,7 @@ args=(--bios build/openbios/openbios.bin)
 ./dev bash -c 'cmake -S . -B build/cmake -G Ninja >/dev/null && cmake --build build/cmake | grep -vE "^\[" || true'
 
 runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-gui=(-e XDG_RUNTIME_DIR=/tmp/runtime -e SDL_AUDIO_DRIVER=pipewire)
+gui=(-e XDG_RUNTIME_DIR=/tmp/runtime)
 if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -S "$runtime/$WAYLAND_DISPLAY" ]; then
     gui+=(-e WAYLAND_DISPLAY -v "$runtime/$WAYLAND_DISPLAY:/tmp/runtime/$WAYLAND_DISPLAY")
 fi

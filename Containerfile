@@ -9,6 +9,7 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         binutils-mips64-linux-gnu gcc-mips64-linux-gnu \
         SDL3-devel \
         mesa-dri-drivers mesa-libEGL mesa-libGL mesa-vulkan-drivers \
+        pipewire-libs pulseaudio-libs \
         gdb \
     && dnf clean all
 
