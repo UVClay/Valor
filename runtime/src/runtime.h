@@ -23,6 +23,8 @@ struct Config {
     std::filesystem::path bios;  // openbios.bin
     std::filesystem::path disc;  // .cue or .bin
     bool trace_io = false;
+    bool trace_calls = false;  // log indirect calls and exceptions
+    bool trace_cd = false;     // log CD-ROM commands, responses and sectors
     int64_t max_cycles = 0;  // stop after this many cycles (0 = run forever)
 };
 extern Config config;

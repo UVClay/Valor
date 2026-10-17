@@ -100,7 +100,10 @@ class Project:
             self.seeds[mod] |= {a for a in syms if self.images[mod].contains(a)}
 
     def analyze(self):
-        return discover(self.images, self.seeds, self.resident)
+        # setjmp-like functions, by symbol name, whose call sites a longjmp can resume.
+        names = set(self.cfg.get("continuations", []))
+        conts = {a for syms in self.symbols.values() for a, n in syms.items() if n in names}
+        return discover(self.images, self.seeds, self.resident, conts)
 
 
 def cmd_analyze(proj: Project, *_):

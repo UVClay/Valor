@@ -3,12 +3,15 @@
 #include <csetjmp>
 #include <cstdarg>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "runtime.h"
 
 extern "C" {
 int psx_cache_isolated = 0;
+uint32_t psx_trace_ring[PSX_TRACE_SIZE];
+uint32_t psx_trace_pos;
 }
 
 namespace psx {
@@ -131,6 +134,7 @@ static void take_exception(Cpu *c, uint32_t epc, uint32_t code) {
     static_assert(std::is_trivially_destructible_v<ExceptionFrame>);
     ExceptionFrame frame;
     frame.epc = epc;
+    if (config.trace_calls) log("exception %u at %08X (depth %zu)", code, epc, exception_stack.size());
     exception_stack.push_back(&frame);
     if (setjmp(frame.env) == 0) {
         psx_call(c, *(volatile const uint32_t *)&vector);
@@ -149,7 +153,20 @@ using namespace psx;
 
 extern "C" {
 
+// BIOS console output (putchar via A0:3C / B0:3D) goes to stderr.
+static void tty_putchar(uint8_t ch) {
+    static std::string line;
+    if (ch == '\n') {
+        log("tty: %s", line.c_str());
+        line.clear();
+    } else if (ch != '\r') {
+        line += char(ch);
+    }
+}
+
 void psx_call(Cpu *c, uint32_t addr) {
+    if (config.trace_calls) log("call %08X ra=%08X", addr, c->r[31]);
+    if ((addr == 0xA0 && c->r[9] == 0x3C) || (addr == 0xB0 && c->r[9] == 0x3D)) tty_putchar(c->r[4] & 0xFF);
     if (RecompFn fn = find_function(addr)) return fn(c);
     if ((addr & 0x1FFFFFFF) < 0x800000 && follow_stub(c, addr)) return;  // code written to RAM at run time
     fatal("call to unknown function %08X (ra=%08X)", addr, c->r[31]);
@@ -167,6 +184,7 @@ void psx_exception_return(Cpu *c, uint32_t target) {
     if (exception_stack.empty()) fatal("rfe return to %08X outside an exception", target);
     ExceptionFrame *f = exception_stack.back();
     f->target = target;
+    if (config.trace_calls) log("rfe -> %08X", target);
     longjmp(f->env, 1);
 }
 
@@ -217,6 +235,12 @@ void native_longjmp(Cpu *c) {
     static const int regs[] = {31, 29, 30, 16, 17, 18, 19, 20, 21, 22, 23, 28};
     for (int i = 0; i < 12; i++) c->r[regs[i]] = psx_r32(c, buf + 4 * i);
     c->r[2] = c->r[5];
+    psx_jump_ra(c);
+}
+
+// Continue at $ra in a context restored from a jmp_buf. The saved $ra must be the start of
+// a function that never returns (it leaves through ReturnFromException).
+void psx_jump_ra(Cpu *c) {
     uint32_t target = c->r[31];
     if (!find_function(target)) fatal("longjmp into the middle of a function (%08X)", target);
     psx_call(c, target);

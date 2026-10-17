@@ -128,6 +128,13 @@ class Image:
     def __init__(self, name: str, base: int, data: bytes):
         self.name, self.base, self.data = name, base, data
         self.end = base + len(data)
+        self.peers = []  # other images whose data this one can read (e.g. ROM .rodata)
+
+    def holder(self, addr: int):
+        """The image (this one or a peer) containing addr, or None."""
+        if self.contains(addr):
+            return self
+        return next((p for p in self.peers if p.contains(addr)), None)
 
     def contains(self, addr: int) -> bool:
         return self.base <= addr < self.end

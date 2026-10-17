@@ -19,6 +19,7 @@ class Function:
     addrs: set = field(default_factory=set)          # every instruction address in the function
     labels: set = field(default_factory=set)         # branch / jump-table targets
     calls: set = field(default_factory=set)          # jal targets
+    call_sites: dict = field(default_factory=dict)   # jal addr -> target
     tail_calls: dict = field(default_factory=dict)   # j addr -> target, or fallthrough addr -> next func
     jump_tables: dict = field(default_factory=dict)  # jr addr -> [targets] (None = unused case)
     bios_jumps: dict = field(default_factory=dict)   # jr addr -> 0xA0/0xB0/0xC0
@@ -125,6 +126,7 @@ def explore(image: Image, start: int, known: set) -> Function:
                 stop = True
             elif i.op == "jal":
                 fn.calls.add(i.target)
+                fn.call_sites[a] = i.target
             elif i.op == "jr":
                 stop = True
                 if i.rs != RA:
@@ -148,15 +150,16 @@ def _resolve_jr(image: Image, fn: Function, i: Insn):
     if val and val[0] == "c" and val[1] in BIOS_VECTORS:
         fn.bios_jumps[i.addr] = val[1]
         return
-    if val and val[0] == "ld" and image.contains(val[1]):
+    if val and val[0] == "ld" and image.holder(val[1]):
         table = val[1]
+        tables = image.holder(table)  # may live in another module (ROM .rodata for RAM code)
         targets = []
         limit = bound if bound and bound > 0 else 1024
         for n in range(limit):
             ea = table + 4 * n
-            if not image.contains(ea):
+            if not tables.contains(ea):
                 break
-            t = image.word(ea)
+            t = tables.word(ea)
             if t == 0 and bound:
                 targets.append(None)  # unused case
                 continue
@@ -205,11 +208,11 @@ def _guess_hoisted_table(image: Image, fn: Function, jr: Insn):
 
 def _collect_pointers(image: Image, fn: Function):
     """lui/addiu pairs inside the function that point into the image (function pointer candidates)."""
-    hi = {}
+    hi = {0: 0}  # addresses below 0x10000 are built from $zero without a lui
     for a in sorted(fn.addrs):
         i = image.insn(a)
         if a in fn.labels:
-            hi.clear()
+            hi = {0: 0}
         if i.op == "lui":
             hi[i.rt] = i.uimm << 16
         elif i.op in ("addiu", "ori") and i.rs in hi:
@@ -229,16 +232,20 @@ def looks_like_function_start(image: Image, addr: int) -> bool:
     return addr - 4 < image.base or not image.insn(addr - 4).has_delay_slot
 
 
-def discover(images: dict, seeds: dict, resident: list, max_rounds=20):
+def discover(images: dict, seeds: dict, resident: list, continuations=(), max_rounds=20):
     """Discover functions in all images.
 
     images: name -> Image. resident: modules every module can call into directly
     (the exe, BIOS ROM/RAM); other modules (overlays) only see themselves + resident ones.
     seeds: name -> set of start addresses.
+    continuations: addresses of setjmp-like functions. Code right after each call to one can
+    be resumed by a longjmp, so the return address becomes an entry point of its own.
     Seeds found speculatively (pointers in data) are dropped silently if they don't
     explore cleanly; failures of real seeds are reported.
     Returns (functions: name -> {start: Function}, errors: list[str]).
     """
+    for name, image in images.items():
+        image.peers = [images[r] for r in resident if r != name]
     funcs = {name: {} for name in images}
     starts = {name: set(seeds.get(name, ())) for name in images}
     speculative = {name: set() for name in images}
@@ -261,6 +268,7 @@ def discover(images: dict, seeds: dict, resident: list, max_rounds=20):
 
         new = {name: set() for name in images}
         new_spec = {name: set() for name in images}
+        ends = {name: {f.end for f in fs.values()} for name, fs in funcs.items()}
         for name, fs in funcs.items():
             for fn in fs.values():
                 for t in fn.calls | set(fn.tail_calls.values()):
@@ -268,8 +276,11 @@ def discover(images: dict, seeds: dict, resident: list, max_rounds=20):
                         if images[target_img].contains(t):
                             new[target_img].add(t)
                             break
+                for site, t in fn.call_sites.items():
+                    if t in continuations:
+                        new[name].add(site + 8)
                 for p in fn.pointers:
-                    if looks_like_function_start(images[name], p):
+                    if looks_like_function_start(images[name], p) or p in ends[name]:
                         new_spec[name].add(p)
         for name, image in images.items():
             for target_img, ptr in _data_pointers(images, funcs, name, resident):

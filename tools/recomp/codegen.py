@@ -217,8 +217,13 @@ class FunctionWriter:
     def emit(self):
         fn = self.fn
         self.out.append(f"void {fn_name(self.module, fn.start)}(Cpu *c) {{")
+        self.line(f"ENTER(0x{fn.start:08X}u);")
+        self.line("const uint32_t ra_ = ENTRY_RA(c);")
         self.line(f"CHECK_EVENTS(c, 0x{fn.start:08X}u);")
         labels = set(fn.labels)
+        if min(fn.addrs) != fn.start:
+            # Code is emitted in address order; this function also reaches code below its entry.
+            self.line(f"goto L_{fn.start:08X};")
         skip = set()
         for a in sorted(fn.addrs):
             if a in skip:
@@ -254,7 +259,7 @@ class FunctionWriter:
                 if end not in fn.tail_calls:
                     raise CodegenError(f"{fn.start:08X}: falls off the end at {end:08X}")
                 self.tick()
-                self.line(f"{self.call(end)} return;")
+                self.line(f"TAIL(c, ra_); {self.call(end)} return;")
         self.tick()
         self.out.append("}")
         return "\n".join(self.out)
@@ -285,7 +290,7 @@ class FunctionWriter:
             self.tick(2)
             self.line(delay)
             if a in fn.tail_calls:
-                self.line(f"{self.call(fn.tail_calls[a])} return;")
+                self.line(f"TAIL(c, ra_); {self.call(fn.tail_calls[a])} return;")
             elif i.target <= a:
                 self.line(f"CHECK_EVENTS(c, 0x{i.target:08X}u); goto L_{i.target:08X};")
             else:
@@ -311,6 +316,8 @@ class FunctionWriter:
             if i.rs == RA:
                 self.tick(2)
                 self.line(delay)
+                # $ra no longer holds our caller's return address: a longjmp-style context switch.
+                self.line("if (c->r[31] != ra_) psx_jump_ra(c);")
                 self.line("return;")
                 return
             self.line("{")
@@ -320,7 +327,7 @@ class FunctionWriter:
             if self.img.insn(a + 4).op == "rfe":
                 self.line("psx_exception_return(c, t_);", 2)  # does not return
             elif a in fn.bios_jumps:
-                self.line(f"psx_bios_call(c, 0x{fn.bios_jumps[a]:X}u); return;", 2)
+                self.line(f"TAIL(c, ra_); psx_bios_call(c, 0x{fn.bios_jumps[a]:X}u); return;", 2)
             elif a in fn.jump_tables:
                 self.line("switch (t_) {", 2)
                 for t in sorted(set(filter(None, fn.jump_tables[a]))):
@@ -328,7 +335,7 @@ class FunctionWriter:
                 self.line(f"default: psx_unhandled_jump(c, 0x{a:08X}u, t_); return;", 3)
                 self.line("}", 2)
             else:
-                self.line("psx_call(c, t_); return;", 2)
+                self.line("TAIL(c, ra_); psx_call(c, t_); return;", 2)
             self.line("}")
             return
         raise CodegenError(f"{a:08X}: unexpected control op {op}")

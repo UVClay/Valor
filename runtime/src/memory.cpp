@@ -4,6 +4,7 @@
 #include <set>
 #include <vector>
 
+#include "hw.h"
 #include "runtime.h"
 
 extern "C" {
@@ -32,13 +33,25 @@ static void trace_once(const char *kind, uint32_t phys, int size, uint32_t value
 
 uint32_t io_read(Cpu *c, uint32_t phys, int size) {
     (void)c;
-    uint32_t off = phys - 0x1F801000, v = 0;
-    memcpy(&v, io_mem + off, size);
-    switch (phys) {
-    case 0x1F801814:  // GPUSTAT: ready for commands, VRAM transfer and DMA
-        v = 0x1C000000;
-        break;
+    uint32_t v;
+    if (phys >= 0x1F801040 && phys < 0x1F801050) v = hw::sio_read(phys, size);
+    else if (phys == 0x1F801070 || phys == 0x1F801074) v = hw::irq_read(phys);
+    else if (phys >= 0x1F801080 && phys < 0x1F801100) v = hw::dma_read(phys & ~3u) >> (8 * (phys & 3));
+    else if (phys >= 0x1F801100 && phys < 0x1F801130) v = hw::timers_read(phys);
+    else if (phys >= 0x1F801800 && phys < 0x1F801804) {
+        v = hw::cdrom_read(phys);
+        for (int i = 1; i < size; i++) v |= uint32_t(hw::cdrom_read(phys)) << (8 * i);  // FIFO reads
+    } else if (phys == 0x1F801810 || phys == 0x1F801814) v = hw::gpu_read(phys);
+    else if (phys == 0x1F801820 || phys == 0x1F801824) v = hw::mdec_read(phys);
+    else if (phys >= 0x1F801C00 && phys < 0x1F802000) {
+        v = hw::spu_read(phys & ~1u);
+        if (size == 4) v |= uint32_t(hw::spu_read((phys & ~1u) + 2)) << 16;
+    } else {
+        v = 0;
+        memcpy(&v, io_mem + (phys - 0x1F801000), size);  // memory control, SIO1, expansion 2
     }
+    if (size == 1) v &= 0xFF;
+    else if (size == 2) v &= 0xFFFF;
     trace_once("R", phys, size, v);
     return v;
 }
@@ -46,7 +59,19 @@ uint32_t io_read(Cpu *c, uint32_t phys, int size) {
 void io_write(Cpu *c, uint32_t phys, uint32_t value, int size) {
     (void)c;
     trace_once("W", phys, size, value);
-    memcpy(io_mem + (phys - 0x1F801000), &value, size);
+    if (phys >= 0x1F801040 && phys < 0x1F801050) hw::sio_write(phys, value, size);
+    else if (phys == 0x1F801070 || phys == 0x1F801074) hw::irq_write(phys, value);
+    else if (phys >= 0x1F801080 && phys < 0x1F801100) hw::dma_write(phys & ~3u, value);
+    else if (phys >= 0x1F801100 && phys < 0x1F801130) hw::timers_write(phys, value);
+    else if (phys >= 0x1F801800 && phys < 0x1F801804) hw::cdrom_write(phys, value & 0xFF);
+    else if (phys == 0x1F801810 || phys == 0x1F801814) hw::gpu_write(phys, value);
+    else if (phys == 0x1F801820 || phys == 0x1F801824) hw::mdec_write(phys, value);
+    else if (phys >= 0x1F801C00 && phys < 0x1F802000) {
+        hw::spu_write(phys & ~1u, value & 0xFFFF);
+        if (size == 4) hw::spu_write((phys & ~1u) + 2, value >> 16);
+    } else {
+        memcpy(io_mem + (phys - 0x1F801000), &value, size);
+    }
 }
 
 }  // namespace psx
@@ -67,6 +92,7 @@ uint32_t psx_read_slow(Cpu *c, uint32_t addr, int size) {
         return v;
     }
     if (p == 0x1FFE0130) return 0;                     // cache control
+    if (p >= 0x1F000000 && p < 0x1F800000) return 0xFFFFFFFFu >> (32 - 8 * size);  // expansion 1: empty
     fatal("read%d from unmapped %08X", size * 8, addr);
 }
 
@@ -78,12 +104,9 @@ void psx_write_slow(Cpu *c, uint32_t addr, uint32_t value, int size) {
     }
     if (p >= 0x1F801000 && p < 0x1F803000) return io_write(c, p, value, size);
     if (p == 0x1FFE0130) return;  // cache control
+    if (p >= 0x1F000000 && p < 0x1F800000) return;  // expansion 1: empty
     fatal("write%d %08X to unmapped %08X", size * 8, value, addr);
 }
 
-void psx_events(Cpu *c, uint32_t pc) {
-    if (config.max_cycles && c->cycles >= config.max_cycles) fatal("cycle limit reached at %08X", pc);
-    c->next_event = c->cycles + 1000000;
-}
 
 }  // extern "C"

@@ -4,6 +4,8 @@
 project = "bios"
 elf = "build/openbios/openbios.elf"
 entry = 0xBFC00000
+# A longjmp can resume code right after a call to these.
+continuations = ["psxsetjmp"]
 
 # Kernel code running from ROM. .rodata is included so jump tables can be read.
 [[module]]

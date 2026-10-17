@@ -12,7 +12,20 @@ typedef struct Cpu {
     uint32_t hi, lo;
     int64_t cycles;      /* instructions executed (scaled to CPU cycles by the runtime) */
     int64_t next_event;  /* when `cycles` reaches this, psx_events() must run */
+    /* A tail call passes its caller's return address on, so `jr $ra` in the tail-called
+       function can tell a normal return from a context switch. */
+    uint32_t tail_ra;
+    uint32_t tail_link;  /* $ra when the tail call was made: a stale handoff won't match */
 } Cpu;
+
+/* Return address the current function must return to (see Cpu.tail_ra). */
+static inline uint32_t psx_entry_ra(Cpu *c) {
+    uint32_t ra = c->r[31] == c->tail_link ? c->tail_ra : c->r[31];
+    c->tail_link = 1; /* never a valid $ra (unaligned) */
+    return ra;
+}
+#define ENTRY_RA(c) psx_entry_ra(c)
+#define TAIL(c, ra) ((c)->tail_ra = (ra), (c)->tail_link = (c)->r[31])
 
 typedef void (*RecompFn)(Cpu *c);
 
@@ -110,6 +123,7 @@ void psx_call(Cpu *c, uint32_t addr);                      /* indirect call / ta
 void psx_unhandled_jump(Cpu *c, uint32_t pc, uint32_t target);
 void psx_events(Cpu *c, uint32_t pc);                       /* timers, DMA, interrupts at pc */
 void psx_exception_return(Cpu *c, uint32_t target);         /* jr + rfe: back to the interrupted code */
+void psx_jump_ra(Cpu *c);                                   /* longjmp-style jr $ra into a saved context */
 void psx_syscall(Cpu *c, uint32_t pc);
 void psx_break(Cpu *c, uint32_t pc, uint32_t code);
 void psx_bios_call(Cpu *c, uint32_t vector);                /* A0/B0/C0; function number in t1 */
@@ -125,6 +139,12 @@ uint32_t gte_cfc2(Cpu *c, int reg);
 void gte_mtc2(Cpu *c, int reg, uint32_t v);
 void gte_ctc2(Cpu *c, int reg, uint32_t v);
 void gte_cmd(Cpu *c, uint32_t op);
+
+/* Ring buffer of recently entered functions, printed when the runtime halts. */
+#define PSX_TRACE_SIZE 64
+extern uint32_t psx_trace_ring[PSX_TRACE_SIZE];
+extern uint32_t psx_trace_pos;
+#define ENTER(addr) (psx_trace_ring[psx_trace_pos++ & (PSX_TRACE_SIZE - 1)] = (addr))
 
 #define TICK(c, n) ((c)->cycles += (n))
 #define CHECK_EVENTS(c, pc) do { if ((c)->cycles >= (c)->next_event) psx_events(c, pc); } while (0)

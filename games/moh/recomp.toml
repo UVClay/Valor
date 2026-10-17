@@ -4,6 +4,8 @@
 project = "game"
 extracted = "extracted/moh"
 overlay_base = 0x80039D90
+# A longjmp can resume code right after a call to these (PsyQ's interrupt dispatcher does).
+continuations = ["setjmp"]
 
 [exe]
 name = "exe"
