@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Quick-look disassembler for recon.
 
-  dis.py <binary> range <addr> [count]   disassemble count instructions at addr
-  dis.py <binary> refs <addr>            find lui/addiu|ori|lw|sw pairs that build addr
-  dis.py <binary> find <hex-bytes>       find byte pattern, print addresses
+  psxdis.py <binary> range <addr> [count]   disassemble count instructions at addr
+  psxdis.py <binary> refs <addr>            find lui/addiu|ori|lw|sw pairs that build addr
+  psxdis.py <binary> find <hex-bytes>       find byte pattern, print addresses
 
 <binary> is an extracted file; PS-X EXEs and known overlays get their load address automatically.
 """
