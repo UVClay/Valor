@@ -38,11 +38,15 @@ struct Config {
     double aspect = 4.0 / 3.0;  // output aspect (0 = match the window)
     double fov = 0;             // world horizontal FOV in degrees (0 = original vertical FOV, Hor+)
     // MoH: the world is projected with GTE H = 400 on a 512x240 screen (vertical half-FOV
-    // tangent 120/400); other projections (the weapon) keep their framing.
+    // tangent 120/400); the weapon (H = 133) is scaled along with it.
     uint16_t world_h = 400;
     double world_base_tan = 120.0 / 400.0;
+    // GTE commands (cop2 instruction addresses) that project HUD elements, which keep their size
+    // under FOV/widescreen scaling. MoH: the compass disc, set up by LEVEL.BIN at 0x80060A08.
+    std::vector<uint32_t> hud_projections = {0x80060A08};
     std::filesystem::path screenshots;  // save a PNG of the display every `screenshot_every` frames
     uint64_t screenshot_every = 60;
+    uint64_t screenshot_from = 0;    // no screenshots before this frame
     bool screenshot_window = false;  // capture the window (with overlay) instead of the PS1 image
     int overlay = 0;                 // initial debug overlay level
     uint64_t menu_screenshot = 0;    // testing: capture the settings menu on this frame

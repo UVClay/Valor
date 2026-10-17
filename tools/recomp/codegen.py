@@ -134,7 +134,7 @@ def simple(i: Insn) -> str:
     if op == "ctc2":
         return f"gte_ctc2(c, {rd}, {R(rt)});"
     if op == "cop2":
-        return f"gte_cmd(c, 0x{i.word & 0x1FFFFFF:X}u);"
+        return f"gte_cmd(c, 0x{i.word & 0x1FFFFFF:X}u, 0x{i.addr:08X}u);"
     if op == "syscall":
         return f"psx_syscall(c, 0x{i.addr:08X}u);"
     if op == "break":

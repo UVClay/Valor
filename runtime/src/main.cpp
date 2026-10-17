@@ -35,7 +35,7 @@ static bool parse_press(const char *arg) {
 
 static void usage(const char *argv0) {
     fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--headless] [--hidden]\n"
-            "       [--screenshots DIR] [--screenshot-every N] [--screenshot-window] [--wav FILE]\n"
+            "       [--screenshots DIR] [--screenshot-every N] [--screenshot-from FRAME] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--poke-on-call CALLHEX:ADDRHEX=VALUE]...\n"
             "       [--trace-io] [--trace-calls] [--trace-cd] [--trace-audio] [--max-cycles N]\n", argv0);
@@ -54,6 +54,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--headless")) config.headless = true;
         else if (!strcmp(argv[i], "--hidden")) config.hidden = true;
         else if (!strcmp(argv[i], "--screenshot-window")) config.screenshot_window = true;
+        else if (!strcmp(argv[i], "--screenshot-from") && i + 1 < argc) config.screenshot_from = strtoull(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--menu-screenshot") && i + 1 < argc) config.menu_screenshot = strtoull(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--overlay") && i + 1 < argc) config.overlay = std::clamp(atoi(argv[++i]), 0, 2);
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) config.scale = std::clamp(atoi(argv[++i]), 0, 16);

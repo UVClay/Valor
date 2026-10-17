@@ -43,6 +43,9 @@ fi
 # Controllers: the whole input directory so hot-plugged pads show up, plus udev for discovery.
 gui+=(-v /dev/input:/dev/input -v /run/udev:/run/udev:ro --group-add keep-groups)
 
+# Debug switches (VALOR_TRACE_*, ...) reach the runtime inside the container.
+for var in $(compgen -e | grep '^VALOR_' || true); do gui+=(-e "$var"); done
+
 tty_flags=()
 [ -t 0 ] && tty_flags=(-it)
 

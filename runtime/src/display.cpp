@@ -292,7 +292,8 @@ void display_init(bool want_window) {
 }
 
 void gpu_present() {
-    bool shot = !config.screenshots.empty() && gpu.frames % config.screenshot_every == 0;
+    bool shot = !config.screenshots.empty() && gpu.frames >= config.screenshot_from &&
+                gpu.frames % config.screenshot_every == 0;
     if (shot && !config.screenshot_window) {
         capture_display();
         char name[32];

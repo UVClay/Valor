@@ -2,6 +2,7 @@
 // fixed-point math, saturation and FLAG bits, and the hardware's UNR division.
 #include <algorithm>
 #include <cstdint>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 
@@ -47,6 +48,7 @@ constexpr uint32_t F_MAC0_POS = 1u << 16, F_MAC0_NEG = 1u << 15;
 constexpr uint32_t F_SX2 = 1u << 14, F_SY2 = 1u << 13, F_IR0 = 1u << 12;
 
 int sf_shift;   // 12 when the sf bit is set, else 0
+uint32_t current_pc;  // address of the GTE command being executed
 
 // Projection adjustments for widescreen and FOV (see gte_set_projection).
 struct {
@@ -215,10 +217,26 @@ void rtp(int n, bool last) {
     uint32_t q = divide(g.h, g.sz[3]);
     int64_t sx = int64_t(q) * g.ir[1], sy = int64_t(q) * g.ir[2];
     if (projection.active) {
-        // Widescreen / FOV: scale the projected offset from the screen center.
-        const auto &k = g.h == projection.world_h ? projection.world : projection.other;
-        sx = int64_t(double(sx) * k.x);
-        sy = int64_t(double(sy) * k.y);
+        // Widescreen / FOV: scale the projected offset from the screen center. HUD elements that
+        // are projected (config.hud_projections, by cop2 instruction address) keep their size.
+        // VALOR_TRACE_GTE_PC=1 lists where projections come from (H, cop2 address, result).
+        bool world = g.h == projection.world_h;
+        bool hud = std::find(psx::config.hud_projections.begin(), psx::config.hud_projections.end(), current_pc) !=
+                   psx::config.hud_projections.end();
+        if (getenv("VALOR_TRACE_GTE_PC")) {
+            static uint32_t seen[64];
+            bool known = false;
+            for (uint32_t v : seen) known |= v == current_pc;
+            if (!known) {
+                for (auto &v : seen) if (!v) { v = current_pc; break; }
+                psx::log("gte: H=%u projection at %08X -> (%d,%d)", g.h, current_pc, int32_t((sx + g.ofx) >> 16), int32_t((sy + g.ofy) >> 16));
+            }
+        }
+        if (!hud) {
+            const auto &k = world ? projection.world : projection.other;
+            sx = int64_t(double(sx) * k.x);
+            sy = int64_t(double(sy) * k.y);
+        }
     }
     sx += g.ofx;
     sy += g.ofy;
@@ -528,10 +546,7 @@ void write_ctrl(int r, uint32_t v) {
     case 21: case 22: case 23: g.fc[r - 21] = int32_t(v); break;
     case 24: g.ofx = int32_t(v); break;
     case 25: g.ofy = int32_t(v); break;
-    case 26:
-        if (uint16_t(v) != g.h && getenv("VALOR_TRACE_GTE_H")) psx::log("gte: H = %u (ofx %d ofy %d)", uint16_t(v), g.ofx >> 16, g.ofy >> 16);
-        g.h = uint16_t(v);
-        break;
+    case 26: g.h = uint16_t(v); break;
     case 27: g.dqa = lo; break;
     case 28: g.dqb = int32_t(v); break;
     case 29: g.zsf3 = lo; break;
@@ -551,9 +566,10 @@ struct Init {
 
 namespace psx {
 
-// aspect: output width/height (4/3 = original). hfov_deg: horizontal FOV for the world projection
+// aspect: output width/height (4/3 = original). hfov_deg: horizontal FOV of the world projection
 // (H == world_h) at that aspect, 0 keeps the original vertical FOV (Hor+). base_tan: the game's
-// original vertical half-FOV tangent for the world projection.
+// original vertical half-FOV tangent for the world projection. Other projections (the weapon) are
+// scaled by the same factor.
 void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double base_tan) {
     double squeeze = (4.0 / 3.0) / aspect;  // keeps 3D proportions when stretched to `aspect`
     double k = 1.0;
@@ -561,9 +577,11 @@ void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double
         double tv = std::tan(hfov_deg * M_PI / 360.0) / aspect;  // vertical half-FOV tangent wanted
         k = base_tan / tv;
     }
+    // The FOV applies to every projection, the weapon included: its muzzle flash and tracers are
+    // world objects, so a weapon left at the original framing would detach from them.
     projection.world_h = world_h;
     projection.world = {k * squeeze, k};
-    projection.other = {squeeze, 1.0};
+    projection.other = {k * squeeze, k};
     projection.active = squeeze != 1.0 || k != 1.0;
     log("gte: projection aspect %.3f, world FOV %.1f deg horizontal", aspect,
         2.0 * std::atan(base_tan / k * aspect) * 180.0 / M_PI);
@@ -577,6 +595,9 @@ uint32_t gte_mfc2(Cpu *, int reg) { return read_data(reg); }
 uint32_t gte_cfc2(Cpu *, int reg) { return read_ctrl(reg); }
 void gte_mtc2(Cpu *, int reg, uint32_t v) { write_data(reg, v); }
 void gte_ctc2(Cpu *, int reg, uint32_t v) { write_ctrl(reg, v); }
-void gte_cmd(Cpu *, uint32_t op) { cmd(op); }
+void gte_cmd(Cpu *, uint32_t op, uint32_t pc) {
+    current_pc = pc;
+    cmd(op);
+}
 
 }  // extern "C"

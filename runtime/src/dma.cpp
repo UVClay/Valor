@@ -3,6 +3,8 @@
 
 namespace psx::hw {
 
+uint32_t gpu_packet_addr;
+
 namespace {
 
 enum Channel { MDEC_IN, MDEC_OUT, GPU, CDROM, SPU, PIO, OTC };
@@ -41,6 +43,7 @@ void gpu_linked_list(uint32_t addr) {
     for (int guard = 0; guard < 0x100000; guard++) {
         uint32_t header = ram_word(addr);
         uint32_t words = header >> 24;
+        gpu_packet_addr = addr;  // for GPU tracing
         for (uint32_t i = 1; i <= words; i++) gpu_gp0(ram_word(addr + 4 * i));
         if (header & 0x800000) return;  // end marker 0xFFFFFF
         addr = header & 0x1FFFFC;

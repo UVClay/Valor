@@ -22,6 +22,7 @@ struct GpuState {
 };
 
 extern GpuState gpu;
+extern uint32_t gpu_packet_addr;  // RAM address of the ordering-table packet being drawn (tracing)
 
 // A decoded primitive vertex: position (drawing offset applied), color, texture coordinate.
 struct Vertex {

@@ -139,7 +139,7 @@ uint32_t gte_mfc2(Cpu *c, int reg);
 uint32_t gte_cfc2(Cpu *c, int reg);
 void gte_mtc2(Cpu *c, int reg, uint32_t v);
 void gte_ctc2(Cpu *c, int reg, uint32_t v);
-void gte_cmd(Cpu *c, uint32_t op);
+void gte_cmd(Cpu *c, uint32_t op, uint32_t pc);  /* pc: address of the cop2 instruction */
 
 /* Ring buffer of recently entered functions, printed when the runtime halts. */
 #define PSX_TRACE_SIZE 64

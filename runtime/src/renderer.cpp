@@ -304,7 +304,7 @@ static void trace_command(const std::vector<uint32_t> &cmd) {
         frame = -2;
         if (e && sscanf(e, "%d,%d,%d,%d,%d", &frame, &rx, &ry, &rw, &rh) != 5) frame = -2;
     }
-    if (frame < 0 || gpu.frames != uint64_t(frame)) return;
+    if (frame < 0 || gpu.frames < uint64_t(frame) || gpu.frames > uint64_t(frame) + 1) return;  // two refreshes: one game frame
     bool hit = false;
     for (size_t i = 1; i < cmd.size(); i++) {
         int x = sext11(cmd[i]), y = sext11(cmd[i] >> 16);  // screen-relative (before the offset)
@@ -314,7 +314,8 @@ static void trace_command(const std::vector<uint32_t> &cmd) {
     std::string words;
     char b[12];
     for (uint32_t w : cmd) { snprintf(b, sizeof b, " %08X", w); words += b; }
-    log("gpu: off(%d,%d) tp=%04X tw=%05X%s", gpu.offset_x, gpu.offset_y, gpu.texpage, gpu.tex_window, words.c_str());
+    log("gpu: off(%d,%d) tp=%04X tw=%05X @%08X%s", gpu.offset_x, gpu.offset_y, gpu.texpage, gpu.tex_window,
+        gpu_packet_addr, words.c_str());
 }
 
 void gpu_draw(const std::vector<uint32_t> &cmd) {
