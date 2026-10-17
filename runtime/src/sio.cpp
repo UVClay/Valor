@@ -4,6 +4,7 @@
 #include "hw.h"
 #include "input.h"
 #include "memcard.h"
+#include "pad.h"
 
 namespace psx::hw {
 
@@ -30,20 +31,7 @@ void respond(uint8_t tx) {
     }
     reply = 0xFF;
     reply_acks = false;
-    if (device == Device::Pad && pad_connected(port)) {
-        uint16_t buttons = pad_buttons(port);  // active low
-        static const uint8_t header[] = {0xFF, 0x41, 0x5A};
-        if (step < 3) {
-            reply = header[step];
-            reply_acks = !(step == 1 && tx != 0x42);
-        } else if (step == 3) {
-            reply = buttons & 0xFF;
-            reply_acks = true;
-        } else if (step == 4) {
-            reply = buttons >> 8;
-            reply_acks = false;  // last byte: no ack
-        }
-    }
+    if (device == Device::Pad && port == 0 && pad_connected(port)) reply = pad_exchange(step, tx, reply_acks);
     if (device == Device::Card && port == 0 && memcard_present()) reply = memcard_exchange(step, tx, reply_acks);
     if (device == Device::Card && getenv("VALOR_TRACE_SIO"))
         log("sio: card port %d step %d tx %02X -> %02X%s", port, step, tx, reply, reply_acks ? " ack" : "");

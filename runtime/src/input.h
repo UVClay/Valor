@@ -12,8 +12,15 @@ enum PadButton : uint16_t {
     BTN_TRIANGLE = 1 << 12, BTN_CIRCLE = 1 << 13, BTN_CROSS = 1 << 14, BTN_SQUARE = 1 << 15,
 };
 
+struct PadSticks {
+    uint8_t lx, ly, rx, ry;  // 0x00..0xFF, 0x80 centered
+};
+
 bool pad_connected(int port);
 // Pressed buttons as an active-low mask (0xFFFF = nothing pressed).
 uint16_t pad_buttons(int port);
+PadSticks pad_sticks(int port);
+// Motor speeds requested by the game: small motor on/off, large motor 0..255.
+void pad_rumble(int port, uint8_t small, uint8_t large);
 
 }  // namespace psx::hw

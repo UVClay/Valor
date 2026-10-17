@@ -10,6 +10,7 @@
 #include "gpu.h"
 #include "hw.h"
 #include "input.h"
+#include "pad.h"
 
 namespace psx::hw {
 
@@ -128,6 +129,7 @@ void handle_key(SDL_Keycode key, bool down) {
     case SDLK_RETURN: bit = BTN_START; break;
     case SDLK_BACKSPACE: bit = BTN_SELECT; break;
     case SDLK_TAB: fast_forward = down; return;
+    case SDLK_F7: if (down) pad_toggle_analog(); return;
     case SDLK_MINUS: if (down) audio_adjust_volume(-10); return;
     case SDLK_EQUALS: if (down) audio_adjust_volume(10); return;
     default: return;
@@ -243,6 +245,30 @@ uint16_t pad_buttons(int port) {
         if (SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000) pressed |= BTN_R2;
     }
     return uint16_t(~pressed);
+}
+
+PadSticks pad_sticks(int port) {
+    PadSticks s = {0x80, 0x80, 0x80, 0x80};
+    if (port != 0 || !gamepad) return s;
+    auto axis = [](SDL_Gamepad *g, SDL_GamepadAxis a) {
+        return uint8_t((SDL_GetGamepadAxis(g, a) + 32768) >> 8);
+    };
+    s.lx = axis(gamepad, SDL_GAMEPAD_AXIS_LEFTX);
+    s.ly = axis(gamepad, SDL_GAMEPAD_AXIS_LEFTY);
+    s.rx = axis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX);
+    s.ry = axis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY);
+    return s;
+}
+
+void pad_rumble(int port, uint8_t small, uint8_t large) {
+    static uint8_t last_small, last_large;
+    if (port != 0 || !gamepad) return;
+    if (small == last_small && large == last_large) return;
+    last_small = small;
+    last_large = large;
+    // Large motor -> low-frequency rumble, small motor -> high-frequency. Refreshed on change;
+    // the long duration keeps it running until the game changes it.
+    SDL_RumbleGamepad(gamepad, uint16_t(large * 257), small ? 0xFFFF : 0, 10000);
 }
 
 }  // namespace psx::hw
