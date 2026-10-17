@@ -1,0 +1,34 @@
+# Recompilation config for Medal of Honor (USA), SLUS-00974.
+# Paths are relative to the repo root.
+
+extracted = "extracted/moh"
+overlay_base = 0x80039D90
+
+[exe]
+name = "exe"
+file = "SLUS_009.74"
+# The exe's tail past overlay_base is overwritten by whichever overlay is loaded.
+code_end = 0x80039D90
+symbols = ["build/syms/SLUS_009.74.psyq.txt"]
+seeds = []
+
+[[overlay]]
+name = "shell"
+file = "SHELL.BIN"
+entry = 0x8005FC28
+symbols = ["build/syms/SHELL.BIN.psyq.txt"]
+seeds = []
+
+[[overlay]]
+name = "level"
+file = "LEVEL.BIN"
+entry = 0x80064374
+symbols = []
+seeds = []
+
+[[overlay]]
+name = "level2p"
+file = "LEVEL2P.BIN"
+entry = 0x8005F280
+symbols = []
+seeds = []
