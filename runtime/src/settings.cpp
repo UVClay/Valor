@@ -55,6 +55,7 @@ void settings_load() {
         else if (key == "smooth_scaling") config.smooth_scaling = value == "true";
         else if (key == "fullscreen") config.fullscreen = value == "true";
         else if (key == "volume") config.volume = std::clamp(atoi(value.c_str()), 0, 200);
+        else if (key == "square_sticks") config.square_sticks = value == "true";
         else if (key == "overlay") config.overlay = std::clamp(atoi(value.c_str()), 0, 2);
     }
 }
@@ -71,6 +72,7 @@ void settings_save() {
     f << "smooth_scaling = " << (config.smooth_scaling ? "true" : "false") << "\n";
     f << "fullscreen = " << (config.fullscreen ? "true" : "false") << "\n";
     f << "volume = " << config.volume << "\n";
+    f << "square_sticks = " << (config.square_sticks ? "true" : "false") << "\n";
     f << "overlay = " << config.overlay << "\n";
 }
 

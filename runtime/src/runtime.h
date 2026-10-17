@@ -52,9 +52,16 @@ struct Config {
     uint64_t menu_screenshot = 0;    // testing: capture the settings menu on this frame
     std::filesystem::path wav;  // also record audio output here
     int volume = 100;           // output volume, percent
+    // Map each stick's round range onto the square one a DualShock reports (full deflection
+    // reaches both axes' limits on diagonals). MoH shapes each axis separately with a steep
+    // curve, so on a round-gated stick angling it off-axis loses most of the speed.
+    bool square_sticks = true;
     std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> presses;  // scripted input (--press FRAME:BUTTON[:DURATION])
+    struct Stick { uint64_t frame, duration; int axis; uint8_t value; };  // axis: 0 lx 1 ly 2 rx 3 ry
+    std::vector<Stick> sticks;   // scripted sticks (--stick FRAME:AXIS=VALUE[:DURATION])
+    uint64_t dump_ram_frame = 0;  // testing: write RAM to build/ram.bin at this frame
     uint64_t monkey_seed = 0, monkey_from = 0;  // random input from this frame on (--monkey SEED:FRAME)
     // Debugging: write a word into RAM the first time a function is called
     // (--poke-on-call CALL:ADDR=VALUE), e.g. to pick the level the game loads.

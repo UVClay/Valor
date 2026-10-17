@@ -121,6 +121,12 @@ void draw_menu() {
             if (ImGui::SliderInt("Volume", &volume, 0, 200, "%d%%")) audio_adjust_volume(volume - config.volume);
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("Controls")) {
+            ImGui::Checkbox("Square stick range (DualShock-like)", &config.square_sticks);
+            ImGui::TextDisabled("Full deflection reaches both axes on diagonals, as on a DualShock.\n"
+                                "Without it, angling a round-gated stick off-axis loses most of the speed.");
+            ImGui::EndTabItem();
+        }
         if (ImGui::BeginTabItem("Interface")) {
             ImGui::TextUnformatted("Debug overlay (F3)");
             ImGui::RadioButton("Off", &config.overlay, 0);

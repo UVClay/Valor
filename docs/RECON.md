@@ -48,6 +48,56 @@ Key addresses: `VSync 0x80015DB8`, `ResetGraph 0x80016B60`, `DrawSync 0x80016E38
 
 Not matched yet: `PadInit`/`CdInit`/`SpuInit` (game may use lower-level APIs; CD access goes through libds).
 
+## Player control and movement (LEVEL.BIN)
+
+Pad input:
+- The raw pad buffers are at `0x800D0C88`.
+- The game copies the stick bytes per port to `0x80093B70 + port*4` in the order rx, ry, lx, ly.
+- The analog-mode flag is at `0x80093B78 + port`.
+- The controller manager is `0x8004D974`.
+
+Each control role (forward, strafe, ...) is read from a digital button (`0x80075A30`, with its config at
+`0x800B75F0`, role×52, port×208) or, in analog mode, from a stick axis:
+`0x80075FB4(port, role, ?)` → `0x80075E7C(port, cfg, axis, enabled)`. The analog config is at
+`0x800B74B0 + port*160 + role*40`:
+
+| Offset | Default | Meaning |
+|---|---|---|
+| +0x0 (byte) | role 0: 3, role 1: 0, role 2: 1, role 3: 2 | Stick axis (index into the stick copy) |
+| +0xE (byte) | 0x5B | Low threshold |
+| +0x14 | 360 | Negative-side scale |
+| +0x18 | 199 | Positive-side scale |
+| +0x20 | 0x230000 (forward/strafe), 0x3C0000 (look) | Speed, used as `speed>>8` |
+| +0x24 | | Invert |
+
+With the default config:
+- Roles 0/1/2/3 are forward (ly), strafe (rx), pitch (ry) and turn (lx).
+- Strafe can also come from the L1/R1 buttons.
+
+Axis response, per axis with no cross-axis coupling:
+
+| Raw value `v` | Index | Output |
+|---|---|---|
+| `v < 0x5B` | `(0x5B - v) * 360 >> 8` | `-table[idx] * (speed >> 8)` |
+| `v >= 0xA6` | `(v - 0x5B) * 199 >> 8` | `+table[idx] * (speed >> 8)` |
+| otherwise | | 0 |
+
+`table` is the 128-entry curve at `0x8009E3AC`. It is 0 up to index 36, then rises steeply to 255.
+
+The result is a huge deadzone, about 50% of the travel on the negative side, plus a steep curve. Forward speed by deflection: 100% → 17.4 units per frame, 88% → 7.5, 71% → 3.0, 50% → 0.6.
+
+`0x8007F300` is the per-frame control function, called from `0x8007A6B0`:
+- Role 0 → `player+0x200` (negated).
+- Role 1 → `player+0x218`.
+- Roles 2/3 feed the look accumulators `obj+0x17C/0x188` → angles `obj+0x190/0x192`, clamped by `obj+0xB4/0xB6`.
+
+The global player pointer is `0x8009D638`, with `obj = *(player+0x388)`. Position is 16.16 fixed point at `player+0x20C/0x210/0x214`; the integer part is mirrored at `player+0x354/0x358/0x35C`.
+
+Measured:
+- Forward and strafe add as vectors: full forward plus full strafe moves at 24.6, which is √2 × 17.4. Nothing in the movement code cancels forward speed while strafing.
+- The "strafing kills forward movement" feel comes from the per-axis curve. On a round stick gate, holding the stick fully deflected 30° off forward gives (0.5, 0.87). That is 7.5 units per frame instead of 17.4.
+- A DualShock reports a square range, so its diagonals reach both axes' limits. The runtime reproduces that by mapping round gamepad input onto the square range (`square_sticks`, default on). At 30° the speed is then 17.9.
+
 ## Asset formats (unexplored)
 
 `.RSC` resource archives, `.BSD`/`.TSP` level data, `.TAF` (unknown), `.VB` SPU sample banks,

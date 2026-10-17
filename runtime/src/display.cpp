@@ -2,8 +2,11 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <cstdio>
+#include <cstdlib>
+#include <string>
 #include <fstream>
 #include <vector>
 
@@ -291,7 +294,47 @@ void display_init(bool want_window) {
         use_gl_renderer ? "hardware renderer" : "software renderer");
 }
 
+// Debugging: VALOR_LOG_CHAIN="PTR,OFF,...,OFF:COUNT" logs COUNT words each frame at the end of a
+// pointer chain: start at PTR, dereference, add each OFF (dereferencing between offsets).
+static void log_chain() {
+    static std::vector<uint32_t> chain;
+    static int count = -1;
+    if (count == -1) {
+        count = 0;
+        const char *e = getenv("VALOR_LOG_CHAIN");
+        if (!e) return;
+        std::string spec(e);
+        auto colon = spec.find(':');
+        count = colon == std::string::npos ? 1 : atoi(spec.c_str() + colon + 1);
+        for (size_t pos = 0; pos < colon && pos != std::string::npos;) {
+            chain.push_back(uint32_t(strtoul(spec.c_str() + pos, nullptr, 16)));
+            pos = spec.find(',', pos);
+            if (pos != std::string::npos && pos < colon) pos++;
+            else break;
+        }
+    }
+    if (!count || chain.empty()) return;
+    uint32_t a = chain[0];
+    for (size_t i = 1; i < chain.size(); i++) {
+        a = psx_r32(cpu, a);
+        if (!a) return;
+        a += chain[i];
+    }
+    std::string line;
+    char b[16];
+    for (int i = 0; i < count; i++) {
+        snprintf(b, sizeof b, " %d", int32_t(psx_r32(cpu, a + 4 * i)));
+        line += b;
+    }
+    log("chain f%llu:%s", (unsigned long long)gpu.frames, line.c_str());
+}
+
 void gpu_present() {
+    log_chain();
+    if (config.dump_ram_frame && gpu.frames == config.dump_ram_frame) {
+        std::ofstream("build/ram.bin", std::ios::binary).write(reinterpret_cast<const char *>(psx_ram), PSX_RAM_SIZE);
+        log("dumped RAM to build/ram.bin at frame %llu", (unsigned long long)gpu.frames);
+    }
     bool shot = !config.screenshots.empty() && gpu.frames >= config.screenshot_from &&
                 gpu.frames % config.screenshot_every == 0;
     if (shot && !config.screenshot_window) {
@@ -437,14 +480,27 @@ uint16_t pad_buttons(int port) {
 PadSticks pad_sticks(int port) {
     PadSticks s = {0x80, 0x80, 0x80, 0x80};
     if (port == 0 && config.monkey_seed && gpu.frames >= config.monkey_from) return monkey_state().sticks;
+    if (port == 0)
+        for (const auto &st : config.sticks)
+            if (gpu.frames >= st.frame && gpu.frames < st.frame + st.duration) {
+                uint8_t *axes[] = {&s.lx, &s.ly, &s.rx, &s.ry};
+                *axes[st.axis] = st.value;
+            }
     if (port != 0 || !gamepad) return s;
-    auto axis = [](SDL_Gamepad *g, SDL_GamepadAxis a) {
-        return uint8_t((SDL_GetGamepadAxis(g, a) + 32768) >> 8);
+    auto stick = [](SDL_GamepadAxis ax, SDL_GamepadAxis ay, uint8_t &out_x, uint8_t &out_y) {
+        double x = std::max(-1.0, SDL_GetGamepadAxis(gamepad, ax) / 32767.0);
+        double y = std::max(-1.0, SDL_GetGamepadAxis(gamepad, ay) / 32767.0);
+        if (double m = std::max(std::abs(x), std::abs(y)); config.square_sticks && m > 0) {
+            double k = std::min(1.0, std::hypot(x, y)) / m;
+            x = std::clamp(x * k, -1.0, 1.0);
+            y = std::clamp(y * k, -1.0, 1.0);
+        }
+        auto raw = [](double v) { return uint8_t(std::clamp(int(std::lround(128 + v * 128)), 0, 255)); };
+        out_x = raw(x);
+        out_y = raw(y);
     };
-    s.lx = axis(gamepad, SDL_GAMEPAD_AXIS_LEFTX);
-    s.ly = axis(gamepad, SDL_GAMEPAD_AXIS_LEFTY);
-    s.rx = axis(gamepad, SDL_GAMEPAD_AXIS_RIGHTX);
-    s.ry = axis(gamepad, SDL_GAMEPAD_AXIS_RIGHTY);
+    stick(SDL_GAMEPAD_AXIS_LEFTX, SDL_GAMEPAD_AXIS_LEFTY, s.lx, s.ly);
+    stick(SDL_GAMEPAD_AXIS_RIGHTX, SDL_GAMEPAD_AXIS_RIGHTY, s.rx, s.ry);
     return s;
 }
 

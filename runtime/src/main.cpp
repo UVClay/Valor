@@ -37,6 +37,7 @@ static void usage(const char *argv0) {
     fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--headless] [--hidden]\n"
             "       [--screenshots DIR] [--screenshot-every N] [--screenshot-from FRAME] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
+            "       [--stick FRAME:lx|ly|rx|ry=VALUE[:DURATION]]... [--dump-ram FRAME]\n"
             "       [--poke-on-call CALLHEX:ADDRHEX=VALUE]...\n"
             "       [--trace-io] [--trace-calls] [--trace-cd] [--trace-audio] [--max-cycles N]\n", argv0);
 }
@@ -74,6 +75,18 @@ int main(int argc, char **argv) {
             unsigned call, addr, value;
             if (sscanf(argv[++i], "%x:%x=%u", &call, &addr, &value) != 3) { usage(argv[0]); return 2; }
             config.pokes.push_back({call, addr, value, false});
+        } else if (!strcmp(argv[i], "--stick") && i + 1 < argc) {
+            unsigned long long frame, duration = 6;
+            char axis[4] = {};
+            unsigned value;
+            if (sscanf(argv[++i], "%llu:%2[a-z]=%u:%llu", &frame, axis, &value, &duration) < 3) { usage(argv[0]); return 2; }
+            static const char *names[] = {"lx", "ly", "rx", "ry"};
+            int a = -1;
+            for (int k = 0; k < 4; k++) if (!strcmp(axis, names[k])) a = k;
+            if (a < 0 || value > 255) { usage(argv[0]); return 2; }
+            config.sticks.push_back({frame, duration, a, uint8_t(value)});
+        } else if (!strcmp(argv[i], "--dump-ram") && i + 1 < argc) {
+            config.dump_ram_frame = strtoull(argv[++i], nullptr, 0);
         } else if (!strcmp(argv[i], "--press") && i + 1 < argc) { if (!parse_press(argv[++i])) { usage(argv[0]); return 2; } }
         else if (!strcmp(argv[i], "--screenshots") && i + 1 < argc) config.screenshots = argv[++i];
         else if (!strcmp(argv[i], "--screenshot-every") && i + 1 < argc) config.screenshot_every = strtoull(argv[++i], nullptr, 0);

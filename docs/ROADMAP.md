@@ -12,9 +12,12 @@ and full playthroughs of two missions.
       rasterizer keeps PS1 VRAM authoritative underneath
 - [ ] **Debug overlay** with levels: off / FPS / extended (frame times, pacing, emulation stats)
 - [x] **FOV / widescreen**: `--aspect`, `--fov`; GTE projection scaling, 2D screens stay 4:3
+- [ ] **Lamp pop-in in widescreen** (reported at the start of mission 2 level 2): an object culled
+      with a 4:3 assumption; level geometry, enemies and the reticle are fine. Needs the exact spot.
 - [ ] **Widescreen HUD**: the 2D HUD stretches in widescreen; reposition it in the game's HUD code
-- [ ] **Strafing**: in the original, strafing all but cancels forward movement; combine forward and
-      strafe input like modern shooters (needs the player movement code decompiled)
+- [x] **Strafing**: the movement code adds forward and strafe as vectors. The loss of speed came from
+      the game's per-axis stick curve meeting round-gated modern sticks. Round input is now mapped
+      to the DualShock's square range (Controls → "Square stick range", see RECON.md).
 - [ ] High frame rate (interpolated rendering on top of the original simulation tick)
 - [ ] Mouse and keyboard controls
 - [ ] Saves decoupled from memory cards
