@@ -214,6 +214,8 @@ bool pad_connected(int port) { return port == 0; }
 uint16_t pad_buttons(int port) {
     if (port != 0) return 0xFFFF;
     uint16_t pressed = keyboard_buttons;
+    for (const auto &p : config.presses)
+        if (gpu.frames >= p.frame && gpu.frames < p.frame + p.duration) pressed |= p.buttons;
     if (gamepad) {
         static const struct { SDL_GamepadButton b; uint16_t bit; } map[] = {
             {SDL_GAMEPAD_BUTTON_SOUTH, BTN_CROSS},        {SDL_GAMEPAD_BUTTON_EAST, BTN_CIRCLE},

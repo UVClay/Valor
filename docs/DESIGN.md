@@ -30,8 +30,11 @@ CD polling) so we don't spin, and hot libc routines.
 
 ### BIOS
 
-HLE: BIOS calls (`A0`/`B0`/`C0` tables via `syscall`/`jal 0xA0` etc.) are implemented natively,
-including events, callbacks and the exception handler chain, as in emulator HLE BIOSes.
+[OpenBIOS](https://github.com/pcsx-redux/nugget) (MIT) is built from source and recompiled like the
+game, so the kernel (events, interrupt handler chains, file I/O, memory card patches) runs as real
+BIOS code on the emulated hardware and the console boots from its reset vector. A few BIOS routines
+are replaced natively (`flushCache`, `psxlongjmp`), and code stubs the BIOS writes into low RAM at run
+time are followed by a tiny interpreter.
 
 ### Generated code
 
@@ -40,10 +43,13 @@ including events, callbacks and the exception handler chain, as in emulator HLE 
   addresses and route `0x1F80xxxx` to I/O handlers.
 - One C function per MIPS function; branches become `goto`, delay slots are emitted in order.
 - `jal` → direct C call. `jr $ra` → return. Jump tables are resolved statically.
-- `jalr` / function pointers / C++ virtual calls → `call_indirect(addr)`: lookup in the exe's
-  table, then in the table of the currently loaded overlay.
+- `jalr` / function pointers / C++ virtual calls → `psx_call(addr)`: lookup in the resident
+  overlay (identified by its id word in RAM), the exe, then the BIOS.
 - R3000 load delay slots: emitted exactly (the instruction after a load sees the old value) when
   that instruction reads the loaded register; otherwise loads are direct.
+- Every `jr $ra` checks it still returns to its caller; if not, the code switched context
+  (inline longjmp) and execution continues at `$ra`. Return addresses of `setjmp` calls are
+  entry points of their own, since a longjmp can resume there.
 - COP2 (GTE) instructions → calls into the runtime GTE implementation.
 
 ### Overlays
@@ -51,11 +57,18 @@ including events, callbacks and the exception handler chain, as in emulator HLE 
 Each overlay is its own generated module with its own function table. Loading an overlay copies
 its image into emulated RAM (for its data) and selects its function table for `call_indirect`.
 
-### Interrupts
+### Interrupts and timing
 
 The PS1 delivers VBlank, GPU, CD, DMA, timer and SPU interrupts asynchronously. Recompiled code
-checks for pending interrupts at safe points (function entry and backward branches) and runs the
-BIOS exception path there. Timing is driven by a cycle estimate per basic block.
+checks for pending events at function entry and backward branches; an exception is a nested call
+into the recompiled BIOS vector, and the handler's `rfe` longjmps back to the interrupted code.
+Time is counted in instructions at 2 cycles each (PCSX's default), which sets the game's speed.
+
+### Hardware
+
+Runtime devices: interrupt controller, timers, DMA, CD-ROM (reads the BIN directly, XA-ADPCM),
+GPU (software rasterizer reproducing affine texturing, dithering, semi-transparency, mask bit),
+MDEC, GTE, SPU (Mednafen's, vendored from Beetle PSX), controller port.
 
 ## Verification
 

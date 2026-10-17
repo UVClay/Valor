@@ -6,12 +6,33 @@
 #include "audio.h"
 #include "gpu.h"
 #include "hw.h"
+#include "input.h"
 #include "runtime.h"
 
 using namespace psx;
 
+// FRAME:BUTTON[:DURATION], button names as on the pad (cross, circle, start, up, l1, ...).
+static bool parse_press(const char *arg) {
+    static const struct { const char *name; uint16_t bit; } names[] = {
+        {"select", hw::BTN_SELECT}, {"l3", hw::BTN_L3}, {"r3", hw::BTN_R3}, {"start", hw::BTN_START},
+        {"up", hw::BTN_UP}, {"right", hw::BTN_RIGHT}, {"down", hw::BTN_DOWN}, {"left", hw::BTN_LEFT},
+        {"l2", hw::BTN_L2}, {"r2", hw::BTN_R2}, {"l1", hw::BTN_L1}, {"r1", hw::BTN_R1},
+        {"triangle", hw::BTN_TRIANGLE}, {"circle", hw::BTN_CIRCLE}, {"cross", hw::BTN_CROSS}, {"square", hw::BTN_SQUARE},
+    };
+    char button[16] = {};
+    unsigned long long frame = 0, duration = 6;
+    if (sscanf(arg, "%llu:%15[a-z0-9]:%llu", &frame, button, &duration) < 2) return false;
+    for (auto &n : names)
+        if (!strcmp(n.name, button)) {
+            config.presses.push_back({frame, duration, n.bit});
+            return true;
+        }
+    return false;
+}
+
 static void usage(const char *argv0) {
     fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--headless] [--screenshots DIR] [--screenshot-every N] [--wav FILE]\n"
+            "       [--press FRAME:BUTTON[:DURATION]]...\n"
             "       [--trace-io] [--trace-calls] [--trace-cd] [--max-cycles N]\n", argv0);
 }
 
@@ -24,6 +45,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--trace-cd")) config.trace_cd = true;
         else if (!strcmp(argv[i], "--headless")) config.headless = true;
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) config.wav = argv[++i];
+        else if (!strcmp(argv[i], "--press") && i + 1 < argc) { if (!parse_press(argv[++i])) { usage(argv[0]); return 2; } }
         else if (!strcmp(argv[i], "--screenshots") && i + 1 < argc) config.screenshots = argv[++i];
         else if (!strcmp(argv[i], "--screenshot-every") && i + 1 < argc) config.screenshot_every = strtoull(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--max-cycles") && i + 1 < argc) config.max_cycles = strtoll(argv[++i], nullptr, 0);
