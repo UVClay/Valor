@@ -20,3 +20,7 @@ The image is built automatically on first use.
 Supported image: Medal of Honor (USA), SLUS-00974, SHA1 `cf503f1dab8d6f9ae25d11b324b7c251651f5fff`.
 
 See `docs/RECON.md` for reverse-engineering notes.
+
+## License
+
+GPL-2.0-or-later. See `LICENSE`.
