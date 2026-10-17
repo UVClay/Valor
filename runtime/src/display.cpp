@@ -8,10 +8,14 @@
 #include <vector>
 
 #include "audio.h"
+#include "gl.h"
 #include "gpu.h"
+#include "gpu_gl.h"
 #include "hw.h"
 #include "input.h"
 #include "pad.h"
+
+using namespace psx::gl;
 
 namespace psx::hw {
 
@@ -20,8 +24,9 @@ namespace {
 constexpr double FRAME_SECONDS = double(CYCLES_PER_FRAME) / double(CPU_HZ);
 
 SDL_Window *window;
-SDL_Renderer *renderer;
-SDL_Texture *texture;
+SDL_GLContext gl_context;
+bool use_gl_renderer;
+GLuint native_tex, native_fbo;  // the software frame, for --scale 1 and 24-bit (FMV) display
 bool headless = true;
 bool fast_forward;
 uint64_t next_frame_ns;
@@ -164,6 +169,39 @@ void pump_events() {
     }
 }
 
+// Draw the PS1's displayed image into the window, 4:3 letterboxed.
+void present_frame() {
+    static const int widths[] = {256, 320, 512, 640};
+    int w = (gpu.display_mode & 0x40) ? 368 : widths[gpu.display_mode & 3];
+    int y1 = (gpu.vrange & 0x3FF), y2 = (gpu.vrange >> 10) & 0x3FF;
+    int h = std::clamp(y2 - y1, 1, 240);
+    bool rgb24 = gpu.display_mode & 0x10;
+
+    int ww, wh;
+    SDL_GetWindowSizeInPixels(window, &ww, &wh);
+    float unit = std::min(ww / 4.0f, wh / 3.0f);
+    int dw = int(4 * unit), dh = int(3 * unit);
+    int dx = (ww - dw) / 2, dy = (wh - dh) / 2;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, ww, wh);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    if (gpu.display_disabled) return;
+    if (use_gl_renderer && !rgb24) {
+        gl_renderer_present(dx, dy, dw, dh, gpu.display_x, gpu.display_y, w, h);
+        return;
+    }
+    capture_display();
+    glBindTexture(GL_TEXTURE_2D, native_tex);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame_w, frame_h, GL_BGRA, GL_UNSIGNED_BYTE, frame.data());
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, native_fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    glBlitFramebuffer(0, 0, frame_w, frame_h, dx, dy + dh, dx + dw, dy, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+}
+
 }  // namespace
 
 void display_init(bool want_window) {
@@ -172,16 +210,39 @@ void display_init(bool want_window) {
         log("display: SDL init failed (%s), running headless", SDL_GetError());
         return;
     }
-    if (!SDL_CreateWindowAndRenderer("Valor", 960, 720, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
-        log("display: no window (%s), running headless", SDL_GetError());
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    window = SDL_CreateWindow("Valor", 960, 720,
+                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY |
+                                  (config.hidden ? SDL_WINDOW_HIDDEN : 0));
+    if (!window || !(gl_context = SDL_GL_CreateContext(window))) {
+        log("display: no OpenGL 3.3 window (%s), running headless", SDL_GetError());
         return;
     }
-    SDL_SetRenderVSync(renderer, 0);
-    texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, 640, 480);
-    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+    if (!gl::load()) fatal("display: OpenGL functions missing");
+    SDL_GL_SetSwapInterval(0);  // we pace frames ourselves
+
+    glGenTextures(1, &native_tex);
+    glBindTexture(GL_TEXTURE_2D, native_tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 640, 480, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glGenFramebuffers(1, &native_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, native_fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, native_tex, 0);
+
+    int scale = config.scale;
+    if (scale == 0) {
+        // Fit the display: enough resolution that the 240-line image is never upscaled.
+        const SDL_DisplayMode *dm = SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());
+        scale = dm ? std::clamp((dm->h + 239) / 240, 2, 8) : 4;
+    }
+    if (scale > 1) use_gl_renderer = gl_renderer_init(scale);
     headless = false;
     next_frame_ns = SDL_GetTicksNS();
-    log("display: %s renderer", SDL_GetRendererName(renderer));
+    log("display: OpenGL %s, %s", reinterpret_cast<const char *>(glGetString(GL_VERSION)),
+        use_gl_renderer ? "hardware renderer" : "software renderer");
 }
 
 void gpu_present() {
@@ -190,23 +251,19 @@ void gpu_present() {
         char name[32];
         snprintf(name, sizeof name, "frame%06llu.png", (unsigned long long)gpu.frames);
         std::filesystem::create_directories(config.screenshots);
-        write_png(config.screenshots / name, frame, frame_w, frame_h);
+        if (use_gl_renderer && !(gpu.display_mode & 0x10)) {
+            int s = gl_renderer_scale();
+            write_png(config.screenshots / name, gl_renderer_read(gpu.display_x, gpu.display_y, frame_w, frame_h),
+                      frame_w * s, frame_h * s);
+        } else {
+            write_png(config.screenshots / name, frame, frame_w, frame_h);
+        }
     }
     if (headless) return;
 
-    capture_display();
     pump_events();
-    SDL_Rect src = {0, 0, frame_w, frame_h};
-    SDL_UpdateTexture(texture, &src, frame.data(), frame_w * 4);
-    int ww, wh;
-    SDL_GetRenderOutputSize(renderer, &ww, &wh);
-    float scale = std::min(ww / 4.0f, wh / 3.0f);
-    SDL_FRect dst = {(ww - 4 * scale) / 2, (wh - 3 * scale) / 2, 4 * scale, 3 * scale};
-    SDL_FRect fsrc = {0, 0, float(frame_w), float(frame_h)};
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-    SDL_RenderClear(renderer);
-    SDL_RenderTexture(renderer, texture, &fsrc, &dst);
-    SDL_RenderPresent(renderer);
+    present_frame();
+    SDL_GL_SwapWindow(window);
 
     // Pace to the console's refresh rate. With audio, nudge the period (at most 0.5%) to keep
     // the output queue near its target, so the host audio clock never under- or overruns.

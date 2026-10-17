@@ -10,6 +10,7 @@ endif()
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 find_package(SDL3 REQUIRED CONFIG)
+find_package(OpenGL REQUIRED)
 
 set(GAME moh CACHE STRING "Game config under games/")
 set(GEN_DIR ${CMAKE_BINARY_DIR}/gen)
@@ -56,4 +57,4 @@ file(GLOB runtime_src CONFIGURE_DEPENDS runtime/src/*.cpp)
 add_executable(valor ${runtime_src})
 target_include_directories(valor PRIVATE runtime/include)
 target_compile_options(valor PRIVATE -Wall -Wextra)
-target_link_libraries(valor PRIVATE game_recomp bios_recomp beetle_spu SDL3::SDL3)
+target_link_libraries(valor PRIVATE game_recomp bios_recomp beetle_spu SDL3::SDL3 OpenGL::GL)

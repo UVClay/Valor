@@ -29,6 +29,9 @@ struct Config {
     bool trace_audio = false;  // log the audio queue once a second
     int64_t max_cycles = 0;  // stop after this many cycles (0 = run forever)
     bool headless = false;   // no window
+    bool hidden = false;     // render with a hidden window (screenshots of the OpenGL renderer)
+    int scale = 0;           // OpenGL renderer resolution scale (0 = fit the window, 1 = software)
+    bool dither = true;      // PS1 dithering and 15-bit color
     std::filesystem::path screenshots;  // save a PNG of the display every `screenshot_every` frames
     uint64_t screenshot_every = 60;
     std::filesystem::path wav;  // also record audio output here

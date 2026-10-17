@@ -59,7 +59,10 @@ void upload_halfword(uint16_t v) {
     int x = t.x + t.i % t.w, y = t.y + t.i / t.w;
     uint16_t &px = vram_at(x, y);
     if (!(gpu.mask_check && (px & 0x8000))) px = v | (gpu.mask_set ? 0x8000 : 0);
-    if (++t.i >= t.n) uploading = false;
+    if (++t.i >= t.n) {
+        uploading = false;
+        hwgl::upload(t.x, t.y, t.w, t.h);
+    }
 }
 
 void execute(const std::vector<uint32_t> &w) {
@@ -71,6 +74,7 @@ void execute(const std::vector<uint32_t> &w) {
         uint16_t px = uint16_t(((c >> 3) & 31) | (((c >> 11) & 31) << 5) | (((c >> 19) & 31) << 10));
         for (int y = 0; y < hh; y++)
             for (int x = 0; x < ww; x++) vram_at(x0 + x, y0 + y) = px;
+        hwgl::fill(x0, y0, ww, hh, c);
     } else if (op >= 0x20 && op < 0x80) {
         gpu_draw(w);
     } else if (op >= 0x80 && op < 0xA0) {  // VRAM -> VRAM copy
@@ -84,6 +88,7 @@ void execute(const std::vector<uint32_t> &w) {
                 uint16_t &px = vram_at(dx + x, dy + y);
                 if (!(gpu.mask_check && (px & 0x8000))) px = tmp[size_t(y) * ww + x] | (gpu.mask_set ? 0x8000 : 0);
             }
+        hwgl::copy(sx, sy, dx, dy, ww, hh);
     } else if (op >= 0xA0 && op < 0xC0) {
         begin_rect_transfer(upload, w[1], w[2]);
         uploading = true;

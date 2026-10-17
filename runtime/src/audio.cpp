@@ -45,7 +45,7 @@ void audio_init() {
         if (!wav) fatal("cannot write %s", config.wav.c_str());
         fseek(wav, 44, SEEK_SET);
     }
-    if (config.headless) return;
+    if (config.headless || config.hidden) return;  // test runs: no sound
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
         log("audio: unavailable (%s)", SDL_GetError());
         return;

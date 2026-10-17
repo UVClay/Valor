@@ -23,6 +23,34 @@ struct GpuState {
 
 extern GpuState gpu;
 
+// A decoded primitive vertex: position (drawing offset applied), color, texture coordinate.
+struct Vertex {
+    int x, y;
+    int r, g, b;
+    int u, v;
+};
+
+// Per-primitive drawing state.
+struct DrawState {
+    bool textured, raw, semi, shaded, dither;
+    int semi_mode;
+    int tex_depth;  // 0 = 4-bit, 1 = 8-bit, 2 = 15-bit
+    int tex_x, tex_y, clut_x, clut_y;
+};
+
+// GPU-accelerated renderer (gpu_gl.cpp). It replays what the software rasterizer draws into a
+// higher-resolution framebuffer for display; the software rasterizer keeps PS1 VRAM exact.
+namespace hwgl {
+bool active();
+void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex &c);
+void line(const DrawState &s, const Vertex &a, const Vertex &b);
+void rect(const DrawState &s, const Vertex &base, int w, int h);  // base.u/v = top-left texel
+void fill(int x, int y, int w, int h, uint32_t color);
+void copy(int sx, int sy, int dx, int dy, int w, int h);
+void upload(int x, int y, int w, int h);        // CPU wrote this VRAM rectangle
+void vram_changed(int x, int y, int w, int h);  // the software rasterizer drew here
+}  // namespace hwgl
+
 // Rasterizer (renderer.cpp): draw one polygon/line/rectangle command.
 void gpu_draw(const std::vector<uint32_t> &cmd);
 // Display (display.cpp): show the current frame.

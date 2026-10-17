@@ -15,19 +15,6 @@ namespace {
 
 const int8_t DITHER[4][4] = {{-4, 0, -3, 1}, {2, -2, 3, -1}, {-3, 1, -4, 0}, {3, -1, 2, -2}};
 
-struct Vertex {
-    int x, y;
-    int r, g, b;
-    int u, v;
-};
-
-struct DrawState {
-    bool textured, raw, semi, shaded, dither;
-    int semi_mode;
-    int tex_depth;  // 0 = 4-bit, 1 = 8-bit, 2 = 15-bit
-    int tex_x, tex_y, clut_x, clut_y;
-};
-
 int sext11(uint32_t v) { return int32_t(v << 21) >> 21; }
 
 Vertex vertex_xy(uint32_t w) {
@@ -148,10 +135,13 @@ void triangle(const DrawState &s, Vertex a, Vertex b, Vertex c) {
     grad(a.u, b.u, c.u, dudx, dudy);
     grad(a.v, b.v, c.v, dvdx, dvdy);
 
+    if (hwgl::active()) hwgl::triangle(s, a, b, c);
+
     minx = std::max(minx, gpu.area_x1);
     maxx = std::min(maxx, gpu.area_x2);
     miny = std::max(miny, gpu.area_y1);
     maxy = std::min(maxy, gpu.area_y2);
+    if (minx <= maxx && miny <= maxy) hwgl::vram_changed(minx, miny, maxx - minx + 1, maxy - miny + 1);
 
     // Edge functions. Pixels exactly on an edge belong to only one of two triangles sharing
     // it, so quads don't double-blend.
@@ -187,6 +177,8 @@ void line(const DrawState &s, const Vertex &a, const Vertex &b) {
     if (std::abs(dx) >= 1024 || std::abs(dy) >= 512) return;
     int steps = std::max(std::abs(dx), std::abs(dy));
     bool dither = s.dither && s.shaded;
+    if (hwgl::active()) hwgl::line(s, a, b);
+    hwgl::vram_changed(std::min(a.x, b.x), std::min(a.y, b.y), std::abs(dx) + 1, std::abs(dy) + 1);
     for (int i = 0; i <= steps; i++) {
         int x = steps ? a.x + (dx * i + (dx >= 0 ? steps / 2 : -steps / 2)) / steps : a.x;
         int y = steps ? a.y + (dy * i + (dy >= 0 ? steps / 2 : -steps / 2)) / steps : a.y;
@@ -286,6 +278,12 @@ void draw_rect(const std::vector<uint32_t> &w) {
     }
     int r = base.r, g = base.g, b = base.b;
     if (s.textured && s.raw) r = g = b = 0x80;
+    if (hwgl::active()) {
+        Vertex v = base;
+        v.r = r; v.g = g; v.b = b; v.u = u0; v.v = v0;
+        hwgl::rect(s, v, ww, hh);
+    }
+    hwgl::vram_changed(base.x, base.y, ww, hh);
     for (int y = 0; y < hh; y++)
         for (int x = 0; x < ww; x++) {
             int px = base.x + x, py = base.y + y;

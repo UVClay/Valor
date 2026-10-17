@@ -33,7 +33,7 @@ static bool parse_press(const char *arg) {
 }
 
 static void usage(const char *argv0) {
-    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--memcard FILE.mcd] [--volume PERCENT] [--headless] [--screenshots DIR] [--screenshot-every N] [--wav FILE]\n"
+    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--memcard FILE.mcd] [--volume PERCENT] [--headless] [--screenshots DIR] [--screenshot-every N] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--poke-on-call CALLHEX:ADDRHEX=VALUE]...\n"
             "       [--trace-io] [--trace-calls] [--trace-cd] [--trace-audio] [--max-cycles N]\n", argv0);
@@ -48,6 +48,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--trace-cd")) config.trace_cd = true;
         else if (!strcmp(argv[i], "--trace-audio")) config.trace_audio = true;
         else if (!strcmp(argv[i], "--headless")) config.headless = true;
+        else if (!strcmp(argv[i], "--hidden")) config.hidden = true;
+        else if (!strcmp(argv[i], "--scale") && i + 1 < argc) config.scale = std::clamp(atoi(argv[++i]), 0, 16);
+        else if (!strcmp(argv[i], "--no-dither")) config.dither = false;
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) config.wav = argv[++i];
         else if (!strcmp(argv[i], "--memcard") && i + 1 < argc) config.memcard = argv[++i];
         else if (!strcmp(argv[i], "--volume") && i + 1 < argc) config.volume = std::clamp(atoi(argv[++i]), 0, 200);
