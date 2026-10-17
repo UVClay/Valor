@@ -56,6 +56,8 @@ struct Config {
     // reaches both axes' limits on diagonals). MoH shapes each axis separately with a steep
     // curve, so on a round-gated stick angling it off-axis loses most of the speed.
     bool square_sticks = true;
+    bool crosshair = false;  // draw a + at the center of the 3D view
+    int crosshair_size = 4;  // arm length in original (240-line) pixels
     std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> presses;  // scripted input (--press FRAME:BUTTON[:DURATION])

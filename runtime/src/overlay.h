@@ -18,6 +18,7 @@ void overlay_event(const SDL_Event &e);
 void overlay_cycle();          // F3: off -> basic -> extended
 void overlay_frame_begin();    // emulation of a new frame starts (after pacing)
 void overlay_note_flip();      // the game changed the displayed buffer
+void overlay_set_view(int x, int y, int w, int h, bool world);  // where the game image is shown
 void overlay_render();         // draw into the window's framebuffer before swapping
 bool menu_is_open();
 void menu_toggle();            // F1: settings menu (the game pauses while it's open)

@@ -18,7 +18,9 @@ and full playthroughs of two missions.
 - [x] **Strafing**: the movement code adds forward and strafe as vectors. The loss of speed came from
       the game's per-axis stick curve meeting round-gated modern sticks. Round input is now mapped
       to the DualShock's square range (Controls → "Square stick range", see RECON.md).
-- [ ] High frame rate (interpolated rendering on top of the original simulation tick)
+- [ ] High frame rate: the game logic is a fixed 30 Hz tick (see RECON.md, Frame timing), so
+      render interpolated frames on top of it
+- [x] Crosshair (Interface tab; size slider)
 - [ ] Mouse and keyboard controls
 - [ ] Saves decoupled from memory cards
 - [ ] Optional sub-pixel vertex precision (PGXP-style) to remove the vertex wobble at high resolution

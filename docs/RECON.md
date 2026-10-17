@@ -98,6 +98,16 @@ Measured:
 - The "strafing kills forward movement" feel comes from the per-axis curve. On a round stick gate, holding the stick fully deflected 30° off forward gives (0.5, 0.87). That is 7.5 units per frame instead of 17.4.
 - A DualShock reports a square range, so its diagonals reach both axes' limits. The runtime reproduces that by mapping round gamepad input onto the square range (`square_sticks`, default on). At 30° the speed is then 17.9.
 
+## Frame timing (LEVEL.BIN)
+
+The simulation is a fixed 30 Hz tick:
+- `0x80090B90` presents a frame. It waits for at least 2 vblanks since the last present, the vblank count from `VSync(-1)` being stored at `0x80097FCC`.
+- It stores the number of extra 30 Hz ticks that elapsed (frames dropped) at `0x8009A5D0`.
+- The main loop (around `0x800617E0`) caps that at 3, copies it to `0x8009A5D4`, and runs `0x8004DE3C` once per missed tick to catch up.
+- Logic advances in whole 30 Hz steps, so movement is about 35 units per tick at full speed. The emulated hardware itself runs at 60 Hz.
+
+A higher frame rate therefore means rendering interpolated frames between ticks, not running the game logic faster.
+
 ## Asset formats (unexplored)
 
 `.RSC` resource archives, `.BSD`/`.TSP` level data, `.TAF` (unknown), `.VB` SPU sample banks,
@@ -105,5 +115,4 @@ Measured:
 
 ## Open questions
 
-- Simulation tick model (fixed vs. variable frame delta).
 - How overlay index for the next iteration is chosen.

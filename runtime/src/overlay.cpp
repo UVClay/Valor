@@ -43,6 +43,9 @@ OverlayCounters window_sum, per_game_frame;
 uint64_t last_cycles;
 double instructions_per_frame;
 
+// The rectangle the game image was last shown in, and whether it was a 3D view.
+struct { int x, y, w, h; bool world; } view;
+
 }  // namespace
 
 void overlay_init(SDL_Window *window, void *gl_context) {
@@ -128,6 +131,9 @@ void draw_menu() {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Interface")) {
+            ImGui::Checkbox("Crosshair", &config.crosshair);
+            if (config.crosshair) ImGui::SliderInt("Crosshair size", &config.crosshair_size, 1, 20);
+            ImGui::Separator();
             ImGui::TextUnformatted("Debug overlay (F3)");
             ImGui::RadioButton("Off", &config.overlay, 0);
             ImGui::SameLine();
@@ -147,6 +153,24 @@ void draw_menu() {
 }  // namespace
 
 void draw_stats();
+
+void overlay_set_view(int x, int y, int w, int h, bool world) { view = {x, y, w, h, world}; }
+
+namespace {
+
+// A plain white + at the center of the 3D view, scaled with the image.
+void draw_crosshair() {
+    if (!view.world || view.h <= 0) return;
+    float px = float(view.h) / 240.0f;
+    float cx = float(view.x) + float(view.w) * 0.5f, cy = float(view.y) + float(view.h) * 0.5f;
+    float arm = float(config.crosshair_size) * px, thick = std::max(1.0f, std::round(px));
+    ImDrawList *dl = ImGui::GetBackgroundDrawList();
+    ImU32 white = IM_COL32(255, 255, 255, 255);
+    dl->AddRectFilled(ImVec2(cx - arm, cy - thick * 0.5f), ImVec2(cx + arm, cy + thick * 0.5f), white);
+    dl->AddRectFilled(ImVec2(cx - thick * 0.5f, cy - arm), ImVec2(cx + thick * 0.5f, cy + arm), white);
+}
+
+}  // namespace
 
 void overlay_frame_begin() { frame_start_ns = SDL_GetTicksNS(); }
 
@@ -180,12 +204,13 @@ void overlay_render() {
     instructions_per_frame = double(cpu->cycles - last_cycles);
     last_cycles = cpu->cycles;
 
-    if (!initialized || (config.overlay == 0 && !menu_open)) return;
+    if (!initialized || (config.overlay == 0 && !menu_open && !config.crosshair)) return;
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     // Keep the UI readable at high resolutions: scale with the window height.
     ImGui::GetStyle().FontScaleMain = std::max(1.0f, ImGui::GetIO().DisplaySize.y / 720.0f);
     ImGui::NewFrame();
+    if (config.crosshair) draw_crosshair();
     if (config.overlay > 0) draw_stats();
     if (menu_open) draw_menu();
     ImGui::Render();

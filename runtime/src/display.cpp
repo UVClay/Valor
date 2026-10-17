@@ -223,6 +223,7 @@ void present_frame() {
     int dw = ww, dh = int(ww / aspect);
     if (dh > wh) { dh = wh; dw = int(wh * aspect); }
     int dx = (ww - dw) / 2, dy = (wh - dh) / 2;
+    overlay_set_view(dx, dy, dw, dh, !rgb24 && frames_without_3d <= 30 && !gpu.display_disabled);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, ww, wh);
