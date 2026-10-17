@@ -31,7 +31,7 @@ void respond(uint8_t tx) {
     }
     reply = 0xFF;
     reply_acks = false;
-    if (device == Device::Pad && port == 0 && pad_connected(port)) reply = pad_exchange(step, tx, reply_acks);
+    if (device == Device::Pad && pad_connected(port)) reply = pad_exchange(port, step, tx, reply_acks);
     if (device == Device::Card && port == 0 && memcard_present()) reply = memcard_exchange(step, tx, reply_acks);
     if (device == Device::Card && getenv("VALOR_TRACE_SIO"))
         log("sio: card port %d step %d tx %02X -> %02X%s", port, step, tx, reply, reply_acks ? " ack" : "");

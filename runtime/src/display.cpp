@@ -2,6 +2,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <iterator>
 #include <cstdio>
 #include <fstream>
 #include <vector>
@@ -222,6 +223,39 @@ void gpu_present() {
     else if (next_frame_ns > now_ns) SDL_DelayPrecise(next_frame_ns - now_ns);
 }
 
+// Monkey testing: deterministic random input from a seed. A new "intent" (buttons and stick
+// positions) is picked every 10-90 frames, biased toward moving and shooting.
+struct MonkeyInput {
+    uint16_t pressed = 0;
+    PadSticks sticks = {0x80, 0x80, 0x80, 0x80};
+};
+
+static MonkeyInput monkey_state() {
+    static MonkeyInput cur;
+    static uint64_t next_change, rng;
+    if (!config.monkey_seed || gpu.frames < config.monkey_from) return {};
+    if (!rng) rng = config.monkey_seed * 0x9E3779B97F4A7C15ull;
+    auto rnd = [&]() {
+        rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
+        return rng;
+    };
+    if (gpu.frames >= next_change) {
+        next_change = gpu.frames + 10 + rnd() % 80;
+        cur = {};
+        static const uint16_t weighted[] = {BTN_CROSS, BTN_CROSS, BTN_SQUARE, BTN_CIRCLE, BTN_TRIANGLE,
+                                            BTN_L1, BTN_R1, BTN_L2, BTN_R2, BTN_UP, BTN_UP, BTN_DOWN,
+                                            BTN_LEFT, BTN_RIGHT, BTN_START, BTN_SELECT};
+        int n = int(rnd() % 3);
+        for (int i = 0; i < n; i++) cur.pressed |= weighted[rnd() % std::size(weighted)];
+        if (rnd() % 40 != 0) cur.pressed &= ~(BTN_START | BTN_SELECT);  // pause only now and then
+        cur.sticks.ly = uint8_t(rnd() % 3 == 0 ? 0x80 : rnd() % 256);
+        cur.sticks.lx = uint8_t(rnd() % 2 ? 0x80 : rnd() % 256);
+        cur.sticks.rx = uint8_t(rnd() % 2 ? 0x80 : rnd() % 256);
+        cur.sticks.ry = uint8_t(rnd() % 4 ? 0x80 : rnd() % 256);
+    }
+    return cur;
+}
+
 bool pad_connected(int port) { return port == 0; }
 
 uint16_t pad_buttons(int port) {
@@ -229,6 +263,7 @@ uint16_t pad_buttons(int port) {
     uint16_t pressed = keyboard_buttons;
     for (const auto &p : config.presses)
         if (gpu.frames >= p.frame && gpu.frames < p.frame + p.duration) pressed |= p.buttons;
+    pressed |= monkey_state().pressed;
     if (gamepad) {
         static const struct { SDL_GamepadButton b; uint16_t bit; } map[] = {
             {SDL_GAMEPAD_BUTTON_SOUTH, BTN_CROSS},        {SDL_GAMEPAD_BUTTON_EAST, BTN_CIRCLE},
@@ -249,6 +284,7 @@ uint16_t pad_buttons(int port) {
 
 PadSticks pad_sticks(int port) {
     PadSticks s = {0x80, 0x80, 0x80, 0x80};
+    if (port == 0 && config.monkey_seed && gpu.frames >= config.monkey_from) return monkey_state().sticks;
     if (port != 0 || !gamepad) return s;
     auto axis = [](SDL_Gamepad *g, SDL_GamepadAxis a) {
         return uint8_t((SDL_GetGamepadAxis(g, a) + 32768) >> 8);

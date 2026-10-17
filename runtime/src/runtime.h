@@ -36,6 +36,7 @@ struct Config {
     std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> presses;  // scripted input (--press FRAME:BUTTON[:DURATION])
+    uint64_t monkey_seed = 0, monkey_from = 0;  // random input from this frame on (--monkey SEED:FRAME)
 };
 extern Config config;
 

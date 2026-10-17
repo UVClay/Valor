@@ -34,7 +34,7 @@ static bool parse_press(const char *arg) {
 
 static void usage(const char *argv0) {
     fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--memcard FILE.mcd] [--volume PERCENT] [--headless] [--screenshots DIR] [--screenshot-every N] [--wav FILE]\n"
-            "       [--press FRAME:BUTTON[:DURATION]]...\n"
+            "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--trace-io] [--trace-calls] [--trace-cd] [--trace-audio] [--max-cycles N]\n", argv0);
 }
 
@@ -50,7 +50,12 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) config.wav = argv[++i];
         else if (!strcmp(argv[i], "--memcard") && i + 1 < argc) config.memcard = argv[++i];
         else if (!strcmp(argv[i], "--volume") && i + 1 < argc) config.volume = std::clamp(atoi(argv[++i]), 0, 200);
-        else if (!strcmp(argv[i], "--press") && i + 1 < argc) { if (!parse_press(argv[++i])) { usage(argv[0]); return 2; } }
+        else if (!strcmp(argv[i], "--monkey") && i + 1 < argc) {
+            unsigned long long seed, from;
+            if (sscanf(argv[++i], "%llu:%llu", &seed, &from) != 2) { usage(argv[0]); return 2; }
+            config.monkey_seed = seed;
+            config.monkey_from = from;
+        } else if (!strcmp(argv[i], "--press") && i + 1 < argc) { if (!parse_press(argv[++i])) { usage(argv[0]); return 2; } }
         else if (!strcmp(argv[i], "--screenshots") && i + 1 < argc) config.screenshots = argv[++i];
         else if (!strcmp(argv[i], "--screenshot-every") && i + 1 < argc) config.screenshot_every = strtoull(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--max-cycles") && i + 1 < argc) config.max_cycles = strtoll(argv[++i], nullptr, 0);
