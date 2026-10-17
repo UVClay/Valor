@@ -242,6 +242,7 @@ void flush() {
     glUniform4i(u_texwin, int(tw & 0x1F) * 8, int((tw >> 5) & 0x1F) * 8, int((tw >> 10) & 0x1F) * 8,
                 int((tw >> 15) & 0x1F) * 8);
     glUniform1i(u_mask_set, st.mask_set);
+    glUniform1i(u_quantize, config.dither ? 1 : 0);
     if (st.scissor) {
         glEnable(GL_SCISSOR_TEST);
         glScissor(st.area_x1 * S, st.area_y1 * S, (st.area_x2 - st.area_x1 + 1) * S, (st.area_y2 - st.area_y1 + 1) * S);
@@ -419,10 +420,51 @@ void vram_changed(int x, int y, int w, int h) {
 
 }  // namespace hwgl
 
-bool gl_renderer_init(int scale) {
-    S = std::clamp(scale, 1, 16);
+static void make_targets() {
     make_target(target_tex, target_fbo);
     make_target(temp_tex, temp_fbo);
+}
+
+static void free_targets() {
+    GLuint tex[2] = {target_tex, temp_tex}, fbo[2] = {target_fbo, temp_fbo};
+    glDeleteTextures(2, tex);
+    glDeleteFramebuffers(2, fbo);
+}
+
+// Repaint the whole high-resolution target from native VRAM (after creating or resizing it).
+static void repaint_from_vram() {
+    for (auto &row : dirty) std::fill(std::begin(row), std::end(row), true);
+    any_dirty = true;
+    hwgl::upload(0, 0, 1024, 512);
+}
+
+void gl_renderer_set_scale(int scale) {
+    scale = std::clamp(scale, 1, 16);
+    if (!program) {  // never initialized
+        if (scale > 1) gl_renderer_init(scale);
+        return;
+    }
+    flush();
+    if (scale == 1) {
+        enabled = false;
+        log("gl: software renderer");
+        return;
+    }
+    if (scale != S || !enabled) {
+        free_targets();
+        S = scale;
+        make_targets();
+        glUseProgram(program);
+        glUniform1i(u_scale, S);
+        enabled = true;
+        repaint_from_vram();
+        log("gl: renderer at %dx (%dx%d framebuffer)", S, 1024 * S, 512 * S);
+    }
+}
+
+bool gl_renderer_init(int scale) {
+    S = std::clamp(scale, 1, 16);
+    make_targets();
 
     glGenTextures(1, &vram_tex);
     glBindTexture(GL_TEXTURE_2D, vram_tex);
@@ -475,7 +517,7 @@ bool gl_renderer_init(int scale) {
     return true;
 }
 
-int gl_renderer_scale() { return S; }
+int gl_renderer_scale() { return enabled ? S : 1; }
 
 std::vector<uint32_t> gl_renderer_read(int x, int y, int w, int h) {
     flush();
@@ -494,7 +536,7 @@ void gl_renderer_present(int dst_x, int dst_y, int dst_w, int dst_h, int src_x, 
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
     // The target stores VRAM row y at y; the window's origin is bottom-left, so flip.
     glBlitFramebuffer(src_x * S, src_y * S, (src_x + src_w) * S, (src_y + src_h) * S, dst_x, dst_y + dst_h, dst_x + dst_w,
-                      dst_y, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+                      dst_y, GL_COLOR_BUFFER_BIT, config.smooth_scaling ? GL_LINEAR : GL_NEAREST);
 }
 
 }  // namespace psx::hw

@@ -7,6 +7,8 @@ namespace psx::hw {
 
 // Needs a current OpenGL 3.3 context.
 bool gl_renderer_init(int scale);
+// Change the scale at run time (1 switches to the software renderer's output).
+void gl_renderer_set_scale(int scale);
 int gl_renderer_scale();
 // Read back a VRAM rectangle (native coordinates) at full resolution, ARGB, top row first.
 std::vector<uint32_t> gl_renderer_read(int x, int y, int w, int h);

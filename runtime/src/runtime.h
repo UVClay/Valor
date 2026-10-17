@@ -30,8 +30,11 @@ struct Config {
     int64_t max_cycles = 0;  // stop after this many cycles (0 = run forever)
     bool headless = false;   // no window
     bool hidden = false;     // render with a hidden window (screenshots of the OpenGL renderer)
+    bool test_run = false;   // headless or hidden: don't touch the player's memory card or settings
     int scale = 0;           // OpenGL renderer resolution scale (0 = fit the window, 1 = software)
     bool dither = true;      // PS1 dithering and 15-bit color
+    bool smooth_scaling = true;  // filter the image when scaling it to the window
+    bool fullscreen = false;
     double aspect = 4.0 / 3.0;  // output aspect (0 = match the window)
     double fov = 0;             // world horizontal FOV in degrees (0 = original vertical FOV, Hor+)
     // MoH: the world is projected with GTE H = 400 on a 512x240 screen (vertical half-FOV
@@ -42,6 +45,7 @@ struct Config {
     uint64_t screenshot_every = 60;
     bool screenshot_window = false;  // capture the window (with overlay) instead of the PS1 image
     int overlay = 0;                 // initial debug overlay level
+    uint64_t menu_screenshot = 0;    // testing: capture the settings menu on this frame
     std::filesystem::path wav;  // also record audio output here
     int volume = 100;           // output volume, percent
     std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)

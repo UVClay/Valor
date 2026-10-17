@@ -9,6 +9,7 @@
 #include "hw.h"
 #include "input.h"
 #include "memcard.h"
+#include "settings.h"
 #include "runtime.h"
 
 using namespace psx;
@@ -41,6 +42,8 @@ static void usage(const char *argv0) {
 }
 
 int main(int argc, char **argv) {
+    settings_load();  // command-line flags below override saved settings
+    bool memcard_given = false;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--bios") && i + 1 < argc) config.bios = argv[++i];
         else if (!strcmp(argv[i], "--disc") && i + 1 < argc) config.disc = argv[++i];
@@ -51,19 +54,15 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--headless")) config.headless = true;
         else if (!strcmp(argv[i], "--hidden")) config.hidden = true;
         else if (!strcmp(argv[i], "--screenshot-window")) config.screenshot_window = true;
+        else if (!strcmp(argv[i], "--menu-screenshot") && i + 1 < argc) config.menu_screenshot = strtoull(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--overlay") && i + 1 < argc) config.overlay = std::clamp(atoi(argv[++i]), 0, 2);
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) config.scale = std::clamp(atoi(argv[++i]), 0, 16);
         else if (!strcmp(argv[i], "--no-dither")) config.dither = false;
         else if (!strcmp(argv[i], "--fov") && i + 1 < argc) config.fov = std::clamp(atof(argv[++i]), 0.0, 150.0);
         else if (!strcmp(argv[i], "--aspect") && i + 1 < argc) {
-            const char *a = argv[++i];
-            double w, h;
-            if (!strcmp(a, "window")) config.aspect = 0;
-            else if (sscanf(a, "%lf:%lf", &w, &h) == 2 && w > 0 && h > 0) config.aspect = w / h;
-            else { usage(argv[0]); return 2; }
-        }
-        else if (!strcmp(argv[i], "--wav") && i + 1 < argc) config.wav = argv[++i];
-        else if (!strcmp(argv[i], "--memcard") && i + 1 < argc) config.memcard = argv[++i];
+            if (!parse_aspect(argv[++i], config.aspect)) { usage(argv[0]); return 2; }
+        }        else if (!strcmp(argv[i], "--wav") && i + 1 < argc) config.wav = argv[++i];
+        else if (!strcmp(argv[i], "--memcard") && i + 1 < argc) { config.memcard = argv[++i]; memcard_given = true; }
         else if (!strcmp(argv[i], "--volume") && i + 1 < argc) config.volume = std::clamp(atoi(argv[++i]), 0, 200);
         else if (!strcmp(argv[i], "--monkey") && i + 1 < argc) {
             unsigned long long seed, from;
@@ -81,6 +80,9 @@ int main(int argc, char **argv) {
         else { usage(argv[0]); return 2; }
     }
     if (config.bios.empty()) { usage(argv[0]); return 2; }
+    // Test runs (headless/hidden) never touch the player's memory card or settings.
+    config.test_run = config.headless || config.hidden;
+    if (config.test_run && !memcard_given) config.memcard = "build/test-memcard.mcd";
 
     static Cpu cpu;
     cpu.tail_link = 1;

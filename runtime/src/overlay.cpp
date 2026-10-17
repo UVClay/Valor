@@ -14,6 +14,8 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
 #include "overlay.h"
+#include "runtime.h"
+#include "settings.h"
 
 namespace psx::hw {
 
@@ -22,7 +24,7 @@ OverlayCounters overlay_counters;
 namespace {
 
 bool initialized;
-int level;  // 0 off, 1 basic, 2 extended
+bool menu_open;
 
 constexpr int HISTORY = 240;
 float frame_ms[HISTORY];  // host time between presents
@@ -48,11 +50,11 @@ void overlay_init(SDL_Window *window, void *gl_context) {
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
     io.IniFilename = nullptr;  // don't write imgui.ini
-    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange | ImGuiConfigFlags_NavEnableKeyboard |
+                      ImGuiConfigFlags_NavEnableGamepad;
     ImGui::StyleColorsDark();
     ImGui_ImplSDL3_InitForOpenGL(window, gl_context);
     ImGui_ImplOpenGL3_Init("#version 330 core");
-    level = config.overlay;
     initialized = true;
 }
 
@@ -61,10 +63,84 @@ void overlay_event(const SDL_Event &e) {
 }
 
 void overlay_cycle() {
-    level = (level + 1) % 3;
+    config.overlay = (config.overlay + 1) % 3;
     static const char *names[] = {"off", "basic", "extended"};
-    log("overlay: %s", names[level]);
+    log("overlay: %s", names[config.overlay]);
+    settings_save();
 }
+
+bool menu_is_open() { return menu_open; }
+
+void menu_toggle() {
+    menu_open = !menu_open;
+    if (!menu_open) settings_save();
+}
+
+namespace {
+
+// The settings window. Changes apply immediately.
+void draw_menu() {
+    ImGuiIO &io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing,
+                            ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowBgAlpha(0.92f);
+    bool open = true;
+    ImGui::Begin("Settings", &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
+    if (ImGui::BeginTabBar("tabs")) {
+        if (ImGui::BeginTabItem("Video")) {
+            static const char *scales[] = {"Fit display", "1x (original, software)", "2x", "3x", "4x", "5x", "6x", "7x", "8x"};
+            int scale = std::clamp(config.scale, 0, 8);
+            if (ImGui::Combo("Resolution", &scale, scales, IM_ARRAYSIZE(scales))) {
+                config.scale = scale;
+                display_apply_settings();
+            }
+            static const struct { const char *name; double aspect; } aspects[] = {
+                {"4:3 (original)", 4.0 / 3.0}, {"16:9", 16.0 / 9.0}, {"16:10", 16.0 / 10.0},
+                {"21:9", 21.0 / 9.0},           {"32:9", 32.0 / 9.0}, {"Match window", 0}};
+            int current = 0;
+            for (int i = 0; i < IM_ARRAYSIZE(aspects); i++)
+                if (std::abs(aspects[i].aspect - config.aspect) < 1e-6) current = i;
+            if (ImGui::BeginCombo("Aspect ratio", aspects[current].name)) {
+                for (int i = 0; i < IM_ARRAYSIZE(aspects); i++)
+                    if (ImGui::Selectable(aspects[i].name, i == current)) config.aspect = aspects[i].aspect;
+                ImGui::EndCombo();
+            }
+            bool original_fov = config.fov == 0;
+            if (ImGui::Checkbox("Original field of view", &original_fov)) config.fov = original_fov ? 0 : 75;
+            if (!original_fov) {
+                float fov = float(config.fov);
+                if (ImGui::SliderFloat("Horizontal FOV", &fov, 40.0f, 130.0f, "%.0f deg")) config.fov = fov;
+            }
+            ImGui::Checkbox("PS1 dithering and 15-bit color", &config.dither);
+            ImGui::Checkbox("Smooth scaling", &config.smooth_scaling);
+            if (ImGui::Checkbox("Fullscreen (F11)", &config.fullscreen)) display_apply_settings();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Audio")) {
+            int volume = config.volume;
+            if (ImGui::SliderInt("Volume", &volume, 0, 200, "%d%%")) audio_adjust_volume(volume - config.volume);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Interface")) {
+            ImGui::TextUnformatted("Debug overlay (F3)");
+            ImGui::RadioButton("Off", &config.overlay, 0);
+            ImGui::SameLine();
+            ImGui::RadioButton("FPS", &config.overlay, 1);
+            ImGui::SameLine();
+            ImGui::RadioButton("Extended", &config.overlay, 2);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+    ImGui::Separator();
+    ImGui::TextDisabled("F1 or Esc closes. Saved to saves/settings.ini");
+    ImGui::End();
+    if (!open) menu_toggle();
+}
+
+}  // namespace
+
+void draw_stats();
 
 void overlay_frame_begin() { frame_start_ns = SDL_GetTicksNS(); }
 
@@ -98,17 +174,26 @@ void overlay_render() {
     instructions_per_frame = double(cpu->cycles - last_cycles);
     last_cycles = cpu->cycles;
 
-    if (!initialized || level == 0) return;
+    if (!initialized || (config.overlay == 0 && !menu_open)) return;
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
+    // Keep the UI readable at high resolutions: scale with the window height.
+    ImGui::GetStyle().FontScaleMain = std::max(1.0f, ImGui::GetIO().DisplaySize.y / 720.0f);
     ImGui::NewFrame();
+    if (config.overlay > 0) draw_stats();
+    if (menu_open) draw_menu();
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void draw_stats() {
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
     ImGui::SetNextWindowBgAlpha(0.6f);
     ImGui::Begin("stats", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
                      ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing);
     ImGui::Text("%.1f FPS", game_fps);
-    if (level >= 2) {
+    if (config.overlay >= 2) {
         // Frame pacing over the history window.
         std::vector<float> ft(frame_ms, frame_ms + HISTORY);
         std::vector<float> sorted = ft;
@@ -140,8 +225,6 @@ void overlay_render() {
                     per_game_frame.draw_calls, per_game_frame.vram_uploads);
     }
     ImGui::End();
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 }  // namespace psx::hw

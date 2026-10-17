@@ -15,6 +15,7 @@
 #include "input.h"
 #include "overlay.h"
 #include "pad.h"
+#include "settings.h"
 
 using namespace psx::gl;
 
@@ -138,6 +139,15 @@ void handle_key(SDL_Keycode key, bool down) {
     case SDLK_TAB: fast_forward = down; return;
     case SDLK_F7: if (down) pad_toggle_analog(); return;
     case SDLK_F3: if (down) overlay_cycle(); return;
+    case SDLK_F1: if (down) menu_toggle(); return;
+    case SDLK_ESCAPE: if (down && menu_is_open()) menu_toggle(); return;
+    case SDLK_F11:
+        if (down) {
+            config.fullscreen = !config.fullscreen;
+            display_apply_settings();
+            settings_save();
+        }
+        return;
     case SDLK_MINUS: if (down) audio_adjust_volume(-10); return;
     case SDLK_EQUALS: if (down) audio_adjust_volume(10); return;
     default: return;
@@ -181,8 +191,10 @@ double output_aspect() {
         SDL_GetWindowSizeInPixels(window, &ww, &wh);
         a = wh > 0 ? double(ww) / wh : 4.0 / 3.0;
     }
-    if (a != applied) {
+    static double applied_fov = -1;
+    if (a != applied || config.fov != applied_fov) {
         applied = a;
+        applied_fov = config.fov;
         gte_set_projection(a, config.fov, config.world_h, config.world_base_tan);
     }
     return a;
@@ -230,6 +242,19 @@ void present_frame() {
 
 }  // namespace
 
+void display_apply_settings() {
+    if (headless) return;
+    int scale = config.scale;
+    if (scale == 0) {
+        // Fit the display: enough resolution that the 240-line image is never upscaled.
+        const SDL_DisplayMode *dm = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+        scale = dm ? std::clamp((dm->h + 239) / 240, 2, 8) : 4;
+    }
+    gl_renderer_set_scale(scale);
+    use_gl_renderer = gl_renderer_scale() > 1;
+    SDL_SetWindowFullscreen(window, config.fullscreen);
+}
+
 void display_init(bool want_window) {
     if (!want_window) return;
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
@@ -258,15 +283,9 @@ void display_init(bool want_window) {
     glBindFramebuffer(GL_FRAMEBUFFER, native_fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, native_tex, 0);
 
-    int scale = config.scale;
-    if (scale == 0) {
-        // Fit the display: enough resolution that the 240-line image is never upscaled.
-        const SDL_DisplayMode *dm = SDL_GetCurrentDisplayMode(SDL_GetPrimaryDisplay());
-        scale = dm ? std::clamp((dm->h + 239) / 240, 2, 8) : 4;
-    }
-    if (scale > 1) use_gl_renderer = gl_renderer_init(scale);
-    overlay_init(window, gl_context);
     headless = false;
+    display_apply_settings();
+    overlay_init(window, gl_context);
     next_frame_ns = SDL_GetTicksNS();
     log("display: OpenGL %s, %s", reinterpret_cast<const char *>(glGetString(GL_VERSION)),
         use_gl_renderer ? "hardware renderer" : "software renderer");
@@ -306,6 +325,38 @@ void gpu_present() {
         write_png(config.screenshots / name, flipped, ww, wh);
     }
     SDL_GL_SwapWindow(window);
+
+    if (config.menu_screenshot && gpu.frames == config.menu_screenshot) {
+        // Testing: draw the menu once over this frame and save the window.
+        menu_toggle();
+        present_frame();
+        overlay_render();
+        overlay_render();  // ImGui lays windows out on the first frame they appear
+        int ww, wh;
+        SDL_GetWindowSizeInPixels(window, &ww, &wh);
+        std::vector<uint32_t> px(size_t(ww) * wh), flipped(px.size());
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glReadPixels(0, 0, ww, wh, GL_BGRA, GL_UNSIGNED_BYTE, px.data());
+        for (int y = 0; y < wh; y++)
+            for (int x = 0; x < ww; x++) flipped[size_t(y) * ww + x] = px[size_t(wh - 1 - y) * ww + x] | 0xFF000000u;
+        std::filesystem::create_directories(config.screenshots.empty() ? "." : config.screenshots);
+        write_png((config.screenshots.empty() ? std::filesystem::path(".") : config.screenshots) / "menu.png", flipped, ww, wh);
+        menu_toggle();
+    }
+
+    // The game pauses while the settings menu is open.
+    if (menu_is_open()) {
+        audio_pause(true);
+        while (menu_is_open()) {
+            pump_events();
+            present_frame();
+            overlay_render();
+            SDL_GL_SwapWindow(window);
+            SDL_Delay(16);
+        }
+        audio_pause(false);
+        next_frame_ns = SDL_GetTicksNS();
+    }
 
     // Pace to the console's refresh rate. With audio, nudge the period (at most 0.5%) to keep
     // the output queue near its target, so the host audio clock never under- or overruns.

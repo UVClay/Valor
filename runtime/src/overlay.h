@@ -19,5 +19,10 @@ void overlay_cycle();          // F3: off -> basic -> extended
 void overlay_frame_begin();    // emulation of a new frame starts (after pacing)
 void overlay_note_flip();      // the game changed the displayed buffer
 void overlay_render();         // draw into the window's framebuffer before swapping
+bool menu_is_open();
+void menu_toggle();            // F1: settings menu (the game pauses while it's open)
+
+// display.cpp: apply changed resolution / fullscreen settings.
+void display_apply_settings();
 
 }  // namespace psx::hw

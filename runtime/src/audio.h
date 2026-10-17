@@ -13,5 +13,6 @@ double audio_queued();
 void audio_adjust_volume(int delta);
 // While fast-forwarding, output is discarded instead of piling up.
 void audio_set_fast_forward(bool on);
+void audio_pause(bool paused);
 
 }  // namespace psx::hw

@@ -95,6 +95,12 @@ double audio_queued() {
 
 void audio_set_fast_forward(bool on) { fast_forward = on; }
 
+void audio_pause(bool paused) {
+    if (!stream) return;
+    if (paused) SDL_PauseAudioStreamDevice(stream);
+    else SDL_ResumeAudioStreamDevice(stream);
+}
+
 void audio_adjust_volume(int delta) {
     config.volume = std::clamp(config.volume + delta, 0, 200);
     if (stream) SDL_SetAudioStreamGain(stream, config.volume / 100.0f);

@@ -4,6 +4,7 @@
 
 #define VALOR_GL_FUNCS(X)                                                                         \
     X(PFNGLGENFRAMEBUFFERSPROC, glGenFramebuffers)                                               \
+    X(PFNGLDELETEFRAMEBUFFERSPROC, glDeleteFramebuffers)                                         \
     X(PFNGLBINDFRAMEBUFFERPROC, glBindFramebuffer)                                               \
     X(PFNGLFRAMEBUFFERTEXTURE2DPROC, glFramebufferTexture2D)                                     \
     X(PFNGLCHECKFRAMEBUFFERSTATUSPROC, glCheckFramebufferStatus)                                 \
