@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Run a command inside the project container, e.g. `./dev python3 tools/extract.py`.
+# With no arguments, opens a shell. The image is built on first use or when
+# Containerfile/requirements.txt change.
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+image="moh-recomp-dev"
+stamp="$(cat "$root/Containerfile" "$root/requirements.txt" | sha256sum | cut -c1-12)"
+
+if ! podman image exists "$image:$stamp"; then
+    podman build -t "$image:$stamp" -t "$image:latest" -f "$root/Containerfile" "$root"
+fi
+
+tty_flags=()
+[ -t 0 ] && tty_flags=(-it)
+
+exec podman run --rm "${tty_flags[@]}" \
+    --userns=keep-id \
+    --security-opt label=disable \
+    -v "$root:/work" \
+    -w /work \
+    "$image:$stamp" "${@:-bash}"

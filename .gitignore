@@ -1,0 +1,13 @@
+# Game data: never commit anything from the disc
+disc/
+extracted/
+*.bin
+*.cue
+*.iso
+*.chd
+
+# Build output
+build/
+gen/
+__pycache__/
+*.pyc
