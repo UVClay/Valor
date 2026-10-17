@@ -187,23 +187,37 @@ class FunctionWriter:
         name = self.resolve_call(target)
         return f"{name}(c);" if name else f"psx_call(c, 0x{target:08X}u);"
 
-    def check_hazard(self, i: Insn):
-        """Refuse to generate code that would depend on R3000 load-delay behavior."""
-        if i.op not in DELAYED_RESULT or not i.rt or (i.op in ("mfc0", "mfc2", "cfc2") and i.rt == 0):
-            return
+    def hazard(self, i: Insn):
+        """The instruction after `i` reads the register `i` loads (R3000 load delay slot).
+
+        Returns that next instruction, or None.
+        """
+        if i.op not in DELAYED_RESULT or not i.rt:
+            return None
         nxt = i.addr + 4
         if nxt not in self.fn.addrs:
-            return
+            return None
         j = self.img.insn(nxt)
         if i.op in ("lwl", "lwr") and j.op in ("lwl", "lwr"):
-            return  # unaligned pairs forward the pending value
-        if i.rt in j.reads():
-            raise CodegenError(f"{i.addr:08X}: load-delay hazard ({i.op} then {j.op}) in {self.fn.start:08X}")
+            return None  # unaligned pairs forward the pending value
+        return j if i.rt in j.reads() else None
+
+    def delayed_load(self, i: Insn, j: Insn) -> str:
+        """`i` then `j`, where `j` still sees the old value of i's destination."""
+        if j.has_delay_slot or j.addr in self.fn.labels:
+            raise CodegenError(f"{i.addr:08X}: unsupported load-delay hazard ({i.op} then {j.op}) "
+                               f"in {self.fn.start:08X}")
+        load = simple(i)  # "c->r[N] = <expr>;"
+        expr = load.split(" = ", 1)[1].rstrip(";")
+        code = f"{{ uint32_t ld_ = {expr}; {simple(j)}"
+        if j.writes() != i.rt:  # a write by the delay-slot instruction wins over the load
+            code += f" c->r[{i.rt}] = ld_;"
+        return code + " }"
 
     def emit(self):
         fn = self.fn
         self.out.append(f"void {fn_name(self.module, fn.start)}(Cpu *c) {{")
-        self.line("CHECK_EVENTS(c);")
+        self.line(f"CHECK_EVENTS(c, 0x{fn.start:08X}u);")
         labels = set(fn.labels)
         skip = set()
         for a in sorted(fn.addrs):
@@ -213,14 +227,20 @@ class FunctionWriter:
                 self.tick()
                 self.out.append(f"L_{a:08X}:;")
             i = self.img.insn(a)
-            self.check_hazard(i)
             if not i.has_delay_slot:
-                self.pending += 1
-                self.line(simple(i))
-                falls, end = i.op != "break", a + 4
+                if j := self.hazard(i):
+                    self.pending += 2
+                    self.line(f"/* load delay slot */ {self.delayed_load(i, j)}")
+                    skip.add(j.addr)
+                    falls, end = True, a + 8
+                else:
+                    self.pending += 1
+                    self.line(simple(i))
+                    falls, end = i.op != "break", a + 4
             else:
                 d = self.img.insn(a + 4)
-                self.check_hazard(d)
+                if self.hazard(d):
+                    raise CodegenError(f"{d.addr:08X}: load-delay hazard in a delay slot in {fn.start:08X}")
                 self.emit_control(i, simple(d))
                 falls, end = not is_terminator(i), a + 8
                 if a + 4 in labels:
@@ -256,7 +276,7 @@ class FunctionWriter:
             else:
                 back = i.target <= a
                 if back:
-                    self.line("if (cond_) { CHECK_EVENTS(c); goto L_%08X; }" % i.target, 2)
+                    self.line("if (cond_) { CHECK_EVENTS(c, 0x%08Xu); goto L_%08X; }" % (i.target, i.target), 2)
                 else:
                     self.line(f"if (cond_) goto L_{i.target:08X};", 2)
             self.line("}")
@@ -267,7 +287,7 @@ class FunctionWriter:
             if a in fn.tail_calls:
                 self.line(f"{self.call(fn.tail_calls[a])} return;")
             elif i.target <= a:
-                self.line(f"CHECK_EVENTS(c); goto L_{i.target:08X};")
+                self.line(f"CHECK_EVENTS(c, 0x{i.target:08X}u); goto L_{i.target:08X};")
             else:
                 self.line(f"goto L_{i.target:08X};")
             return
@@ -297,7 +317,9 @@ class FunctionWriter:
             self.line(f"uint32_t t_ = {R(i.rs)};", 2)
             self.tick(2, indent=2)
             self.line(delay, 2)
-            if a in fn.bios_jumps:
+            if self.img.insn(a + 4).op == "rfe":
+                self.line("psx_exception_return(c, t_);", 2)  # does not return
+            elif a in fn.bios_jumps:
                 self.line(f"psx_bios_call(c, 0x{fn.bios_jumps[a]:X}u); return;", 2)
             elif a in fn.jump_tables:
                 self.line("switch (t_) {", 2)
@@ -312,22 +334,33 @@ class FunctionWriter:
         raise CodegenError(f"{a:08X}: unexpected control op {op}")
 
 
-def generate_module(module: str, funcs: dict, resolve_call, symbols: dict, header_names):
-    """Returns {filename: text} for one module (exe or overlay)."""
+def generate_module(module: str, funcs: dict, resolve_call, symbols: dict, header_names, overrides=None):
+    """Returns {filename: text} for one module (exe or overlay).
+
+    overrides maps symbol names to native runtime functions that replace the recompiled body.
+    """
+    overrides = overrides or {}
     files = {}
     starts = sorted(funcs)
     for chunk in range(0, len(starts), FUNCS_PER_FILE):
         body = [f'#include "{h}"' for h in header_names] + [""]
         for s in starts[chunk:chunk + FUNCS_PER_FILE]:
-            if s in symbols:
-                body.append(f"/* {symbols[s]} */")
-            body.append(FunctionWriter(module, funcs[s], resolve_call).emit())
+            name = symbols.get(s)
+            if name:
+                body.append(f"/* {name} */")
+            if name in overrides:
+                native = overrides[name]
+                body.append(f"void {native}(Cpu *c);")
+                body.append(f"void {fn_name(module, s)}(Cpu *c) {{ {native}(c); }}")
+            else:
+                body.append(FunctionWriter(module, funcs[s], resolve_call).emit())
             body.append("")
         files[f"{module}_{chunk // FUNCS_PER_FILE:03d}.c"] = "\n".join(body)
 
     table = [f'#include "{h}"' for h in header_names] + ["",
              f"static const RecompEntry {module}_entries[] = {{"]
-    table += [f"    {{0x{s:08X}u, {fn_name(module, s)}}}," for s in starts]
+    # Tables hold physical addresses so KUSEG/KSEG0/KSEG1 aliases all resolve.
+    table += [f"    {{0x{s & 0x1FFFFFFF:08X}u, {fn_name(module, s)}}}," for s in sorted(starts, key=lambda a: a & 0x1FFFFFFF)]
     table += ["};", f"const RecompModule {module}_module = {{\"{module}\", {module}_entries, {len(starts)}u}};", ""]
     files[f"{module}_table.c"] = "\n".join(table)
     return files

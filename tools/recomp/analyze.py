@@ -229,10 +229,11 @@ def looks_like_function_start(image: Image, addr: int) -> bool:
     return addr - 4 < image.base or not image.insn(addr - 4).has_delay_slot
 
 
-def discover(images: dict, seeds: dict, max_rounds=20):
+def discover(images: dict, seeds: dict, resident: list, max_rounds=20):
     """Discover functions in all images.
 
-    images: name -> Image (the first one is the exe; overlays can call into it).
+    images: name -> Image. resident: modules every module can call into directly
+    (the exe, BIOS ROM/RAM); other modules (overlays) only see themselves + resident ones.
     seeds: name -> set of start addresses.
     Seeds found speculatively (pointers in data) are dropped silently if they don't
     explore cleanly; failures of real seeds are reported.
@@ -242,7 +243,6 @@ def discover(images: dict, seeds: dict, max_rounds=20):
     starts = {name: set(seeds.get(name, ())) for name in images}
     speculative = {name: set() for name in images}
     rejected = {name: set() for name in images}
-    exe_name = next(iter(images))
     errors = []
     for _ in range(max_rounds):
         errors = []
@@ -264,7 +264,7 @@ def discover(images: dict, seeds: dict, max_rounds=20):
         for name, fs in funcs.items():
             for fn in fs.values():
                 for t in fn.calls | set(fn.tail_calls.values()):
-                    for target_img in (name, exe_name):
+                    for target_img in (name, *resident):
                         if images[target_img].contains(t):
                             new[target_img].add(t)
                             break
@@ -272,7 +272,7 @@ def discover(images: dict, seeds: dict, max_rounds=20):
                     if looks_like_function_start(images[name], p):
                         new_spec[name].add(p)
         for name, image in images.items():
-            for target_img, ptr in _data_pointers(images, funcs, name, exe_name):
+            for target_img, ptr in _data_pointers(images, funcs, name, resident):
                 new_spec[target_img].add(ptr)
             for gs, ge in find_gaps(image, funcs[name]):
                 first = next((a for a in range(gs, ge, 4) if image.word(a) != 0), None)
@@ -305,11 +305,11 @@ def discover(images: dict, seeds: dict, max_rounds=20):
     return funcs, errors
 
 
-def _data_pointers(images, funcs, name, exe_name):
+def _data_pointers(images, funcs, name, resident):
     """Words outside code in image `name` that point at plausible unclaimed function starts."""
     claimed = {n: set().union(*(f.addrs for f in fs.values())) if fs else set() for n, fs in funcs.items()}
     ends = {n: {f.end for f in fs.values()} for n, fs in funcs.items()}
-    targets = (name,) if name == exe_name else (name, exe_name)
+    targets = (name, *(r for r in resident if r != name))
     for addr, w in images[name].words():
         if addr in claimed[name] or w & 3:
             continue

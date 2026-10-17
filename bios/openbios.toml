@@ -1,0 +1,23 @@
+# Recompilation config for OpenBIOS (third_party/nugget), built by tools/build_openbios.sh.
+# Paths are relative to the repo root.
+
+project = "bios"
+elf = "build/openbios/openbios.elf"
+entry = 0xBFC00000
+
+# Kernel code running from ROM. .rodata is included so jump tables can be read.
+[[module]]
+name = "bios_rom"
+sections = [".text", ".text_memcpy", ".rodata"]
+
+# Kernel code and data copied to low RAM at boot.
+[[module]]
+name = "bios_ram"
+sections = [".data"]
+
+# Functions replaced by native runtime code (symbol name -> runtime function).
+[overrides]
+# Hops to its own KSEG1 alias and isolates the cache; there's no cache to flush.
+flushCache = "native_flush_cache"
+# Restores registers then `jr $ra` into a context that isn't on the host stack.
+psxlongjmp = "native_longjmp"

@@ -1,6 +1,7 @@
 # Recompilation config for Medal of Honor (USA), SLUS-00974.
 # Paths are relative to the repo root.
 
+project = "game"
 extracted = "extracted/moh"
 overlay_base = 0x80039D90
 
