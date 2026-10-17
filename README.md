@@ -37,6 +37,7 @@ Any SDL-supported controller works (DualShock/DualSense map 1:1). Keyboard fallb
 | L1 / R1 / L2 / R2 | Q / E / 1 / 3 |
 | Start / Select | Enter / Backspace |
 | Fast-forward (hold) | Tab |
+| Volume down / up | - / = (or `./play --volume 60`) |
 
 ## How it works
 

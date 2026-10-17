@@ -56,6 +56,7 @@ void audio_init() {
         log("audio: no output device (%s)", SDL_GetError());
         return;
     }
+    SDL_SetAudioStreamGain(stream, config.volume / 100.0f);
     SDL_ResumeAudioStreamDevice(stream);
     log("audio: %s", SDL_GetCurrentAudioDriver());
 }
@@ -93,5 +94,11 @@ double audio_queued() {
 }
 
 void audio_set_fast_forward(bool on) { fast_forward = on; }
+
+void audio_adjust_volume(int delta) {
+    config.volume = std::clamp(config.volume + delta, 0, 200);
+    if (stream) SDL_SetAudioStreamGain(stream, config.volume / 100.0f);
+    log("audio: volume %d%%", config.volume);
+}
 
 }  // namespace psx::hw

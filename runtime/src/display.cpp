@@ -128,6 +128,8 @@ void handle_key(SDL_Keycode key, bool down) {
     case SDLK_RETURN: bit = BTN_START; break;
     case SDLK_BACKSPACE: bit = BTN_SELECT; break;
     case SDLK_TAB: fast_forward = down; return;
+    case SDLK_MINUS: if (down) audio_adjust_volume(-10); return;
+    case SDLK_EQUALS: if (down) audio_adjust_volume(10); return;
     default: return;
     }
     keyboard_buttons = down ? (keyboard_buttons | bit) : (keyboard_buttons & ~bit);
