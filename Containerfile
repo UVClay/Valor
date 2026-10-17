@@ -6,7 +6,7 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         gcc gcc-c++ clang lld \
         cmake ninja-build make \
         git python3 python3-pip \
-        binutils-mips64-linux-gnu \
+        binutils-mips64-linux-gnu gcc-mips64-linux-gnu \
         SDL3-devel \
         gdb \
     && dnf clean all

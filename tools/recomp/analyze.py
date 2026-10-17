@@ -82,8 +82,13 @@ def explore(image: Image, start: int, known: set) -> Function:
     fn = Function(image, start)
     fn.labels.add(start)
     queue = [start]
+    delay_slots = set()
     while queue:
         a = queue.pop()
+        if a in delay_slots and a + 4 not in fn.addrs:
+            # Jumped straight into a delay slot: it runs as a normal instruction, then falls through.
+            queue.append(a + 4)
+            continue
         while a not in fn.addrs:
             if a != start and a in known and a not in fn.labels:
                 fn.tail_calls[a] = a  # fell through into the next function
@@ -104,6 +109,7 @@ def explore(image: Image, start: int, known: set) -> Function:
             if d.op == "invalid" or d.has_delay_slot:
                 raise AnalysisError(f"{start:08X}: bad delay slot at {a + 4:08X}")
             fn.addrs.add(a + 4)
+            delay_slots.add(a + 4)
             stop = False
             if i.is_branch:
                 fn.labels.add(i.target)

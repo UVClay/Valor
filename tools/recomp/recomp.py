@@ -4,6 +4,7 @@
 Usage:
   recomp.py <config.toml> analyze          print function discovery stats
   recomp.py <config.toml> gaps [image...]  list unclaimed regions between functions
+  recomp.py <config.toml> generate <outdir> write C sources for all modules
 """
 import re
 import struct
@@ -13,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from analyze import discover, find_gaps  # noqa: E402
+from codegen import CodegenError, fn_name, generate_header, generate_module  # noqa: E402
 from mips import Image  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -95,11 +97,68 @@ def cmd_gaps(game: Game, *names):
             print(f"  {s:08X}-{e:08X} {e - s:#7x}  prologues {prologues:4}  jr_ra {returns:4}  zero {zero:3}%")
 
 
+def write_if_changed(path: Path, text: str):
+    if not path.exists() or path.read_text() != text:
+        path.write_text(text)
+
+
+def generate_registry(game: Game, exe: str) -> str:
+    ovs = game.cfg.get("overlay", [])
+    lines = ['#include "psx/runtime_modules.h"', f'#include "{exe}.h"']
+    lines += [f'#include "{ov["name"]}.h"' for ov in ovs]
+    lines += ["", f"const RecompModule *const game_exe_module = &{exe}_module;",
+              f"const uint32_t game_exe_entry = 0x{game.entry:08X}u;",
+              "const GameOverlay game_overlays[] = {"]
+    for ov in ovs:
+        size = len(game.images[ov["name"]].data)
+        lines.append(f'    {{&{ov["name"]}_module, "{ov["file"]}", 0x{game.cfg["overlay_base"]:08X}u, '
+                     f'0x{size:X}u, {ov["id"]}u}},')
+    lines += ["};", f"const uint32_t game_overlay_count = {len(ovs)}u;", ""]
+    return "\n".join(lines)
+
+
+def cmd_generate(game: Game, outdir):
+    out = Path(outdir)
+    out.mkdir(parents=True, exist_ok=True)
+    funcs, errors = game.analyze()
+    if errors:
+        for e in errors:
+            print("error:", e, file=sys.stderr)
+        sys.exit(1)
+    exe = next(iter(funcs))
+    written = set()
+    for module, fs in funcs.items():
+        def resolve(target, module=module, fs=fs):
+            if target in fs:
+                return fn_name(module, target)
+            if target in funcs[exe]:
+                return fn_name(exe, target)
+            return None
+
+        headers = [f"{exe}.h"] if module == exe else [f"{exe}.h", f"{module}.h"]
+        write_if_changed(out / f"{module}.h", generate_header(module, fs))
+        written.add(f"{module}.h")
+        try:
+            files = generate_module(module, fs, resolve, game.symbols.get(module, {}), headers)
+        except CodegenError as e:
+            sys.exit(f"{module}: {e}")
+        for name, text in files.items():
+            write_if_changed(out / name, text)
+            written.add(name)
+    for stale in out.glob("*.[ch]"):
+        if stale.name not in written:
+            stale.unlink()
+    write_if_changed(out / "game_modules.c", generate_registry(game, exe))
+    written.add("game_modules.c")
+    (out / "sources.txt").write_text("\n".join(sorted(n for n in written if n.endswith(".c"))) + "\n")
+    print(f"generated {len(written)} files in {out}")
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__)
     game = Game(Path(sys.argv[1]))
-    {"analyze": cmd_analyze, "gaps": cmd_gaps}[sys.argv[2]](game, *sys.argv[3:])
+    {"analyze": cmd_analyze, "gaps": cmd_gaps, "generate": cmd_generate}[sys.argv[2]](game, *sys.argv[3:])
 
 
 if __name__ == "__main__":

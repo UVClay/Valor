@@ -12,8 +12,11 @@ code_end = 0x80039D90
 symbols = ["build/syms/SLUS_009.74.psyq.txt"]
 seeds = []
 
+# Overlays all load at overlay_base. `id` is the first word of each file; the runtime
+# reads it to know which overlay is currently resident.
 [[overlay]]
 name = "shell"
+id = 7
 file = "SHELL.BIN"
 entry = 0x8005FC28
 symbols = ["build/syms/SHELL.BIN.psyq.txt"]
@@ -21,6 +24,7 @@ seeds = []
 
 [[overlay]]
 name = "level"
+id = 5
 file = "LEVEL.BIN"
 entry = 0x80064374
 symbols = []
@@ -28,6 +32,7 @@ seeds = []
 
 [[overlay]]
 name = "level2p"
+id = 6
 file = "LEVEL2P.BIN"
 entry = 0x8005F280
 symbols = []
