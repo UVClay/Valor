@@ -52,6 +52,8 @@ void spu_init() {
     schedule(Event::Spu, UPDATE_PERIOD);
 }
 
+void spu_sync() { catch_up(); }
+
 void spu_event() {
     catch_up();
     schedule(Event::Spu, UPDATE_PERIOD);

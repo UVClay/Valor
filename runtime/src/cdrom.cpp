@@ -76,8 +76,13 @@ const int16_t XA_IMPULSE[7][25] = {
 };
 
 struct XaAudio {
+    // Decoded samples waiting to be played. New sectors append, so a sector arriving slightly
+    // early doesn't cut off the end of the previous one.
+    static constexpr unsigned RING = 16384;
+    int16_t ring[2][RING];
+    unsigned read = 0, write = 0;  // ring positions (free-running)
+    bool primed = false;           // after running dry, wait for a cushion before playing again
     int16_t samples[2][18 * 8 * 28];  // one sector, decoded
-    unsigned size = 0, pos = 0;
     unsigned freq = 0;                // 6 = 37.8 kHz, 3 = 18.9 kHz (in sevenths of 44.1 kHz)
     int16_t previous[2][2] = {};
     int16_t resamp[2][64] = {};
@@ -102,8 +107,7 @@ void decode_xa_sector(const uint8_t *raw) {
     uint8_t coding = raw[19];
     bool eight_bit = coding & 0x10, stereo = coding & 0x01;
     unsigned shift_units = eight_bit ? 0 : 1;
-    xa.pos = 0;
-    xa.size = 18 * (4u << shift_units) * 28 / (stereo ? 2 : 1);
+    unsigned size = 18 * (4u << shift_units) * 28 / (stereo ? 2 : 1);
     xa.freq = (coding & 0x04) ? 3 : 6;
     for (unsigned group = 0; group < 18; group++) {
         const uint8_t *sg = raw + 24 + group * 128;
@@ -135,6 +139,16 @@ void decode_xa_sector(const uint8_t *raw) {
             }
         }
     }
+    if (xa.write - xa.read + size > XaAudio::RING) xa.read = xa.write + size - XaAudio::RING;  // overrun
+    for (unsigned i = 0; i < size; i++, xa.write++) {
+        xa.ring[0][xa.write % XaAudio::RING] = xa.samples[0][i];
+        xa.ring[1][xa.write % XaAudio::RING] = xa.samples[1][i];
+    }
+}
+
+void clear_xa() {
+    xa.read = xa.write = 0;
+    xa.primed = false;
 }
 
 }  // namespace
@@ -144,7 +158,14 @@ void decode_xa_sector(const uint8_t *raw) {
 extern "C" void CDC_GetCDAudioSample(int32_t samples[2]) {
     using namespace psx::hw;
     samples[0] = samples[1] = 0;
-    if (!xa.freq || xa.pos >= xa.size) return;
+    if (!xa.freq) return;
+    if (!xa.primed && xa.write - xa.read >= 1008) xa.primed = true;  // half a sector of cushion
+    if (!xa.primed) return;
+    if (xa.read == xa.write) {
+        xa.primed = false;
+        if (psx::config.trace_audio) psx::log("xa: buffer ran dry");
+        return;
+    }
     int32_t s[2];
     for (int c = 0; c < 2; c++) {
         const int16_t *imp = XA_IMPULSE[xa.resamp_phase];
@@ -157,8 +178,8 @@ extern "C" void CDC_GetCDAudioSample(int32_t samples[2]) {
     if (xa.resamp_phase >= 7) {
         xa.resamp_phase -= 7;
         for (int c = 0; c < 2; c++)
-            xa.resamp[c][xa.resamp_pos] = xa.resamp[c][xa.resamp_pos + 32] = xa.samples[c][xa.pos];
-        xa.pos++;
+            xa.resamp[c][xa.resamp_pos] = xa.resamp[c][xa.resamp_pos + 32] = xa.ring[c][xa.read % XaAudio::RING];
+        xa.read++;
         xa.resamp_pos = (xa.resamp_pos + 1) & 0x1F;
     }
     if (muted || adpcm_muted) return;
@@ -188,6 +209,7 @@ uint8_t last_header[8];           // GetlocL
 std::deque<Response> queue;
 bool busy;
 int setloc_lba = 150, read_lba = 150;
+int64_t next_sector_at;
 bool reading, setloc_pending;
 uint8_t filter_file, filter_chan;
 
@@ -223,10 +245,12 @@ void start_reading() {
     }
     reading = true;
     stat = (stat & ~0xE0) | 0x02 | 0x20;
-    schedule(Event::CdSector, seek_time(from, read_lba) + read_period());
+    next_sector_at = now() + seek_time(from, read_lba) + read_period();
+    schedule_at(Event::CdSector, next_sector_at);
 }
 
 void stop_reading() {
+    clear_xa();
     reading = false;
     cancel(Event::CdSector);
     drop_queued_sectors();
@@ -393,14 +417,21 @@ void cdrom_event_sector() {
     }
     memcpy(last_header, raw + 12, 8);
     read_lba++;
-    schedule(Event::CdSector, read_period());
+    // Keep an exact cadence: events run a little after they're due, and scheduling from
+    // "now" would let that lateness accumulate (XA audio would then underrun).
+    next_sector_at += read_period();
+    if (next_sector_at < now()) next_sector_at = now();
+    schedule_at(Event::CdSector, next_sector_at);
 
     uint8_t submode = raw[18];
     bool realtime_audio = (submode & 0x44) == 0x44;  // real-time + audio: XA-ADPCM
     if ((mode & 0x40) && realtime_audio) {
         // XA-ADPCM goes to the SPU, not the CPU (subject to the file/channel filter).
         bool match = !(mode & 0x08) || (raw[16] == filter_file && raw[17] == filter_chan);
-        if (match) decode_xa_sector(raw);
+        if (match) {
+            spu_sync();  // the SPU plays what's queued up to now before the new sector lands
+            decode_xa_sector(raw);
+        }
         return;
     }
     if ((mode & 0x08) && realtime_audio) return;

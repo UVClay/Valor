@@ -64,6 +64,7 @@ void gpu_vblank();
 
 void spu_init();
 void spu_event();
+void spu_sync();  // bring the SPU up to the current time
 uint16_t spu_read(uint32_t phys);
 void spu_write(uint32_t phys, uint16_t v);
 void spu_dma_write(uint32_t addr, uint32_t words);

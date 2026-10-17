@@ -6,6 +6,7 @@
 #include <fstream>
 #include <vector>
 
+#include "audio.h"
 #include "gpu.h"
 #include "hw.h"
 #include "input.h"
@@ -202,8 +203,16 @@ void gpu_present() {
     SDL_RenderTexture(renderer, texture, &fsrc, &dst);
     SDL_RenderPresent(renderer);
 
-    // Pace to the console's refresh rate.
-    next_frame_ns += uint64_t(FRAME_SECONDS * 1e9);
+    // Pace to the console's refresh rate. With audio, nudge the period (at most 0.5%) to keep
+    // the output queue near its target, so the host audio clock never under- or overruns.
+    double period = FRAME_SECONDS;
+    double queued = audio_queued();
+    if (queued >= 0) {
+        constexpr double TARGET = 0.060;
+        period *= 1.0 + std::clamp(0.005 * (queued - TARGET) / TARGET, -0.005, 0.005);
+    }
+    audio_set_fast_forward(fast_forward);
+    next_frame_ns += uint64_t(period * 1e9);
     uint64_t now_ns = SDL_GetTicksNS();
     if (fast_forward || now_ns > next_frame_ns + 100000000) next_frame_ns = now_ns;  // don't try to catch up
     else if (next_frame_ns > now_ns) SDL_DelayPrecise(next_frame_ns - now_ns);

@@ -1,6 +1,7 @@
 // SDL3 audio output for the SPU's 44.1 kHz stereo stream.
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -31,8 +32,10 @@ void wav_header() {
     fwrite(h, 1, sizeof h, wav);
     fseek(wav, pos, SEEK_SET);
 }
-// Keep latency bounded: video pacing and the host audio clock drift slightly apart.
-constexpr int MAX_QUEUED_BYTES = 44100 * 4 / 8;  // 125 ms
+// Frame pacing follows the queue (see display.cpp), so this only trips after fast-forward
+// or a stall; dropping audio causes audible clicks.
+constexpr int MAX_QUEUED_BYTES = 44100 * 4 / 2;  // 500 ms
+bool fast_forward;
 
 }  // namespace
 
@@ -63,9 +66,32 @@ void audio_push(const int16_t *frames, uint32_t count) {
         wav_frames += count;
         wav_header();
     }
-    if (!stream || !count) return;
-    if (SDL_GetAudioStreamQueued(stream) > MAX_QUEUED_BYTES) return;  // drop rather than lag
+    if (!stream || !count || fast_forward) return;
+    if (SDL_GetAudioStreamQueued(stream) > MAX_QUEUED_BYTES) {
+        SDL_ClearAudioStream(stream);
+        if (config.trace_audio) log("audio: queue overflow, cleared");
+    }
     SDL_PutAudioStreamData(stream, frames, int(count * 4));
 }
+
+double audio_queued() {
+    if (!stream) return -1;
+    double q = SDL_GetAudioStreamQueued(stream) / (44100.0 * 4);
+    if (config.trace_audio) {
+        static double lo = 1e9, hi = 0;
+        static uint64_t last = SDL_GetTicks();
+        lo = std::min(lo, q);
+        hi = std::max(hi, q);
+        if (SDL_GetTicks() - last >= 1000) {
+            log("audio: queued %.1f..%.1f ms", lo * 1000, hi * 1000);
+            lo = 1e9;
+            hi = 0;
+            last = SDL_GetTicks();
+        }
+    }
+    return q;
+}
+
+void audio_set_fast_forward(bool on) { fast_forward = on; }
 
 }  // namespace psx::hw

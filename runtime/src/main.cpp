@@ -33,7 +33,7 @@ static bool parse_press(const char *arg) {
 static void usage(const char *argv0) {
     fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--headless] [--screenshots DIR] [--screenshot-every N] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]...\n"
-            "       [--trace-io] [--trace-calls] [--trace-cd] [--max-cycles N]\n", argv0);
+            "       [--trace-io] [--trace-calls] [--trace-cd] [--trace-audio] [--max-cycles N]\n", argv0);
 }
 
 int main(int argc, char **argv) {
@@ -43,6 +43,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--trace-io")) config.trace_io = true;
         else if (!strcmp(argv[i], "--trace-calls")) config.trace_calls = true;
         else if (!strcmp(argv[i], "--trace-cd")) config.trace_cd = true;
+        else if (!strcmp(argv[i], "--trace-audio")) config.trace_audio = true;
         else if (!strcmp(argv[i], "--headless")) config.headless = true;
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) config.wav = argv[++i];
         else if (!strcmp(argv[i], "--press") && i + 1 < argc) { if (!parse_press(argv[++i])) { usage(argv[0]); return 2; } }
