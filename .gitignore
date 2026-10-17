@@ -6,8 +6,12 @@ extracted/
 *.iso
 *.chd
 
-# Build output
+# Memory cards
+saves/
+
+# Build output (the container's $HOME is build/home)
 build/
+.cache/
 gen/
 __pycache__/
 *.pyc

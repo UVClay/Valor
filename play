@@ -33,4 +33,4 @@ tty_flags=()
 
 image="moh-recomp-dev:$(cat Containerfile requirements.txt | sha256sum | cut -c1-12)"
 exec podman run --rm "${tty_flags[@]}" --userns=keep-id --security-opt label=disable \
-    -v "$root:/work" -w /work "${gui[@]}" "$image" ./build/cmake/valor "${args[@]}" "$@"
+    -v "$root:/work" -w /work -e HOME=/work/build/home "${gui[@]}" "$image" ./build/cmake/valor "${args[@]}" "$@"

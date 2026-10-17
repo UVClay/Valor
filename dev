@@ -12,6 +12,8 @@ if ! podman image exists "$image:$stamp"; then
     podman build -t "$image:$stamp" -t "$image:latest" -f "$root/Containerfile" "$root"
 fi
 
+mkdir -p "$root/build/home"  # container $HOME: caches (e.g. Mesa shaders) stay out of the repo
+
 tty_flags=()
 [ -t 0 ] && tty_flags=(-it)
 
@@ -20,4 +22,5 @@ exec podman run --rm "${tty_flags[@]}" \
     --security-opt label=disable \
     -v "$root:/work" \
     -w /work \
+    -e HOME=/work/build/home \
     "$image:$stamp" "${@:-bash}"
