@@ -1,7 +1,11 @@
 // Software rasterizer reproducing the PS1 GPU: affine texturing, CLUT textures, dithering,
 // semi-transparency, mask bit, drawing area and texture window. Draws into gpu.vram.
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
+#include <string>
+
+#include "runtime.h"
 
 #include "gpu.h"
 
@@ -150,12 +154,14 @@ void triangle(const DrawState &s, Vertex a, Vertex b, Vertex c) {
     maxy = std::min(maxy, gpu.area_y2);
 
     // Edge functions. Pixels exactly on an edge belong to only one of two triangles sharing
-    // it (the rule is antisymmetric in the edge direction), so quads don't double-blend.
+    // it, so quads don't double-blend.
     auto edge = [](const Vertex &p, const Vertex &q, int x, int y) {
         return int64_t(q.x - p.x) * (y - p.y) - int64_t(q.y - p.y) * (x - p.x);
     };
+    // Like the GPU, draw left and top edges but not right and bottom ones. With positive area
+    // (y down), left edges run upward and top edges run rightward.
     auto top_left = [](const Vertex &p, const Vertex &q) {
-        return (p.y == q.y && q.x < p.x) || (q.y < p.y);
+        return (q.y < p.y) || (p.y == q.y && q.x > p.x);
     };
     int64_t bias0 = top_left(b, c) ? 0 : -1, bias1 = top_left(c, a) ? 0 : -1, bias2 = top_left(a, b) ? 0 : -1;
     bool dither = s.dither && (s.shaded || (s.textured && !s.raw));
@@ -290,8 +296,31 @@ void draw_rect(const std::vector<uint32_t> &w) {
 
 }  // namespace
 
+// Debugging: VALOR_TRACE_GPU="frame,x,y,w,h" logs commands drawn on that frame whose
+// vertices fall inside the rectangle (screen coordinates, before the drawing offset).
+static void trace_command(const std::vector<uint32_t> &cmd) {
+    static int frame = -1, rx, ry, rw, rh;
+    if (frame == -1) {
+        const char *e = getenv("VALOR_TRACE_GPU");
+        frame = -2;
+        if (e && sscanf(e, "%d,%d,%d,%d,%d", &frame, &rx, &ry, &rw, &rh) != 5) frame = -2;
+    }
+    if (frame < 0 || gpu.frames != uint64_t(frame)) return;
+    bool hit = false;
+    for (size_t i = 1; i < cmd.size(); i++) {
+        int x = sext11(cmd[i]), y = sext11(cmd[i] >> 16);  // screen-relative (before the offset)
+        if (x >= rx && x < rx + rw && y >= ry && y < ry + rh) hit = true;
+    }
+    if (!hit) return;
+    std::string words;
+    char b[12];
+    for (uint32_t w : cmd) { snprintf(b, sizeof b, " %08X", w); words += b; }
+    log("gpu: off(%d,%d) tp=%04X tw=%05X%s", gpu.offset_x, gpu.offset_y, gpu.texpage, gpu.tex_window, words.c_str());
+}
+
 void gpu_draw(const std::vector<uint32_t> &cmd) {
     gpu.primitives++;
+    trace_command(cmd);
     uint32_t op = cmd[0] >> 24;
     if (op < 0x40) draw_polygon(cmd);
     else if (op < 0x60) draw_line(cmd);
