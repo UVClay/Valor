@@ -112,7 +112,11 @@ def explore(image: Image, start: int, known: set) -> Function:
             fn.addrs.add(a + 4)
             delay_slots.add(a + 4)
             stop = False
-            if i.is_branch:
+            if i.op in ("bltzal", "bgezal"):
+                # Conditional call: the target is a function, execution continues after it.
+                fn.calls.add(i.target)
+                fn.call_sites[a] = i.target
+            elif i.is_branch:
                 fn.labels.add(i.target)
                 queue.append(i.target)
                 unconditional = (i.op == "beq" and i.rs == i.rt) or (i.op == "bgez" and i.rs == 0)
