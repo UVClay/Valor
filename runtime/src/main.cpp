@@ -10,7 +10,8 @@
 using namespace psx;
 
 static void usage(const char *argv0) {
-    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--trace-io] [--trace-calls] [--trace-cd] [--max-cycles N]\n", argv0);
+    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--headless] [--screenshots DIR] [--screenshot-every N]\n"
+            "       [--trace-io] [--trace-calls] [--trace-cd] [--max-cycles N]\n", argv0);
 }
 
 int main(int argc, char **argv) {
@@ -20,6 +21,9 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--trace-io")) config.trace_io = true;
         else if (!strcmp(argv[i], "--trace-calls")) config.trace_calls = true;
         else if (!strcmp(argv[i], "--trace-cd")) config.trace_cd = true;
+        else if (!strcmp(argv[i], "--headless")) config.headless = true;
+        else if (!strcmp(argv[i], "--screenshots") && i + 1 < argc) config.screenshots = argv[++i];
+        else if (!strcmp(argv[i], "--screenshot-every") && i + 1 < argc) config.screenshot_every = strtoull(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--max-cycles") && i + 1 < argc) config.max_cycles = strtoll(argv[++i], nullptr, 0);
         else { usage(argv[0]); return 2; }
     }
@@ -33,6 +37,7 @@ int main(int argc, char **argv) {
         hw::timers_init();
         hw::cdrom_init();
         hw::gpu_init();
+        hw::display_init(!config.headless);
         hw::spu_init();
         hw::sio_init();
         hw::mdec_init();

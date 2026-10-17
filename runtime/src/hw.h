@@ -54,6 +54,7 @@ void cdrom_event_sector();
 // DMA3: copy `words` words of the sector data FIFO into RAM.
 void cdrom_dma_read(uint32_t addr, uint32_t words);
 
+void display_init(bool want_window);
 void gpu_init();
 uint32_t gpu_read(uint32_t phys);
 void gpu_write(uint32_t phys, uint32_t v);

@@ -26,6 +26,9 @@ struct Config {
     bool trace_calls = false;  // log indirect calls and exceptions
     bool trace_cd = false;     // log CD-ROM commands, responses and sectors
     int64_t max_cycles = 0;  // stop after this many cycles (0 = run forever)
+    bool headless = false;   // no window
+    std::filesystem::path screenshots;  // save a PNG of the display every `screenshot_every` frames
+    uint64_t screenshot_every = 60;
 };
 extern Config config;
 
