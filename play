@@ -3,6 +3,7 @@
 # GPU and controllers passed through. Extra arguments go to the runtime.
 #   ./play                    uses disc/Medal of Honor (USA)/*.cue
 #   ./play --disc other.cue
+#   ./play --warp 3:2          New Game starts in mission 3, level 2 (testing)
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,6 +12,20 @@ cd "$root"
 disc=(disc/"Medal of Honor (USA)"/*.cue)
 args=(--bios build/openbios/openbios.bin)
 [[ " $* " == *" --disc "* ]] || args+=(--disc "${disc[0]}")
+
+# --warp MISSION:LEVEL: the next New Game loads that level instead (see tools/warp.sh).
+passthrough=()
+while [ $# -gt 0 ]; do
+    if [ "$1" = --warp ] && [ $# -ge 2 ]; then
+        m=${2%:*} l=${2#*:}
+        args+=(--poke-on-call "80064374:80038660=$((m - 1))" --poke-on-call "80064374:80038664=$((l - 1))")
+        shift 2
+    else
+        passthrough+=("$1")
+        shift
+    fi
+done
+set -- "${passthrough[@]+"${passthrough[@]}"}"
 
 ./dev bash -c 'cmake -S . -B build/cmake -G Ninja >/dev/null && cmake --build build/cmake | grep -vE "^\[" || true'
 

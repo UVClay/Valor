@@ -222,6 +222,12 @@ static void tty_putchar(uint8_t ch) {
 void psx_call(Cpu *c, uint32_t addr) {
     if (config.trace_calls) log("call %08X ra=%08X", addr, c->r[31]);
     if ((addr == 0xA0 && c->r[9] == 0x3C) || (addr == 0xB0 && c->r[9] == 0x3D)) tty_putchar(c->r[4] & 0xFF);
+    for (auto &p : config.pokes)
+        if (!p.done && p.call == addr) {
+            psx_w32(c, p.addr, p.value);
+            p.done = true;
+            log("poke: %08X = %u on call to %08X", p.addr, p.value, addr);
+        }
     if (RecompFn fn = find_function(addr)) return fn(c);
     if ((addr & 0x1FFFFFFF) < 0x800000 && follow_stub(c, addr)) return;  // code written to RAM at run time
     fatal("call to unknown function %08X (ra=%08X)", addr, c->r[31]);

@@ -37,6 +37,10 @@ struct Config {
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> presses;  // scripted input (--press FRAME:BUTTON[:DURATION])
     uint64_t monkey_seed = 0, monkey_from = 0;  // random input from this frame on (--monkey SEED:FRAME)
+    // Debugging: write a word into RAM the first time a function is called
+    // (--poke-on-call CALL:ADDR=VALUE), e.g. to pick the level the game loads.
+    struct Poke { uint32_t call, addr, value; bool done; };
+    std::vector<Poke> pokes;
 };
 extern Config config;
 

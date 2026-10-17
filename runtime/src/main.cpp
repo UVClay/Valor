@@ -35,6 +35,7 @@ static bool parse_press(const char *arg) {
 static void usage(const char *argv0) {
     fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--memcard FILE.mcd] [--volume PERCENT] [--headless] [--screenshots DIR] [--screenshot-every N] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
+            "       [--poke-on-call CALLHEX:ADDRHEX=VALUE]...\n"
             "       [--trace-io] [--trace-calls] [--trace-cd] [--trace-audio] [--max-cycles N]\n", argv0);
 }
 
@@ -55,6 +56,10 @@ int main(int argc, char **argv) {
             if (sscanf(argv[++i], "%llu:%llu", &seed, &from) != 2) { usage(argv[0]); return 2; }
             config.monkey_seed = seed;
             config.monkey_from = from;
+        } else if (!strcmp(argv[i], "--poke-on-call") && i + 1 < argc) {
+            unsigned call, addr, value;
+            if (sscanf(argv[++i], "%x:%x=%u", &call, &addr, &value) != 3) { usage(argv[0]); return 2; }
+            config.pokes.push_back({call, addr, value, false});
         } else if (!strcmp(argv[i], "--press") && i + 1 < argc) { if (!parse_press(argv[++i])) { usage(argv[0]); return 2; } }
         else if (!strcmp(argv[i], "--screenshots") && i + 1 < argc) config.screenshots = argv[++i];
         else if (!strcmp(argv[i], "--screenshot-every") && i + 1 < argc) config.screenshot_every = strtoull(argv[++i], nullptr, 0);

@@ -22,6 +22,7 @@ done
 
 `./play` builds everything (first build takes a minute) and runs the game in a window, with
 your display, audio and controllers passed into the container.
+`./play --warp 3:2` makes New Game start in mission 3, level 2 (for testing).
 `./dev <cmd>` runs any command in the dev container (`./dev` alone opens a shell).
 
 Supported image: Medal of Honor (USA), SLUS-00974, SHA1 `cf503f1dab8d6f9ae25d11b324b7c251651f5fff`.
@@ -39,6 +40,13 @@ Any SDL-supported controller works (DualShock/DualSense map 1:1). Keyboard fallb
 | Analog mode on/off (the DualShock's Analog button) | F7 |
 | Fast-forward (hold) | Tab |
 | Volume down / up | - / = (or `./play --volume 60`) |
+
+## Testing
+
+- `./dev tools/sweep.sh [MINUTES] [SEED]` plays every level with random input, headless and
+  unthrottled, and reports any crash (logs in `build/sweep/`).
+- `./dev tools/monkey.sh [SEEDS] [MINUTES]` runs several random-input sessions from New Game.
+- `tools/warp.sh MISSION LEVEL [args]` starts a level directly (headless runs, scripting).
 
 ## How it works
 
