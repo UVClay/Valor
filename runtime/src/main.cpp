@@ -33,7 +33,7 @@ static bool parse_press(const char *arg) {
 }
 
 static void usage(const char *argv0) {
-    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--memcard FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--headless] [--hidden]\n"
+    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--headless] [--hidden]\n"
             "       [--screenshots DIR] [--screenshot-every N] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--poke-on-call CALLHEX:ADDRHEX=VALUE]...\n"
@@ -54,6 +54,14 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--overlay") && i + 1 < argc) config.overlay = std::clamp(atoi(argv[++i]), 0, 2);
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) config.scale = std::clamp(atoi(argv[++i]), 0, 16);
         else if (!strcmp(argv[i], "--no-dither")) config.dither = false;
+        else if (!strcmp(argv[i], "--fov") && i + 1 < argc) config.fov = std::clamp(atof(argv[++i]), 0.0, 150.0);
+        else if (!strcmp(argv[i], "--aspect") && i + 1 < argc) {
+            const char *a = argv[++i];
+            double w, h;
+            if (!strcmp(a, "window")) config.aspect = 0;
+            else if (sscanf(a, "%lf:%lf", &w, &h) == 2 && w > 0 && h > 0) config.aspect = w / h;
+            else { usage(argv[0]); return 2; }
+        }
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) config.wav = argv[++i];
         else if (!strcmp(argv[i], "--memcard") && i + 1 < argc) config.memcard = argv[++i];
         else if (!strcmp(argv[i], "--volume") && i + 1 < argc) config.volume = std::clamp(atoi(argv[++i]), 0, 200);

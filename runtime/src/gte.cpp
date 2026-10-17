@@ -2,6 +2,8 @@
 // fixed-point math, saturation and FLAG bits, and the hardware's UNR division.
 #include <algorithm>
 #include <cstdint>
+#include <cmath>
+#include <cstdlib>
 
 #include "runtime.h"
 
@@ -45,6 +47,13 @@ constexpr uint32_t F_MAC0_POS = 1u << 16, F_MAC0_NEG = 1u << 15;
 constexpr uint32_t F_SX2 = 1u << 14, F_SY2 = 1u << 13, F_IR0 = 1u << 12;
 
 int sf_shift;   // 12 when the sf bit is set, else 0
+
+// Projection adjustments for widescreen and FOV (see gte_set_projection).
+struct {
+    bool active;
+    uint16_t world_h;
+    struct { double x, y; } world{1, 1}, other{1, 1};
+} projection;
 bool lm;        // saturate IR to 0..7FFF instead of -8000..7FFF
 
 // ---------------------------------------------------------------------------------------------
@@ -175,7 +184,16 @@ void mul_matrix(const int16_t m[3][3], const int32_t t[3], int64_t t_scale, int1
     }
 }
 
+}  // namespace
+
+namespace psx {
+uint64_t gte_projections;  // RTPS/RTPT vertices projected so far
+}
+
+namespace {
+
 void rtp(int n, bool last) {
+    psx::gte_projections++;
     const Vec3s &v = g.v[n];
     int64_t mac3_raw = 0;
     for (int r = 0; r < 3; r++) {
@@ -195,8 +213,15 @@ void rtp(int n, bool last) {
     if (z12 < -0x8000 || z12 > 0x7FFF) g.flag |= F_IR3;
     push_sz(z12);
     uint32_t q = divide(g.h, g.sz[3]);
-    int64_t sx = int64_t(q) * g.ir[1] + g.ofx;
-    int64_t sy = int64_t(q) * g.ir[2] + g.ofy;
+    int64_t sx = int64_t(q) * g.ir[1], sy = int64_t(q) * g.ir[2];
+    if (projection.active) {
+        // Widescreen / FOV: scale the projected offset from the screen center.
+        const auto &k = g.h == projection.world_h ? projection.world : projection.other;
+        sx = int64_t(double(sx) * k.x);
+        sy = int64_t(double(sy) * k.y);
+    }
+    sx += g.ofx;
+    sy += g.ofy;
     set_mac0(sx);
     int32_t x = int32_t(sx >> 16);
     set_mac0(sy);
@@ -503,7 +528,10 @@ void write_ctrl(int r, uint32_t v) {
     case 21: case 22: case 23: g.fc[r - 21] = int32_t(v); break;
     case 24: g.ofx = int32_t(v); break;
     case 25: g.ofy = int32_t(v); break;
-    case 26: g.h = uint16_t(v); break;
+    case 26:
+        if (uint16_t(v) != g.h && getenv("VALOR_TRACE_GTE_H")) psx::log("gte: H = %u (ofx %d ofy %d)", uint16_t(v), g.ofx >> 16, g.ofy >> 16);
+        g.h = uint16_t(v);
+        break;
     case 27: g.dqa = lo; break;
     case 28: g.dqb = int32_t(v); break;
     case 29: g.zsf3 = lo; break;
@@ -520,6 +548,28 @@ struct Init {
 } init;
 
 }  // namespace
+
+namespace psx {
+
+// aspect: output width/height (4/3 = original). hfov_deg: horizontal FOV for the world projection
+// (H == world_h) at that aspect, 0 keeps the original vertical FOV (Hor+). base_tan: the game's
+// original vertical half-FOV tangent for the world projection.
+void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double base_tan) {
+    double squeeze = (4.0 / 3.0) / aspect;  // keeps 3D proportions when stretched to `aspect`
+    double k = 1.0;
+    if (hfov_deg > 0) {
+        double tv = std::tan(hfov_deg * M_PI / 360.0) / aspect;  // vertical half-FOV tangent wanted
+        k = base_tan / tv;
+    }
+    projection.world_h = world_h;
+    projection.world = {k * squeeze, k};
+    projection.other = {squeeze, 1.0};
+    projection.active = squeeze != 1.0 || k != 1.0;
+    log("gte: projection aspect %.3f, world FOV %.1f deg horizontal", aspect,
+        2.0 * std::atan(base_tan / k * aspect) * 180.0 / M_PI);
+}
+
+}  // namespace psx
 
 extern "C" {
 

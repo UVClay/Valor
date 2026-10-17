@@ -172,7 +172,23 @@ void pump_events() {
     }
 }
 
-// Draw the PS1's displayed image into the window, 4:3 letterboxed.
+// The aspect the image is shown at; 3D projection is adjusted to match (see gte_set_projection).
+double output_aspect() {
+    static double applied = -1;
+    double a = config.aspect;
+    if (a == 0) {
+        int ww, wh;
+        SDL_GetWindowSizeInPixels(window, &ww, &wh);
+        a = wh > 0 ? double(ww) / wh : 4.0 / 3.0;
+    }
+    if (a != applied) {
+        applied = a;
+        gte_set_projection(a, config.fov, config.world_h, config.world_base_tan);
+    }
+    return a;
+}
+
+// Draw the PS1's displayed image into the window, letterboxed to the output aspect.
 void present_frame() {
     static const int widths[] = {256, 320, 512, 640};
     int w = (gpu.display_mode & 0x40) ? 368 : widths[gpu.display_mode & 3];
@@ -182,8 +198,15 @@ void present_frame() {
 
     int ww, wh;
     SDL_GetWindowSizeInPixels(window, &ww, &wh);
-    float unit = std::min(ww / 4.0f, wh / 3.0f);
-    int dw = int(4 * unit), dh = int(3 * unit);
+    // 2D screens (FMVs, title cards) stay 4:3; 3D ones (the GTE is projecting) use the output
+    // aspect. Switch back to 4:3 only after a moment without 3D to avoid flicker.
+    static uint64_t last_projections, frames_without_3d = 1000;
+    frames_without_3d = gte_projections != last_projections ? 0 : frames_without_3d + 1;
+    last_projections = gte_projections;
+    double aspect = output_aspect();
+    if (rgb24 || frames_without_3d > 30) aspect = 4.0 / 3.0;
+    int dw = ww, dh = int(ww / aspect);
+    if (dh > wh) { dh = wh; dw = int(wh * aspect); }
     int dx = (ww - dw) / 2, dy = (wh - dh) / 2;
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

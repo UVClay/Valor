@@ -32,6 +32,12 @@ struct Config {
     bool hidden = false;     // render with a hidden window (screenshots of the OpenGL renderer)
     int scale = 0;           // OpenGL renderer resolution scale (0 = fit the window, 1 = software)
     bool dither = true;      // PS1 dithering and 15-bit color
+    double aspect = 4.0 / 3.0;  // output aspect (0 = match the window)
+    double fov = 0;             // world horizontal FOV in degrees (0 = original vertical FOV, Hor+)
+    // MoH: the world is projected with GTE H = 400 on a 512x240 screen (vertical half-FOV
+    // tangent 120/400); other projections (the weapon) keep their framing.
+    uint16_t world_h = 400;
+    double world_base_tan = 120.0 / 400.0;
     std::filesystem::path screenshots;  // save a PNG of the display every `screenshot_every` frames
     uint64_t screenshot_every = 60;
     bool screenshot_window = false;  // capture the window (with overlay) instead of the PS1 image
@@ -61,6 +67,10 @@ extern Cop0 cop0;
 void load_bios(const std::filesystem::path &path);
 uint32_t io_read(Cpu *c, uint32_t phys, int size);
 void io_write(Cpu *c, uint32_t phys, uint32_t value, int size);
+
+// gte.cpp
+void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double base_tan);
+extern uint64_t gte_projections;
 
 // cpu.cpp
 RecompFn find_function(uint32_t addr);
