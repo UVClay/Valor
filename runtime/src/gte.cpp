@@ -271,7 +271,10 @@ void rtp(int n, bool last) {
     set_mac0(sy);
     int32_t y = int32_t(sy >> 16);
     push_sxy(x, y);
-    if (!hud && psx::interp_enabled()) psx::interp_record(g.sxy[2][0], g.sxy[2][1], accs, g.h, kx, ky, g.rt, g.tr);
+    if (!hud && psx::interp_enabled()) {
+        int16_t model[3] = {v.x, v.y, v.z};
+        psx::interp_record(g.sxy[2][0], g.sxy[2][1], accs, g.h, kx, ky, g.rt, g.tr, model, current_pc);
+    }
     if (last) {
         int64_t dq = int64_t(g.dqa) * q + g.dqb;
         set_mac0(dq);
@@ -617,7 +620,7 @@ void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double
 void gte_trace_frame() {
     if (!trace_mat) return;
     std::sort(mat_uses.begin(), mat_uses.end(), [](const MatUse &a, const MatUse &b) { return a.count > b.count; });
-    for (size_t i = 0; i < mat_uses.size() && i < 6; i++) {
+    for (size_t i = 0; i < mat_uses.size() && i < 40; i++) {
         const auto &m = mat_uses[i];
         log("gtemat %d H=%u pc=%08X n=%d rt=[%d %d %d; %d %d %d; %d %d %d] tr=(%d %d %d)", int(i), m.h, m.pc, m.count,
             m.rt[0][0], m.rt[0][1], m.rt[0][2], m.rt[1][0], m.rt[1][1], m.rt[1][2], m.rt[2][0], m.rt[2][1], m.rt[2][2],

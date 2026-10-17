@@ -85,6 +85,10 @@ The game logic runs at a fixed 30 Hz (RECON.md, Frame timing). For higher frame 
   re-projected through a camera between this tick's and the next one's: slerped rotation, lerped
   position. The game projects tick N+1 before tick N is displayed, so the next camera is known in
   time and nothing is delayed.
+- **Moving objects.** Enemies are drawn with one GTE transform per limb. Each transform is matched
+  to the next tick's transform from the same code, with the same mesh (a hash of its first model
+  vertices), nearest in the world. Its world transform is then blended, and those vertices are
+  re-projected from their model-space input.
 - **What stays put.** The weapon (projected with another H), the HUD (never projected) and the
   compass (a HUD projection) are left in place. Camera cuts larger than 90° or 1500 units are not
   interpolated.

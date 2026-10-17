@@ -19,9 +19,8 @@ and full playthroughs of two missions.
       the game's per-axis stick curve meeting round-gated modern sticks. Round input is now mapped
       to the DualShock's square range (Controls → "Square stick range", see RECON.md).
 - [x] **High frame rate**: the game logic is a fixed 30 Hz tick, so the last frame is redrawn with
-      the camera interpolated toward the next tick's, at the display's refresh rate (DESIGN.md,
-      Frame interpolation). No added latency.
-- [ ] Interpolate moving objects too (enemies and doors move at 30 Hz; only the camera is smooth)
+      the camera and moving objects (enemy limbs, doors) interpolated toward the next tick, at the
+      display's refresh rate (DESIGN.md, Frame interpolation). No added latency.
 - [x] Crosshair (Interface tab; size slider)
 - [ ] Mouse and keyboard controls
 - [ ] Saves decoupled from memory cards

@@ -7,15 +7,20 @@
 // a frame is displayed, so moving the camera from the displayed tick toward the next one adds
 // no latency.
 //
-// Only the camera is interpolated: objects keep their 30 Hz positions. Every GTE projection is
-// recorded with its camera-space position, keyed by the screen coordinate it produced. When the
-// GPU draws, each vertex is matched to its projection by that coordinate. Vertices nobody
-// projected (the 2D HUD) stay where they are, as do other projections (the weapon, H != world).
+// Every GTE projection is recorded with its camera-space position, its model-space input and the
+// transform used, keyed by the screen coordinate it produced. When the GPU draws, each vertex is
+// matched to its projection by that coordinate. Vertices nobody projected (the 2D HUD) stay where
+// they are, as do other projections (the weapon, H != world).
+//
+// The camera is the transform most world vertices used; it moves everything. Moving objects
+// (enemies are one transform per limb) are matched to the next tick's transform from the same
+// code with the same mesh, nearest in the world, and their own transform is blended as well.
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <deque>
 
+#include "gpu.h"
 #include "interp.h"
 #include "runtime.h"
 
@@ -89,24 +94,13 @@ bool partial_rotation(const Mat q, double alpha, Mat out) {
 
 }  // namespace
 
-bool interp_enabled() { return config.interpolate; }
-
-bool InterpTick::camera(InterpCamera &out) const {
-    const MatrixUse *best = nullptr;
-    for (const auto &m : matrices)
-        if (!best || m.count > best->count) best = &m;
-    if (!best) return false;
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 3; j++) out.m[i][j] = best->rt[i * 3 + j] / 4096.0;
-        out.t[i] = best->tr[i];
-    }
-    return true;
-}
+// Only the OpenGL renderer can redraw frames.
+bool interp_enabled() { return config.interpolate && hw::hwgl::active(); }
 
 void interp_note_draw() { drawn_since_projection = true; }
 
 void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, double kx, double ky,
-                   const int16_t rt[3][3], const int32_t tr[3]) {
+                   const int16_t rt[3][3], const int32_t tr[3], const int16_t mv[3], uint32_t pc) {
     if (drawn_since_projection) {  // a new tick's projection phase
         drawn_since_projection = false;
         auto t = std::make_shared<InterpTick>();
@@ -116,9 +110,44 @@ void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, dou
         while (ticks.size() > 4) ticks.pop_front();
     }
     InterpTick &t = *ticks.back();
-    bool translated = tr[0] || tr[1] || tr[2];
-    InterpVertex v{float(double(acc[0]) / 4096), float(double(acc[1]) / 4096), float(double(acc[2]) / 4096),
-                   float(kx), float(ky), float(h), translated, false};
+
+    // The transform group.
+    int32_t gi = t.last_group;
+    if (gi < 0 || memcmp(t.groups[gi].rt, rt, sizeof t.groups[gi].rt) || memcmp(t.groups[gi].tr, tr, sizeof t.groups[gi].tr) ||
+        t.groups[gi].h != h || t.groups[gi].pc != pc) {
+        uint64_t key = pc * 0x9E3779B97F4A7C15ull ^ h;
+        for (int i = 0; i < 9; i++) key = (key ^ uint16_t(rt[i / 3][i % 3])) * 0x100000001B3ull;
+        for (int i = 0; i < 3; i++) key = (key ^ uint32_t(tr[i])) * 0x100000001B3ull;
+        auto [it, added] = t.group_index.try_emplace(key, uint32_t(t.groups.size()));
+        if (added) {
+            InterpGroup g{};
+            for (int i = 0; i < 9; i++) g.rt[i] = rt[i / 3][i % 3];
+            memcpy(g.tr, tr, sizeof g.tr);
+            g.h = h;
+            g.pc = pc;
+            g.sig = 2166136261u;
+            t.groups.push_back(g);
+        }
+        gi = int32_t(it->second);
+        t.last_group = gi;
+    }
+    InterpGroup &g = t.groups[gi];
+    g.count++;
+    if (g.sig_n < 4) {
+        for (int i = 0; i < 3; i++) g.sig = (g.sig ^ uint16_t(mv[i])) * 16777619u;
+        g.sig_n++;
+    }
+
+    InterpVertex v{};
+    v.x = float(double(acc[0]) / 4096);
+    v.y = float(double(acc[1]) / 4096);
+    v.z = float(double(acc[2]) / 4096);
+    v.kx = float(kx);
+    v.ky = float(ky);
+    v.h = float(h);
+    memcpy(v.v, mv, sizeof v.v);
+    v.group = gi;
+    v.translated = tr[0] || tr[1] || tr[2];
     // The GTE clamps the divide for z < h/2 and the result to -0x400..0x3FF: such points can't
     // be moved from their screen position.
     v.exact = v.z >= h * 0.5f && sx > -0x400 && sx < 0x3FF && sy > -0x400 && sy < 0x3FF;
@@ -135,17 +164,6 @@ void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, dou
     t.previous.push_back(previous);
     it->second = uint32_t(t.vertices.size());
     t.vertices.push_back(v);
-    if (h != config.world_h || !translated) return;
-    for (auto &m : t.matrices)
-        if (!memcmp(m.rt, rt, sizeof m.rt) && !memcmp(m.tr, tr, sizeof m.tr)) {
-            m.count++;
-            return;
-        }
-    InterpTick::MatrixUse m{};
-    memcpy(m.rt, rt, sizeof m.rt);
-    memcpy(m.tr, tr, sizeof m.tr);
-    m.count = 1;
-    t.matrices.push_back(m);
 }
 
 std::shared_ptr<const InterpTick> interp_drawing_tick() { return ticks.empty() ? nullptr : ticks.back(); }
@@ -156,13 +174,141 @@ std::shared_ptr<const InterpTick> interp_tick(uint64_t seq) {
     return nullptr;
 }
 
-bool interp_transform(const InterpTick &from, const InterpTick &to, double alpha, InterpTransform &out) {
-    InterpCamera c0, c1;
-    if (!from.camera(c0) || !to.camera(c1)) return false;
+namespace {
+
+struct Transform {
+    Mat m;
+    double t[3];
+};
+
+Transform group_transform(const InterpGroup &g) {
+    Transform x;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) x.m[i][j] = g.rt[i * 3 + j] / 4096.0;
+        x.t[i] = g.tr[i];
+    }
+    return x;
+}
+
+bool world_group(const InterpGroup &g) {
+    return g.h == config.world_h && (g.tr[0] || g.tr[1] || g.tr[2]);
+}
+
+// Where the camera is in this transform's space: -M^-1 T.
+bool eye(const Transform &x, double out[3]) {
+    Mat inv;
+    if (!invert(x.m, inv)) return false;
+    apply(inv, x.t, out);
+    for (int i = 0; i < 3; i++) out[i] = -out[i];
+    return true;
+}
+
+double dist2(const double a[3], const double b[3]) {
+    double d = 0;
+    for (int i = 0; i < 3; i++) d += (a[i] - b[i]) * (a[i] - b[i]);
+    return d;
+}
+
+// Per pair of ticks: the camera transforms and the objects' transforms relative to the camera
+// (object -> world), for groups found in both ticks.
+struct Pairing {
+    uint64_t from = 0, to = 0;
+    bool ok = false;
+    Transform cam0, cam1;
+    struct Match { int32_t group; Mat w0, w1; double p0[3], p1[3]; };
+    std::vector<Match> matches;
+    std::vector<int32_t> group_match;  // per group of `from`: index into matches, or -1
+};
+
+void pair_ticks(const InterpTick &from, const InterpTick &to, Pairing &p) {
+    p.from = from.seq;
+    p.to = to.seq;
+    p.ok = false;
+    p.matches.clear();
+    p.group_match.assign(from.groups.size(), -1);
+
+    // The camera: the transform most world vertices used, and the next tick's transform from the
+    // same code whose eye is nearest (the same mesh, viewed from the moved camera).
+    int32_t best = -1;
+    for (size_t i = 0; i < from.groups.size(); i++)
+        if (world_group(from.groups[i]) && (best < 0 || from.groups[i].count > from.groups[best].count)) best = int32_t(i);
+    if (best < 0) return;
+    p.cam0 = group_transform(from.groups[best]);
+    double e0[3];
+    if (!eye(p.cam0, e0)) return;
+    double nearest = 1500.0 * 1500.0;  // farther: a camera cut
+    for (const auto &g : to.groups) {
+        if (!world_group(g) || g.pc != from.groups[best].pc) continue;
+        Transform x = group_transform(g);
+        double e[3];
+        if (eye(x, e) && dist2(e, e0) < nearest) {
+            nearest = dist2(e, e0);
+            p.cam1 = x;
+            p.ok = true;
+        }
+    }
+    if (!p.ok) return;
+
+    // Objects: their transform relative to the camera, W = Mcam^-1 * M and w = Mcam^-1 * (T - Tcam)
+    // (W is the object's rotation, w its position in the world).
+    Mat inv0, inv1;
+    if (!invert(p.cam0.m, inv0) || !invert(p.cam1.m, inv1)) {
+        p.ok = false;
+        return;
+    }
+    auto relative = [](const Mat inv, const Transform &cam, const Transform &x, Mat w, double pos[3]) {
+        mul(inv, x.m, w);
+        double d[3] = {x.t[0] - cam.t[0], x.t[1] - cam.t[1], x.t[2] - cam.t[2]};
+        apply(inv, d, pos);
+    };
+    std::unordered_multimap<uint64_t, uint32_t> next;  // (pc, mesh) -> groups of `to`
+    for (size_t i = 0; i < to.groups.size(); i++) {
+        const auto &g = to.groups[i];
+        if (world_group(g) && g.sig_n) next.emplace(uint64_t(g.pc) << 32 | g.sig, uint32_t(i));
+    }
+    for (size_t i = 0; i < from.groups.size(); i++) {
+        const auto &g = from.groups[i];
+        if (!world_group(g) || !g.sig_n || int32_t(i) == best) continue;
+        Pairing::Match m;
+        m.group = int32_t(i);
+        relative(inv0, p.cam0, group_transform(g), m.w0, m.p0);
+        auto range = next.equal_range(uint64_t(g.pc) << 32 | g.sig);
+        double nearest_obj = 256.0 * 256.0;  // farther in one tick: not the same object
+        bool found = false;
+        for (auto it = range.first; it != range.second; ++it) {
+            Mat w1;
+            double p1[3];
+            relative(inv1, p.cam1, group_transform(to.groups[it->second]), w1, p1);
+            if (dist2(p1, m.p0) < nearest_obj) {
+                nearest_obj = dist2(p1, m.p0);
+                memcpy(m.w1, w1, sizeof w1);
+                memcpy(m.p1, p1, sizeof m.p1);
+                found = true;
+            }
+        }
+        if (!found) continue;
+        // A static object (same placement) needs nothing beyond the camera's motion.
+        double change = dist2(m.p0, m.p1);
+        for (int r = 0; r < 3; r++)
+            for (int c = 0; c < 3; c++) change += (m.w1[r][c] - m.w0[r][c]) * (m.w1[r][c] - m.w0[r][c]) * 4096;
+        if (change < 0.01) continue;
+        p.group_match[i] = int32_t(p.matches.size());
+        p.matches.push_back(m);
+    }
+}
+
+}  // namespace
+
+bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, InterpMotion &out) {
+    static Pairing p;
+    if (p.from != from.seq || p.to != to.seq) pair_ticks(from, to, p);
+    if (!p.ok) return false;
+
+    // The camera between the two: rotation slerped (scale per axis lerped), position lerped.
     double s0[3], s1[3];
     Mat r0, r1, r0t, q, qa, ra, ma, m0inv, m1inv;
-    split(c0.m, s0, r0);
-    split(c1.m, s1, r1);
+    split(p.cam0.m, s0, r0);
+    split(p.cam1.m, s1, r1);
     for (int i = 0; i < 3; i++)
         for (int j = 0; j < 3; j++) r0t[i][j] = r0[j][i];
     mul(r1, r0t, q);  // rotation from tick 0's camera to tick 1's
@@ -170,26 +316,36 @@ bool interp_transform(const InterpTick &from, const InterpTick &to, double alpha
     mul(qa, r0, ra);
     for (int i = 0; i < 3; i++)
         for (int j = 0; j < 3; j++) ma[i][j] = (s0[i] + (s1[i] - s0[i]) * alpha) * ra[i][j];
-    if (!invert(c0.m, m0inv) || !invert(c1.m, m1inv)) return false;
-    // Camera positions: C = -M^-1 T.
-    double p0[3], p1[3], pa[3], ta[3];
-    apply(m0inv, c0.t, p0);
-    apply(m1inv, c1.t, p1);
-    double moved = 0;
-    for (int i = 0; i < 3; i++) {
-        p0[i] = -p0[i];
-        p1[i] = -p1[i];
-        pa[i] = p0[i] + (p1[i] - p0[i]) * alpha;
-        moved += (p1[i] - p0[i]) * (p1[i] - p0[i]);
-    }
-    if (moved > 1500.0 * 1500.0) return false;  // teleport or a different transform won
-    apply(ma, pa, ta);
-    for (int i = 0; i < 3; i++) ta[i] = -ta[i];
-    // p' = Ma * M0^-1 * (p - T0) + Ta
+    if (!invert(p.cam0.m, m0inv) || !invert(p.cam1.m, m1inv)) return false;
+    double e0[3], e1[3], ea[3], ta[3];
+    eye(p.cam0, e0);
+    eye(p.cam1, e1);
+    for (int i = 0; i < 3; i++) ea[i] = e0[i] + (e1[i] - e0[i]) * alpha;
+    apply(ma, ea, ta);
+    for (int i = 0; i < 3; i++) ta[i] = -ta[i];  // Ta = -Ma * eye
+
+    // Static things: p' = Ma * M0^-1 * (p - T0) + Ta.
     mul(ma, m0inv, out.a);
     double at0[3];
-    apply(out.a, c0.t, at0);
+    apply(out.a, p.cam0.t, at0);
     for (int i = 0; i < 3; i++) out.b[i] = ta[i] - at0[i];
+
+    // Moving objects: p' = Ma * (W * v + w) + Ta with W, w blended.
+    out.objects.resize(p.matches.size());
+    out.group_object = p.group_match;
+    for (size_t k = 0; k < p.matches.size(); k++) {
+        const auto &m = p.matches[k];
+        Mat w;
+        double pos[3];
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) w[i][j] = m.w0[i][j] + (m.w1[i][j] - m.w0[i][j]) * alpha;
+            pos[i] = m.p0[i] + (m.p1[i] - m.p0[i]) * alpha;
+        }
+        auto &o = out.objects[k];
+        mul(ma, w, o.m);
+        apply(ma, pos, o.t);
+        for (int i = 0; i < 3; i++) o.t[i] += ta[i];
+    }
     return true;
 }
 

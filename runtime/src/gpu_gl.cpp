@@ -789,13 +789,9 @@ void gl_renderer_interpolate(double vblank_time) {
     }
     double alpha = std::clamp((vblank_time - double(list->shown_at)) / list->period, 0.0, 1.0);
     auto next = interp_tick(list->tick->seq + 1);
-    InterpTransform tf;
-    bool ok = next && alpha > 0 && interp_transform(*list->tick, *next, alpha, tf);
+    static InterpMotion motion;
+    bool ok = next && alpha > 0 && interp_motion(*list->tick, *next, alpha, motion);
     if (!ok && !list->moved) return;  // the target already shows the list as drawn
-    if (!ok) {
-        tf = {};
-        for (int i = 0; i < 3; i++) tf.a[i][i] = 1;
-    }
     list->moved = ok;
     if (static bool trace = getenv("VALOR_TRACE_INTERP"); trace) {
         size_t rec = 0, group = 0;
@@ -803,8 +799,10 @@ void gl_renderer_interpolate(double vblank_time) {
         log("interp: sources none %llu ambiguous %llu other %llu matched %llu", (unsigned long long)source_stats[0],
             (unsigned long long)source_stats[1], (unsigned long long)source_stats[2], (unsigned long long)source_stats[3]);
         memset(source_stats, 0, sizeof source_stats);
-        log("interp: t=%.2f tick %llu alpha %.2f ok %d: %zu vertices, %zu matched, %zu by group, %zu projections",
-            vblank_time, (unsigned long long)list->tick->seq, alpha, ok, list->sources.size(), rec, group, list->tick->vertices.size());
+        log("interp: t=%.2f tick %llu alpha %.2f ok %d: %zu vertices, %zu matched, %zu by group, %zu projections, "
+            "%zu transforms, %zu moving",
+            vblank_time, (unsigned long long)list->tick->seq, alpha, ok, list->sources.size(), rec, group,
+            list->tick->vertices.size(), list->tick->groups.size(), ok ? motion.objects.size() : 0);
     }
 
     // Screen movement of every projection this tick.
@@ -816,9 +814,16 @@ void gl_renderer_interpolate(double vblank_time) {
     valid.assign(pv.size(), 0);
     for (size_t i = 0; i < pv.size(); i++) {
         const InterpVertex &p = pv[i];
-        if (p.h != float(config.world_h) || !p.exact) continue;
+        if (!ok || p.h != float(config.world_h) || !p.exact) continue;
         double q[3];
-        for (int r = 0; r < 3; r++) q[r] = tf.a[r][0] * p.x + tf.a[r][1] * p.y + tf.a[r][2] * p.z + (p.translated ? tf.b[r] : 0);
+        int32_t object = p.group < int32_t(motion.group_object.size()) ? motion.group_object[p.group] : -1;
+        if (object >= 0) {
+            const auto &o = motion.objects[object];
+            for (int r = 0; r < 3; r++) q[r] = o.m[r][0] * p.v[0] + o.m[r][1] * p.v[1] + o.m[r][2] * p.v[2] + o.t[r];
+        } else {
+            for (int r = 0; r < 3; r++)
+                q[r] = motion.a[r][0] * p.x + motion.a[r][1] * p.y + motion.a[r][2] * p.z + (p.translated ? motion.b[r] : 0);
+        }
         if (q[2] < p.h * 0.5) continue;
         dx[i] = float(p.h * (q[0] / q[2] - p.x / p.z) * p.kx);
         dy[i] = float(p.h * (q[1] / q[2] - p.y / p.z) * p.ky);
