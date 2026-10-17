@@ -44,7 +44,7 @@ void timers_event(int n);
 void timers_hblank_tick(int lines);
 
 uint32_t dma_read(uint32_t phys);
-void dma_write(uint32_t phys, uint32_t v);
+void dma_write(uint32_t phys, uint32_t v, int size);
 
 void cdrom_init();
 uint8_t cdrom_read(uint32_t phys);

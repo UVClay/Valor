@@ -61,7 +61,7 @@ void io_write(Cpu *c, uint32_t phys, uint32_t value, int size) {
     trace_once("W", phys, size, value);
     if (phys >= 0x1F801040 && phys < 0x1F801050) hw::sio_write(phys, value, size);
     else if (phys == 0x1F801070 || phys == 0x1F801074) hw::irq_write(phys, value);
-    else if (phys >= 0x1F801080 && phys < 0x1F801100) hw::dma_write(phys & ~3u, value);
+    else if (phys >= 0x1F801080 && phys < 0x1F801100) hw::dma_write(phys, value, size);
     else if (phys >= 0x1F801100 && phys < 0x1F801130) hw::timers_write(phys, value);
     else if (phys >= 0x1F801800 && phys < 0x1F801804) hw::cdrom_write(phys, value & 0xFF);
     else if (phys == 0x1F801810 || phys == 0x1F801814) hw::gpu_write(phys, value);

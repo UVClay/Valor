@@ -31,7 +31,9 @@ void update_master_flag() {
 void finish(int n) {
     chans[n].chcr &= ~0x11000000u;
     if (dicr & (1u << (16 + n))) dicr |= 1u << (24 + n);
+    uint32_t before = dicr;
     update_master_flag();
+    if (config.trace_cd && n == 3) log("dma3: done, dicr %08X -> %08X", before, dicr);
 }
 
 // GPU linked list (ordering table): headers are {next:24, words:8}.
@@ -99,15 +101,23 @@ uint32_t dma_read(uint32_t phys) {
     return 0;
 }
 
-void dma_write(uint32_t phys, uint32_t v) {
-    if (phys == 0x1F8010F0) { dpcr = v; return; }
+void dma_write(uint32_t phys, uint32_t value, int size) {
+    // Sub-word writes only touch the bytes they cover (libetc writes DICR's halves separately).
+    uint32_t shift = 8 * (phys & 3);
+    uint32_t mask = (size == 4 ? 0xFFFFFFFFu : ((1u << (8 * size)) - 1)) << shift;
+    uint32_t v = value << shift;
+    phys &= ~3u;
     if (phys == 0x1F8010F4) {
+        if (config.trace_cd) log("dma: dicr write %08X mask %08X (was %08X)", v, mask, dicr);
         // Bits 24-30 acknowledge on write of 1; bits 0-5, 15-23 are plain R/W.
-        dicr = (dicr & 0xFF000000u & ~(v & 0x7F000000u)) | (v & 0x00FF803Fu);
+        uint32_t rw = 0x00FF803Fu & mask;
+        dicr = (dicr & ~rw & ~(v & 0x7F000000u & mask)) | (v & rw);
         dicr &= ~0x80000000u;
         update_master_flag();
         return;
     }
+    v = (dma_read(phys) & ~mask) | (v & mask);
+    if (phys == 0x1F8010F0) { dpcr = v; return; }
     int n = (phys >> 4) & 7;
     Chan &ch = chans[n];
     switch (phys & 0xF) {
