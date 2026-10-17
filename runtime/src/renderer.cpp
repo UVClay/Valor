@@ -8,6 +8,7 @@
 #include "runtime.h"
 
 #include "gpu.h"
+#include "overlay.h"
 
 namespace psx::hw {
 
@@ -318,6 +319,7 @@ static void trace_command(const std::vector<uint32_t> &cmd) {
 
 void gpu_draw(const std::vector<uint32_t> &cmd) {
     gpu.primitives++;
+    overlay_counters.primitives++;
     trace_command(cmd);
     uint32_t op = cmd[0] >> 24;
     if (op < 0x40) draw_polygon(cmd);

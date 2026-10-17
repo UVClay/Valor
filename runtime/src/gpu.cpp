@@ -3,6 +3,7 @@
 
 #include "gpu.h"
 #include "hw.h"
+#include "overlay.h"
 
 namespace psx::hw {
 
@@ -173,7 +174,13 @@ static void gp1(uint32_t v) {
         gpu.stat = (gpu.stat & ~(1u << 23)) | ((v & 1) << 23);
         break;
     case 0x04: gpu.stat = (gpu.stat & ~0x60000000u) | ((v & 3) << 29); break;
-    case 0x05: gpu.display_x = v & 0x3FE; gpu.display_y = (v >> 10) & 0x1FF; break;
+    case 0x05: {
+        int x = v & 0x3FE, y = (v >> 10) & 0x1FF;
+        if (x != gpu.display_x || y != gpu.display_y) overlay_note_flip();  // the game shows a new frame
+        gpu.display_x = x;
+        gpu.display_y = y;
+        break;
+    }
     case 0x06: gpu.hrange = v & 0xFFFFFF; break;
     case 0x07: gpu.vrange = v & 0xFFFFF; break;
     case 0x08:

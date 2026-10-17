@@ -53,8 +53,15 @@ add_library(beetle_spu STATIC third_party/beetle-psx/psx/spu.c)
 target_include_directories(beetle_spu PUBLIC third_party/beetle-psx third_party/beetle-psx/psx)
 target_compile_options(beetle_spu PRIVATE -O2 -w)
 
+# Dear ImGui (third_party/imgui, MIT) for the debug overlay.
+set(IMGUI third_party/imgui)
+add_library(imgui STATIC ${IMGUI}/imgui.cpp ${IMGUI}/imgui_draw.cpp ${IMGUI}/imgui_tables.cpp
+    ${IMGUI}/imgui_widgets.cpp ${IMGUI}/backends/imgui_impl_sdl3.cpp ${IMGUI}/backends/imgui_impl_opengl3.cpp)
+target_include_directories(imgui PUBLIC ${IMGUI} ${IMGUI}/backends)
+target_link_libraries(imgui PUBLIC SDL3::SDL3)
+
 file(GLOB runtime_src CONFIGURE_DEPENDS runtime/src/*.cpp)
 add_executable(valor ${runtime_src})
 target_include_directories(valor PRIVATE runtime/include)
 target_compile_options(valor PRIVATE -Wall -Wextra)
-target_link_libraries(valor PRIVATE game_recomp bios_recomp beetle_spu SDL3::SDL3 OpenGL::GL)
+target_link_libraries(valor PRIVATE game_recomp bios_recomp beetle_spu imgui SDL3::SDL3 OpenGL::GL)

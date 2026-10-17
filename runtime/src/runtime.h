@@ -34,6 +34,8 @@ struct Config {
     bool dither = true;      // PS1 dithering and 15-bit color
     std::filesystem::path screenshots;  // save a PNG of the display every `screenshot_every` frames
     uint64_t screenshot_every = 60;
+    bool screenshot_window = false;  // capture the window (with overlay) instead of the PS1 image
+    int overlay = 0;                 // initial debug overlay level
     std::filesystem::path wav;  // also record audio output here
     int volume = 100;           // output volume, percent
     std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)

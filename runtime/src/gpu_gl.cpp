@@ -13,6 +13,7 @@
 #include "gl.h"
 #include "gpu.h"
 #include "gpu_gl.h"
+#include "overlay.h"
 #include "runtime.h"
 
 using namespace psx::gl;
@@ -180,6 +181,7 @@ void upload_dirty() {
             if (dirty[by][bx]) {
                 glTexSubImage2D(GL_TEXTURE_2D, 0, bx * BLOCK, by * BLOCK, BLOCK, BLOCK, GL_RED_INTEGER,
                                 GL_UNSIGNED_SHORT, gpu.vram.data() + by * BLOCK * 1024 + bx * BLOCK);
+                overlay_counters.vram_uploads++;
                 dirty[by][bx] = false;
             }
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
@@ -251,6 +253,7 @@ void flush() {
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(batch.size() * sizeof(GLVertex)), batch.data(), GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, GLsizei(batch.size()));
+    overlay_counters.draw_calls++;
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
     batch.clear();

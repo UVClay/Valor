@@ -13,6 +13,7 @@
 #include "gpu_gl.h"
 #include "hw.h"
 #include "input.h"
+#include "overlay.h"
 #include "pad.h"
 
 using namespace psx::gl;
@@ -136,6 +137,7 @@ void handle_key(SDL_Keycode key, bool down) {
     case SDLK_BACKSPACE: bit = BTN_SELECT; break;
     case SDLK_TAB: fast_forward = down; return;
     case SDLK_F7: if (down) pad_toggle_analog(); return;
+    case SDLK_F3: if (down) overlay_cycle(); return;
     case SDLK_MINUS: if (down) audio_adjust_volume(-10); return;
     case SDLK_EQUALS: if (down) audio_adjust_volume(10); return;
     default: return;
@@ -146,6 +148,7 @@ void handle_key(SDL_Keycode key, bool down) {
 void pump_events() {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
+        overlay_event(e);
         switch (e.type) {
         case SDL_EVENT_QUIT: throw Halt("window closed");
         case SDL_EVENT_KEY_DOWN:
@@ -239,6 +242,7 @@ void display_init(bool want_window) {
         scale = dm ? std::clamp((dm->h + 239) / 240, 2, 8) : 4;
     }
     if (scale > 1) use_gl_renderer = gl_renderer_init(scale);
+    overlay_init(window, gl_context);
     headless = false;
     next_frame_ns = SDL_GetTicksNS();
     log("display: OpenGL %s, %s", reinterpret_cast<const char *>(glGetString(GL_VERSION)),
@@ -246,7 +250,8 @@ void display_init(bool want_window) {
 }
 
 void gpu_present() {
-    if (!config.screenshots.empty() && gpu.frames % config.screenshot_every == 0) {
+    bool shot = !config.screenshots.empty() && gpu.frames % config.screenshot_every == 0;
+    if (shot && !config.screenshot_window) {
         capture_display();
         char name[32];
         snprintf(name, sizeof name, "frame%06llu.png", (unsigned long long)gpu.frames);
@@ -263,6 +268,20 @@ void gpu_present() {
 
     pump_events();
     present_frame();
+    overlay_render();
+    if (shot && config.screenshot_window) {
+        int ww, wh;
+        SDL_GetWindowSizeInPixels(window, &ww, &wh);
+        std::vector<uint32_t> px(size_t(ww) * wh), flipped(px.size());
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glReadPixels(0, 0, ww, wh, GL_BGRA, GL_UNSIGNED_BYTE, px.data());
+        for (int y = 0; y < wh; y++)
+            for (int x = 0; x < ww; x++) flipped[size_t(y) * ww + x] = px[size_t(wh - 1 - y) * ww + x] | 0xFF000000u;
+        char name[40];
+        snprintf(name, sizeof name, "window%06llu.png", (unsigned long long)gpu.frames);
+        std::filesystem::create_directories(config.screenshots);
+        write_png(config.screenshots / name, flipped, ww, wh);
+    }
     SDL_GL_SwapWindow(window);
 
     // Pace to the console's refresh rate. With audio, nudge the period (at most 0.5%) to keep
@@ -278,6 +297,7 @@ void gpu_present() {
     uint64_t now_ns = SDL_GetTicksNS();
     if (fast_forward || now_ns > next_frame_ns + 100000000) next_frame_ns = now_ns;  // don't try to catch up
     else if (next_frame_ns > now_ns) SDL_DelayPrecise(next_frame_ns - now_ns);
+    overlay_frame_begin();
 }
 
 // Monkey testing: deterministic random input from a seed. A new "intent" (buttons and stick

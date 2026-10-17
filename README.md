@@ -37,6 +37,7 @@ Any SDL-supported controller works (DualShock/DualSense map 1:1). Keyboard fallb
 | Cross / Circle / Square / Triangle | X / C / Z / S |
 | L1 / R1 / L2 / R2 | Q / E / 1 / 3 |
 | Start / Select | Enter / Backspace |
+| Debug overlay: off / FPS / extended stats | F3 |
 | Analog mode on/off (the DualShock's Analog button) | F7 |
 | Fast-forward (hold) | Tab |
 | Volume down / up | - / = (or `./play --volume 60`) |
