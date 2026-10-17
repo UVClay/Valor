@@ -56,6 +56,7 @@ static void run_due_events(int64_t t) {
             case Event::CdResponse: cdrom_event_response(); break;
             case Event::CdSector: cdrom_event_sector(); break;
             case Event::SioAck: sio_event_ack(); break;
+            case Event::Spu: spu_event(); break;
             case Event::Count: break;
             }
         }

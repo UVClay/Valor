@@ -29,6 +29,7 @@ struct Config {
     bool headless = false;   // no window
     std::filesystem::path screenshots;  // save a PNG of the display every `screenshot_every` frames
     uint64_t screenshot_every = 60;
+    std::filesystem::path wav;  // also record audio output here
 };
 extern Config config;
 

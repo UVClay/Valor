@@ -1,4 +1,6 @@
 // CD-ROM controller at 0x1F801800, reading raw 2352-byte sectors from the disc image.
+#include <algorithm>
+#include <cstring>
 #include <deque>
 #include <fstream>
 #include <optional>
@@ -58,6 +60,114 @@ struct Disc {
 };
 
 Disc disc;
+
+// ---------------------------------------------------------------------------------------------
+// XA-ADPCM audio. Decoding and the 37.8/18.9 kHz -> 44.1 kHz resampler follow Mednafen's
+// CDC (via Beetle PSX, GPL-2.0-or-later), including its impulse table.
+
+const int16_t XA_IMPULSE[7][25] = {
+    {0, -5, 17, -35, 70, -23, -68, 347, -839, 2062, -4681, 15367, 21472, -5882, 2810, -1352, 635, -235, 26, 43, -35, 16, -8, 2, 0},
+    {0, -2, 10, -34, 65, -84, 52, 9, -266, 1024, -2680, 9036, 26516, -6016, 3021, -1571, 848, -365, 107, 10, -16, 17, -8, 3, -1},
+    {-2, 0, 3, -19, 60, -75, 162, -227, 306, -67, -615, 3229, 29883, -4532, 2488, -1471, 882, -424, 166, -27, 5, 6, -8, 3, -1},
+    {-1, 3, -2, -5, 31, -74, 179, -402, 689, -926, 1272, -1446, 31033, -1446, 1272, -926, 689, -402, 179, -74, 31, -5, -2, 3, -1},
+    {-1, 3, -8, 6, 5, -27, 166, -424, 882, -1471, 2488, -4532, 29883, 3229, -615, -67, 306, -227, 162, -75, 60, -19, 3, 0, -2},
+    {-1, 3, -8, 17, -16, 10, 107, -365, 848, -1571, 3021, -6016, 26516, 9036, -2680, 1024, -266, 9, 52, -84, 65, -34, 10, -2, 0},
+    {0, 2, -8, 16, -35, 43, 26, -235, 635, -1352, 2810, -5882, 21472, 15367, -4681, 2062, -839, 347, -68, -23, 70, -35, 17, -5, 0},
+};
+
+struct XaAudio {
+    int16_t samples[2][18 * 8 * 28];  // one sector, decoded
+    unsigned size = 0, pos = 0;
+    unsigned freq = 0;                // 6 = 37.8 kHz, 3 = 18.9 kHz (in sevenths of 44.1 kHz)
+    int16_t previous[2][2] = {};
+    int16_t resamp[2][64] = {};
+    unsigned resamp_phase = 0, resamp_pos = 0;
+} xa;
+
+bool muted;
+uint8_t vol_pending[2][2] = {{0x80, 0}, {0, 0x80}}, volume[2][2] = {{0x80, 0}, {0, 0x80}};  // [src][dst]
+bool adpcm_muted;
+
+void decode_xa_unit(const uint8_t *in, int16_t *out, unsigned shift, unsigned weight) {
+    static const int32_t W[16][2] = {{0, 0}, {60, 0}, {115, -52}, {98, -55}, {122, -60}};
+    for (int i = 0; i < 28; i++) {
+        int32_t s = int16_t(in[i] << 8);
+        s >>= shift;
+        s += ((out[i - 1] * W[weight][0]) >> 6) + ((out[i - 2] * W[weight][1]) >> 6);
+        out[i] = int16_t(std::clamp(s, -32768, 32767));
+    }
+}
+
+void decode_xa_sector(const uint8_t *raw) {
+    uint8_t coding = raw[19];
+    bool eight_bit = coding & 0x10, stereo = coding & 0x01;
+    unsigned shift_units = eight_bit ? 0 : 1;
+    xa.pos = 0;
+    xa.size = 18 * (4u << shift_units) * 28 / (stereo ? 2 : 1);
+    xa.freq = (coding & 0x04) ? 3 : 6;
+    for (unsigned group = 0; group < 18; group++) {
+        const uint8_t *sg = raw + 24 + group * 128;
+        const uint8_t *params = sg, *data = sg + 16;
+        for (unsigned unit = 0; unit < (4u << shift_units); unit++) {
+            uint8_t param = params[(unit & 3) | ((unit & 4) << 1)];
+            uint8_t param_copy = params[4 | (unit & 3) | ((unit & 4) << 1)];
+            uint8_t in[28];
+            for (int i = 0; i < 28; i++) {
+                uint8_t t = data[i * 4 + (unit >> shift_units)];
+                if (shift_units) t = uint8_t((t << ((unit & 1) ? 0 : 4)) & 0xF0);
+                in[i] = t;
+            }
+            int ch = (unit & 1) && stereo;
+            int16_t out[30];
+            out[0] = xa.previous[ch][0];
+            out[1] = xa.previous[ch][1];
+            decode_xa_unit(in, out + 2, param & 0x0F, param >> 4);
+            xa.previous[ch][0] = out[28];
+            xa.previous[ch][1] = out[29];
+            if (param != param_copy) memset(out, 0, sizeof out);
+            for (int i = 0; i < 28; i++) {
+                if (stereo) {
+                    xa.samples[ch][group * (2u << shift_units) * 28 + (unit >> 1) * 28 + i] = out[2 + i];
+                } else {
+                    unsigned at = group * (4u << shift_units) * 28 + unit * 28 + i;
+                    xa.samples[0][at] = xa.samples[1][at] = out[2 + i];
+                }
+            }
+        }
+    }
+}
+
+}  // namespace
+}  // namespace psx::hw
+
+// The SPU pulls one 44.1 kHz sample of CD audio at a time.
+extern "C" void CDC_GetCDAudioSample(int32_t samples[2]) {
+    using namespace psx::hw;
+    samples[0] = samples[1] = 0;
+    if (!xa.freq || xa.pos >= xa.size) return;
+    int32_t s[2];
+    for (int c = 0; c < 2; c++) {
+        const int16_t *imp = XA_IMPULSE[xa.resamp_phase];
+        const int16_t *wf = &xa.resamp[c][(xa.resamp_pos + 32 - 25) & 0x1F];
+        int32_t acc = 0;
+        for (int k = 0; k < 25; k++) acc += imp[k] * wf[k];
+        s[c] = std::clamp(acc >> 15, -32768, 32767);
+    }
+    xa.resamp_phase += xa.freq;
+    if (xa.resamp_phase >= 7) {
+        xa.resamp_phase -= 7;
+        for (int c = 0; c < 2; c++)
+            xa.resamp[c][xa.resamp_pos] = xa.resamp[c][xa.resamp_pos + 32] = xa.samples[c][xa.pos];
+        xa.pos++;
+        xa.resamp_pos = (xa.resamp_pos + 1) & 0x1F;
+    }
+    if (muted || adpcm_muted) return;
+    for (int d = 0; d < 2; d++)
+        samples[d] = std::clamp(((s[0] * volume[0][d]) >> 7) + ((s[1] * volume[1][d]) >> 7), -32768, 32767);
+}
+
+namespace psx::hw {
+namespace {
 
 // ---------------------------------------------------------------------------------------------
 // Controller state
@@ -180,6 +290,7 @@ void command(uint8_t cmd) {
         break;
     case 0x0B:  // Mute
     case 0x0C:  // Demute
+        muted = cmd == 0x0B;
         push(FIRST_RESPONSE, 3, {stat});
         break;
     case 0x0D:  // Setfilter file chan
@@ -287,7 +398,9 @@ void cdrom_event_sector() {
     uint8_t submode = raw[18];
     bool realtime_audio = (submode & 0x44) == 0x44;  // real-time + audio: XA-ADPCM
     if ((mode & 0x40) && realtime_audio) {
-        // TODO: decode XA-ADPCM into the SPU's CD audio input.
+        // XA-ADPCM goes to the SPU, not the CPU (subject to the file/channel filter).
+        bool match = !(mode & 0x08) || (raw[16] == filter_file && raw[17] == filter_chan);
+        if (match) decode_xa_sector(raw);
         return;
     }
     if ((mode & 0x08) && realtime_audio) return;
@@ -352,7 +465,15 @@ void cdrom_write(uint32_t phys, uint8_t v) {
             schedule_delivery();
         }
         break;
-    default:  // audio volume registers
+    case 0x22: vol_pending[0][0] = v; break;  // L -> L
+    case 0x32: vol_pending[0][1] = v; break;  // L -> R
+    case 0x13: vol_pending[1][1] = v; break;  // R -> R
+    case 0x23: vol_pending[1][0] = v; break;  // R -> L
+    case 0x33:  // apply volume changes / mute ADPCM
+        adpcm_muted = v & 1;
+        if (v & 0x20) memcpy(volume, vol_pending, sizeof volume);
+        break;
+    default:  // sound map registers (XA from RAM): unused
         break;
     }
 }

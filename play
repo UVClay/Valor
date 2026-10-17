@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Build (if needed) and play, inside the dev container, with the host's display, audio,
+# GPU and controllers passed through. Extra arguments go to the runtime.
+#   ./play                    uses disc/Medal of Honor (USA)/*.cue
+#   ./play --disc other.cue
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$root"
+
+disc=(disc/"Medal of Honor (USA)"/*.cue)
+args=(--bios build/openbios/openbios.bin)
+[[ " $* " == *" --disc "* ]] || args+=(--disc "${disc[0]}")
+
+./dev bash -c 'cmake -S . -B build/cmake -G Ninja >/dev/null && cmake --build build/cmake | grep -vE "^\[" || true'
+
+runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+gui=(-e XDG_RUNTIME_DIR=/tmp/runtime -e SDL_AUDIO_DRIVER=pipewire)
+if [ -n "${WAYLAND_DISPLAY:-}" ] && [ -S "$runtime/$WAYLAND_DISPLAY" ]; then
+    gui+=(-e WAYLAND_DISPLAY -v "$runtime/$WAYLAND_DISPLAY:/tmp/runtime/$WAYLAND_DISPLAY")
+fi
+if [ -n "${DISPLAY:-}" ] && [ -d /tmp/.X11-unix ]; then
+    gui+=(-e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix)
+fi
+[ -S "$runtime/pipewire-0" ] && gui+=(-v "$runtime/pipewire-0:/tmp/runtime/pipewire-0")
+[ -d "$runtime/pulse" ] && gui+=(-v "$runtime/pulse:/tmp/runtime/pulse")
+[ -d /dev/dri ] && gui+=(--device /dev/dri)
+# Controllers: the whole input directory so hot-plugged pads show up, plus udev for discovery.
+gui+=(-v /dev/input:/dev/input -v /run/udev:/run/udev:ro --group-add keep-groups)
+
+tty_flags=()
+[ -t 0 ] && tty_flags=(-it)
+
+image="moh-recomp-dev:$(cat Containerfile requirements.txt | sha256sum | cut -c1-12)"
+exec podman run --rm "${tty_flags[@]}" --userns=keep-id --security-opt label=disable \
+    -v "$root:/work" -w /work "${gui[@]}" "$image" ./build/cmake/valor "${args[@]}" "$@"

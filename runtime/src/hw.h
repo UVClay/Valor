@@ -18,7 +18,7 @@ void events_init(Cpu *c);
 
 inline int64_t now() { return cpu->cycles * CYCLES_PER_INSTRUCTION; }
 
-enum class Event { VBlank, Timer0, Timer1, Timer2, CdResponse, CdSector, SioAck, Count };
+enum class Event { VBlank, Timer0, Timer1, Timer2, CdResponse, CdSector, SioAck, Spu, Count };
 
 // Run `ev` at absolute cycle `when` (replaces a pending one of the same kind).
 void schedule_at(Event ev, int64_t when);
@@ -63,6 +63,7 @@ uint32_t gpu_read_data();
 void gpu_vblank();
 
 void spu_init();
+void spu_event();
 uint16_t spu_read(uint32_t phys);
 void spu_write(uint32_t phys, uint16_t v);
 void spu_dma_write(uint32_t addr, uint32_t words);

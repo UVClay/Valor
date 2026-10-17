@@ -47,8 +47,13 @@ endif()
 recompile(bios bios/openbios.toml)
 recompile(game games/${GAME}/recomp.toml)
 
+# Mednafen's SPU (vendored from Beetle PSX, GPL-2.0-or-later), built against small shims.
+add_library(beetle_spu STATIC third_party/beetle-psx/psx/spu.c)
+target_include_directories(beetle_spu PUBLIC third_party/beetle-psx third_party/beetle-psx/psx)
+target_compile_options(beetle_spu PRIVATE -O2 -w)
+
 file(GLOB runtime_src CONFIGURE_DEPENDS runtime/src/*.cpp)
 add_executable(valor ${runtime_src})
 target_include_directories(valor PRIVATE runtime/include)
 target_compile_options(valor PRIVATE -Wall -Wextra)
-target_link_libraries(valor PRIVATE game_recomp bios_recomp SDL3::SDL3)
+target_link_libraries(valor PRIVATE game_recomp bios_recomp beetle_spu SDL3::SDL3)

@@ -8,6 +8,7 @@ RUN dnf install -y --setopt=install_weak_deps=False \
         git python3 python3-pip \
         binutils-mips64-linux-gnu gcc-mips64-linux-gnu \
         SDL3-devel \
+        mesa-dri-drivers mesa-libEGL mesa-libGL mesa-vulkan-drivers \
         gdb \
     && dnf clean all
 
