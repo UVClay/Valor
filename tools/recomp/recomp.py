@@ -186,8 +186,12 @@ def cmd_generate(proj: Project, outdir):
         write_if_changed(out / f"{module}.h", generate_header(module, fs))
         written.add(f"{module}.h")
         try:
-            files = generate_module(module, fs, resolve, proj.symbols.get(module, {}), headers,
-                                    proj.cfg.get("overrides", {}))
+            syms = proj.symbols.get(module, {})
+            by_name = {n: a for a, n in syms.items()}
+            dynamic = [(by_name[n], by_name[n] + 4 * words)
+                       for n, words in proj.cfg.get("dynamic_code", {}).items() if n in by_name]
+            files = generate_module(module, fs, resolve, syms, headers,
+                                    proj.cfg.get("overrides", {}), dynamic)
         except CodegenError as e:
             sys.exit(f"{module}: {e}")
         for name, text in files.items():

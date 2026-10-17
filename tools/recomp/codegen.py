@@ -167,8 +167,9 @@ def is_terminator(i: Insn) -> bool:
 
 
 class FunctionWriter:
-    def __init__(self, module: str, fn: Function, resolve_call):
+    def __init__(self, module: str, fn: Function, resolve_call, dynamic=()):
         self.module, self.fn, self.img = module, fn, fn.image
+        self.dynamic = dynamic  # [(start, end)] ranges of code rewritten at run time
         self.resolve_call = resolve_call  # addr -> C function name or None (indirect)
         self.out = []
         self.pending = 0  # instructions since the last TICK
@@ -231,6 +232,20 @@ class FunctionWriter:
             if a in labels:
                 self.tick()
                 self.out.append(f"L_{a:08X}:;")
+            dyn = next(((ds, de) for ds, de in self.dynamic if ds <= a < de), None)
+            if dyn:
+                # Rewritten at run time: interpret what RAM holds there now, then carry on.
+                end = a
+                while end < dyn[1] and end in fn.addrs:
+                    end += 4
+                self.tick()
+                self.line(f"psx_run_ram_code(c, 0x{a:08X}u, 0x{end:08X}u);")
+                skip.update(range(a, end, 4))
+                if end not in fn.addrs:
+                    if end not in fn.tail_calls:
+                        raise CodegenError(f"{fn.start:08X}: dynamic code at {a:08X} falls off the end")
+                    self.line(f"TAIL(c, ra_); {self.call(end)} return;")
+                continue
             i = self.img.insn(a)
             if not i.has_delay_slot:
                 if j := self.hazard(i):
@@ -341,7 +356,8 @@ class FunctionWriter:
         raise CodegenError(f"{a:08X}: unexpected control op {op}")
 
 
-def generate_module(module: str, funcs: dict, resolve_call, symbols: dict, header_names, overrides=None):
+def generate_module(module: str, funcs: dict, resolve_call, symbols: dict, header_names, overrides=None,
+                    dynamic=()):
     """Returns {filename: text} for one module (exe or overlay).
 
     overrides maps symbol names to native runtime functions that replace the recompiled body.
@@ -360,7 +376,7 @@ def generate_module(module: str, funcs: dict, resolve_call, symbols: dict, heade
                 body.append(f"void {native}(Cpu *c);")
                 body.append(f"void {fn_name(module, s)}(Cpu *c) {{ {native}(c); }}")
             else:
-                body.append(FunctionWriter(module, funcs[s], resolve_call).emit())
+                body.append(FunctionWriter(module, funcs[s], resolve_call, dynamic).emit())
             body.append("")
         files[f"{module}_{chunk // FUNCS_PER_FILE:03d}.c"] = "\n".join(body)
 

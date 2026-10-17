@@ -1,6 +1,9 @@
 // SIO0 (controller and memory card ports) at 0x1F801040.
+#include <cstdlib>
+
 #include "hw.h"
 #include "input.h"
+#include "memcard.h"
 
 namespace psx::hw {
 
@@ -41,7 +44,9 @@ void respond(uint8_t tx) {
             reply_acks = false;  // last byte: no ack
         }
     }
-    // No memory card inserted: nothing answers.
+    if (device == Device::Card && port == 0 && memcard_present()) reply = memcard_exchange(step, tx, reply_acks);
+    if (device == Device::Card && getenv("VALOR_TRACE_SIO"))
+        log("sio: card port %d step %d tx %02X -> %02X%s", port, step, tx, reply, reply_acks ? " ack" : "");
     step++;
 }
 

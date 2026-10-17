@@ -23,3 +23,9 @@ sections = [".data"]
 flushCache = "native_flush_cache"
 # Restores registers then `jr $ra` into a context that isn't on the host stack.
 psxlongjmp = "native_longjmp"
+
+# Code that is rewritten at run time (symbol -> length in words). The recompiled code
+# interprets whatever is in RAM there. The card driver patches slot 1 with a jump to its
+# fast-track handler; games may patch the others.
+[dynamic_code]
+exceptionHandlerPatchSlot1 = 16  # slots 1-4 are contiguous

@@ -33,6 +33,7 @@ struct Config {
     uint64_t screenshot_every = 60;
     std::filesystem::path wav;  // also record audio output here
     int volume = 100;           // output volume, percent
+    std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> presses;  // scripted input (--press FRAME:BUTTON[:DURATION])
 };

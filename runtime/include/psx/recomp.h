@@ -124,6 +124,7 @@ void psx_unhandled_jump(Cpu *c, uint32_t pc, uint32_t target);
 void psx_events(Cpu *c, uint32_t pc);                       /* timers, DMA, interrupts at pc */
 void psx_exception_return(Cpu *c, uint32_t target);         /* jr + rfe: back to the interrupted code */
 void psx_jump_ra(Cpu *c);                                   /* longjmp-style jr $ra into a saved context */
+void psx_run_ram_code(Cpu *c, uint32_t start, uint32_t end); /* interpret code patched at run time */
 void psx_syscall(Cpu *c, uint32_t pc);
 void psx_break(Cpu *c, uint32_t pc, uint32_t code);
 void psx_bios_call(Cpu *c, uint32_t vector);                /* A0/B0/C0; function number in t1 */

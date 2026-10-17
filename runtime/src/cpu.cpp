@@ -109,6 +109,61 @@ static bool follow_stub(Cpu *c, uint32_t addr) {
     return false;
 }
 
+// Interpret code that was written into RAM at run time (see `dynamic_code` in the configs),
+// e.g. the jump the card driver patches into the BIOS exception handler. Supports straight-line
+// code: ALU ops, loads/stores and calls; anything else halts with a clear message.
+static void interpret(Cpu *c, uint32_t start, uint32_t end) {
+    auto set = [&](uint32_t r, uint32_t v) { if (r) c->r[r] = v; };
+    auto step = [&](uint32_t pc, uint32_t w) {
+        uint32_t op = w >> 26, rs = (w >> 21) & 31, rt = (w >> 16) & 31, rd = (w >> 11) & 31;
+        uint32_t funct = w & 63, sa = (w >> 6) & 31;
+        int32_t imm = int16_t(w);
+        uint32_t ea = c->r[rs] + imm;
+        if (w == 0) return;
+        switch (op) {
+        case 0x00:
+            switch (funct) {
+            case 0x00: set(rd, c->r[rt] << sa); return;
+            case 0x21: set(rd, c->r[rs] + c->r[rt]); return;
+            case 0x23: set(rd, c->r[rs] - c->r[rt]); return;
+            case 0x24: set(rd, c->r[rs] & c->r[rt]); return;
+            case 0x25: set(rd, c->r[rs] | c->r[rt]); return;
+            }
+            break;
+        case 0x09: set(rt, c->r[rs] + imm); return;
+        case 0x0C: set(rt, c->r[rs] & (w & 0xFFFF)); return;
+        case 0x0D: set(rt, c->r[rs] | (w & 0xFFFF)); return;
+        case 0x0F: set(rt, (w & 0xFFFF) << 16); return;
+        case 0x20: set(rt, uint32_t(int8_t(psx_r8(c, ea)))); return;
+        case 0x23: set(rt, psx_r32(c, ea)); return;
+        case 0x24: set(rt, psx_r8(c, ea)); return;
+        case 0x25: set(rt, psx_r16(c, ea)); return;
+        case 0x28: psx_w8(c, ea, c->r[rt]); return;
+        case 0x29: psx_w16(c, ea, c->r[rt]); return;
+        case 0x2B: psx_w32(c, ea, c->r[rt]); return;
+        }
+        fatal("run-time patched code at %08X: unsupported instruction %08X", pc, w);
+    };
+    for (uint32_t pc = start; pc < end; pc += 4) {
+        uint32_t w = psx_r32(c, pc);
+        uint32_t op = w >> 26, funct = w & 63;
+        bool jal = op == 0x03, jalr = op == 0 && funct == 0x09;
+        if (!jal && !jalr) {
+            if ((op == 0 && (funct == 0x08)) || op == 0x02 || (op >= 0x04 && op <= 0x07) || op == 0x01)
+                fatal("run-time patched code at %08X: control flow %08X not supported", pc, w);
+            step(pc, w);
+            continue;
+        }
+        // Call: link, run the delay slot, call, then continue after the delay slot.
+        uint32_t target = jal ? ((pc + 4) & 0xF0000000) | ((w & 0x3FFFFFF) << 2) : c->r[(w >> 21) & 31];
+        uint32_t link_reg = jal ? 31 : (w >> 11) & 31;
+        if (link_reg) c->r[link_reg] = pc + 8;
+        step(pc + 4, psx_r32(c, pc + 4));
+        psx_call(c, target);
+        pc += 4;
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Exceptions
 //
@@ -173,6 +228,8 @@ void psx_call(Cpu *c, uint32_t addr) {
 }
 
 void psx_bios_call(Cpu *c, uint32_t vector) { psx_call(c, vector); }
+
+void psx_run_ram_code(Cpu *c, uint32_t start, uint32_t end) { interpret(c, start, end); }
 
 void psx_unhandled_jump(Cpu *c, uint32_t pc, uint32_t target) {
     (void)c;
