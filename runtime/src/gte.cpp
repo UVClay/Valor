@@ -5,7 +5,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
+#include <string>
+#include <vector>
 
+#include "interp.h"
 #include "runtime.h"
 
 namespace {
@@ -194,16 +198,35 @@ uint64_t gte_projections;  // RTPS/RTPT vertices projected so far
 
 namespace {
 
+// VALOR_TRACE_GTE_MAT: per frame, the transforms (RT, TR, H) used for projections and how often.
+struct MatUse { int16_t rt[3][3]; int32_t tr[3]; uint16_t h; uint32_t pc; int count; };
+std::vector<MatUse> mat_uses;
+bool trace_mat = getenv("VALOR_TRACE_GTE_MAT");
+
+void note_matrix() {
+    for (auto &m : mat_uses)
+        if (!memcmp(m.rt, g.rt, sizeof m.rt) && !memcmp(m.tr, g.tr, sizeof m.tr) && m.h == g.h) { m.count++; return; }
+    MatUse m{};
+    memcpy(m.rt, g.rt, sizeof m.rt);
+    memcpy(m.tr, g.tr, sizeof m.tr);
+    m.h = g.h;
+    m.pc = current_pc;
+    m.count = 1;
+    mat_uses.push_back(m);
+}
+
 void rtp(int n, bool last) {
     psx::gte_projections++;
+    if (trace_mat) note_matrix();
     const Vec3s &v = g.v[n];
-    int64_t mac3_raw = 0;
+    int64_t mac3_raw = 0, accs[3];
     for (int r = 0; r < 3; r++) {
         int64_t acc = int64_t(g.tr[r]) * 0x1000;
         acc = check_mac(r + 1, acc + int64_t(g.rt[r][0]) * v.x);
         acc = check_mac(r + 1, acc + int64_t(g.rt[r][1]) * v.y);
         acc = check_mac(r + 1, acc + int64_t(g.rt[r][2]) * v.z);
         if (r == 2) mac3_raw = acc;
+        accs[r] = acc;
         set_mac(r + 1, acc);
     }
     set_ir(1, g.mac[1], lm);
@@ -216,13 +239,14 @@ void rtp(int n, bool last) {
     push_sz(z12);
     uint32_t q = divide(g.h, g.sz[3]);
     int64_t sx = int64_t(q) * g.ir[1], sy = int64_t(q) * g.ir[2];
+    bool hud = std::find(psx::config.hud_projections.begin(), psx::config.hud_projections.end(), current_pc) !=
+               psx::config.hud_projections.end();
+    double kx = 1, ky = 1;
     if (projection.active) {
         // Widescreen / FOV: scale the projected offset from the screen center. HUD elements that
         // are projected (config.hud_projections, by cop2 instruction address) keep their size.
         // VALOR_TRACE_GTE_PC=1 lists where projections come from (H, cop2 address, result).
         bool world = g.h == projection.world_h;
-        bool hud = std::find(psx::config.hud_projections.begin(), psx::config.hud_projections.end(), current_pc) !=
-                   psx::config.hud_projections.end();
         if (getenv("VALOR_TRACE_GTE_PC")) {
             static uint32_t seen[64];
             bool known = false;
@@ -236,6 +260,8 @@ void rtp(int n, bool last) {
             const auto &k = world ? projection.world : projection.other;
             sx = int64_t(double(sx) * k.x);
             sy = int64_t(double(sy) * k.y);
+            kx = k.x;
+            ky = k.y;
         }
     }
     sx += g.ofx;
@@ -245,6 +271,7 @@ void rtp(int n, bool last) {
     set_mac0(sy);
     int32_t y = int32_t(sy >> 16);
     push_sxy(x, y);
+    if (!hud && psx::interp_enabled()) psx::interp_record(g.sxy[2][0], g.sxy[2][1], accs, g.h, kx, ky, g.rt, g.tr);
     if (last) {
         int64_t dq = int64_t(g.dqa) * q + g.dqb;
         set_mac0(dq);
@@ -585,6 +612,19 @@ void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double
     projection.active = squeeze != 1.0 || k != 1.0;
     log("gte: projection aspect %.3f, world FOV %.1f deg horizontal", aspect,
         2.0 * std::atan(base_tan / k * aspect) * 180.0 / M_PI);
+}
+
+void gte_trace_frame() {
+    if (!trace_mat) return;
+    std::sort(mat_uses.begin(), mat_uses.end(), [](const MatUse &a, const MatUse &b) { return a.count > b.count; });
+    for (size_t i = 0; i < mat_uses.size() && i < 6; i++) {
+        const auto &m = mat_uses[i];
+        log("gtemat %d H=%u pc=%08X n=%d rt=[%d %d %d; %d %d %d; %d %d %d] tr=(%d %d %d)", int(i), m.h, m.pc, m.count,
+            m.rt[0][0], m.rt[0][1], m.rt[0][2], m.rt[1][0], m.rt[1][1], m.rt[1][2], m.rt[2][0], m.rt[2][1], m.rt[2][2],
+            m.tr[0], m.tr[1], m.tr[2]);
+    }
+    log("gtemat total %zu", mat_uses.size());
+    mat_uses.clear();
 }
 
 }  // namespace psx

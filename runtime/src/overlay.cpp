@@ -28,8 +28,8 @@ bool menu_open;
 
 constexpr int HISTORY = 240;
 float frame_ms[HISTORY];  // host time between presents
-float emu_ms[HISTORY];    // time spent emulating each frame (excluding pacing sleeps)
-int history_pos;
+float emu_ms[HISTORY];    // time spent emulating each vblank (excluding pacing and presenting)
+int history_pos, emu_pos;
 uint64_t last_present_ns, frame_start_ns;
 
 // Game frame rate: the game flips its display buffer once per rendered frame.
@@ -114,6 +114,17 @@ void draw_menu() {
                 float fov = float(config.fov);
                 if (ImGui::SliderFloat("Horizontal FOV", &fov, 40.0f, 130.0f, "%.0f deg")) config.fov = fov;
             }
+            ImGui::Checkbox("Frame interpolation", &config.interpolate);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("The game runs at 30 Hz; draw frames in between by moving the camera.\nNeeds a resolution above 1x.");
+            if (config.interpolate) {
+                static const int rates[] = {0, 60, 120, 144, 165, 240, 360};
+                static const char *names[] = {"Display refresh rate", "60", "120", "144", "165", "240", "360"};
+                int current = 0;
+                for (int i = 0; i < IM_ARRAYSIZE(rates); i++)
+                    if (rates[i] == config.frame_rate) current = i;
+                if (ImGui::Combo("Frame rate", &current, names, IM_ARRAYSIZE(names))) config.frame_rate = rates[current];
+            }
             ImGui::Checkbox("PS1 dithering and 15-bit color", &config.dither);
             ImGui::Checkbox("Smooth scaling", &config.smooth_scaling);
             if (ImGui::Checkbox("Fullscreen (F11)", &config.fullscreen)) display_apply_settings();
@@ -174,6 +185,12 @@ void draw_crosshair() {
 
 void overlay_frame_begin() { frame_start_ns = SDL_GetTicksNS(); }
 
+void overlay_frame_emulated() {
+    if (!frame_start_ns) return;
+    emu_ms[emu_pos] = float(SDL_GetTicksNS() - frame_start_ns) / 1e6f;
+    emu_pos = (emu_pos + 1) % HISTORY;
+}
+
 void overlay_note_flip() { flips_in_window++; }
 
 // Called right before the frame is shown; `work_ns` is when emulating this frame started.
@@ -181,7 +198,6 @@ void overlay_render() {
     uint64_t now = SDL_GetTicksNS();
     if (last_present_ns) {
         frame_ms[history_pos] = float(now - last_present_ns) / 1e6f;
-        emu_ms[history_pos] = frame_start_ns ? float(now - frame_start_ns) / 1e6f : 0;
         history_pos = (history_pos + 1) % HISTORY;
     }
     last_present_ns = now;
@@ -198,6 +214,11 @@ void overlay_render() {
         uint32_t frames = std::max(1, flips_in_window);
         per_game_frame = {window_sum.primitives / frames, window_sum.draw_calls / frames, window_sum.vram_uploads / frames};
         window_sum = {};
+        if (static bool log_fps = getenv("VALOR_LOG_FPS"); log_fps) {
+            float worst = 0;
+            for (float v : frame_ms) worst = std::max(worst, v);
+            log("fps: display %.1f game %.1f, worst frame %.1f ms", display_hz, game_fps, worst);
+        }
         flips_in_window = presents_in_window = 0;
         flips_window_start_ns = now;
     }
@@ -223,7 +244,8 @@ void draw_stats() {
     ImGui::Begin("stats", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
                      ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing);
-    ImGui::Text("%.1f FPS", game_fps);
+    if (config.interpolate && display_hz > game_fps * 1.5f) ImGui::Text("%.0f FPS (game %.1f)", display_hz, game_fps);
+    else ImGui::Text("%.1f FPS", game_fps);
     if (config.overlay >= 2) {
         // Frame pacing over the history window.
         std::vector<float> ft(frame_ms, frame_ms + HISTORY);
@@ -234,6 +256,7 @@ void draw_stats() {
         float avg = sum / HISTORY, sd = std::sqrt(std::max(0.0f, sq / HISTORY - avg * avg));
         float p99 = sorted[HISTORY * 99 / 100];
         float target = 1000.0f * float(CYCLES_PER_FRAME) / float(CPU_HZ);
+        if (config.interpolate && gl_renderer_scale() > 1) target = float(1000.0 / present_rate());
         int late = int(std::count_if(ft.begin(), ft.end(), [&](float v) { return v > target * 1.5f; }));
         float emu_avg = 0, emu_max = 0;
         for (float v : emu_ms) { emu_avg += v / HISTORY; emu_max = std::max(emu_max, v); }
@@ -244,7 +267,9 @@ void draw_stats() {
                          ImVec2(260, 50));
         ImGui::Text("frame    avg %.2f  min %.2f  max %.2f ms", avg, sorted.front(), sorted.back());
         ImGui::Text("pacing   sd %.2f ms  99th %.2f ms  late %d/%d", sd, p99, late, HISTORY);
-        ImGui::Text("emulate  avg %.2f  max %.2f ms (%.0f%% of budget)", emu_avg, emu_max, 100.0f * emu_avg / target);
+        float vblank_ms = 1000.0f * float(CYCLES_PER_FRAME) / float(CPU_HZ);
+        ImGui::Text("emulate  avg %.2f  max %.2f ms per vblank (%.0f%% of %.1f ms)", emu_avg, emu_max,
+                    100.0f * emu_avg / vblank_ms, vblank_ms);
         ImGui::Text("cpu      %.2f M instructions/frame", instructions_per_frame / 1e6);
         double q = audio_queued();
         if (q >= 0) ImGui::Text("audio    %.1f ms queued", q * 1000);

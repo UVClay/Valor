@@ -22,6 +22,7 @@ Vertex vertex_xy(uint32_t w) {
     Vertex v{};
     v.x = sext11(w) + gpu.offset_x;
     v.y = sext11(w >> 16) + gpu.offset_y;
+    v.key = uint32_t(uint16_t(sext11(w))) | uint32_t(uint16_t(sext11(w >> 16))) << 16;
     return v;
 }
 

@@ -70,6 +70,27 @@ Runtime devices: interrupt controller, timers, DMA, CD-ROM (reads the BIN direct
 GPU (software rasterizer reproducing affine texturing, dithering, semi-transparency, mask bit),
 MDEC, GTE, SPU (Mednafen's, vendored from Beetle PSX), controller port.
 
+### Frame interpolation
+
+The game logic runs at a fixed 30 Hz (RECON.md, Frame timing). For higher frame rates
+(`interp.cpp`, `gpu_gl.cpp`):
+
+- **Recording projections.** Every GTE projection is recorded with its camera-space position,
+  keyed by the screen coordinate it produced. The per-tick camera is the transform that the most
+  world vertices used.
+- **Recording draws.** The OpenGL renderer records each tick's drawing as a list. It matches every
+  vertex to its projection by that coordinate. When different points share a coordinate, it picks
+  the candidate projected nearest, in order, to the rest of the primitive.
+- **Re-projecting.** Frames between vblanks redraw the displayed list with every matched vertex
+  re-projected through a camera between this tick's and the next one's: slerped rotation, lerped
+  position. The game projects tick N+1 before tick N is displayed, so the next camera is known in
+  time and nothing is delayed.
+- **What stays put.** The weapon (projected with another H), the HUD (never projected) and the
+  compass (a HUD projection) are left in place. Camera cuts larger than 90° or 1500 units are not
+  interpolated.
+- **Presentation.** Frames are presented on their own clock at the display's refresh rate (or
+  `--frame-rate`). Emulation still advances one vblank at a time, in between presents.
+
 ## Verification
 
 Replay recorded controller input in an emulator and in the recompiled build, compare RAM and GPU

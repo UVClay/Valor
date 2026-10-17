@@ -8,9 +8,9 @@ and full playthroughs of two missions.
 
 ## PC quality of life
 
-- [ ] **Unrestricted resolution**: OpenGL renderer replaying GPU commands at any scale; the software
+- [x] **Unrestricted resolution**: OpenGL renderer replaying GPU commands at any scale; the software
       rasterizer keeps PS1 VRAM authoritative underneath
-- [ ] **Debug overlay** with levels: off / FPS / extended (frame times, pacing, emulation stats)
+- [x] **Debug overlay** with levels: off / FPS / extended (frame times, pacing, emulation stats)
 - [x] **FOV / widescreen**: `--aspect`, `--fov`; GTE projection scaling, 2D screens stay 4:3
 - [ ] **Lamp pop-in in widescreen** (reported at the start of mission 2 level 2): an object culled
       with a 4:3 assumption; level geometry, enemies and the reticle are fine. Needs the exact spot.
@@ -18,8 +18,10 @@ and full playthroughs of two missions.
 - [x] **Strafing**: the movement code adds forward and strafe as vectors. The loss of speed came from
       the game's per-axis stick curve meeting round-gated modern sticks. Round input is now mapped
       to the DualShock's square range (Controls → "Square stick range", see RECON.md).
-- [ ] High frame rate: the game logic is a fixed 30 Hz tick (see RECON.md, Frame timing), so
-      render interpolated frames on top of it
+- [x] **High frame rate**: the game logic is a fixed 30 Hz tick, so the last frame is redrawn with
+      the camera interpolated toward the next tick's, at the display's refresh rate (DESIGN.md,
+      Frame interpolation). No added latency.
+- [ ] Interpolate moving objects too (enemies and doors move at 30 Hz; only the camera is smooth)
 - [x] Crosshair (Interface tab; size slider)
 - [ ] Mouse and keyboard controls
 - [ ] Saves decoupled from memory cards

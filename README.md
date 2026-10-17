@@ -42,6 +42,21 @@ Any SDL-supported controller works (DualShock/DualSense map 1:1). Keyboard fallb
 | Fast-forward (hold) | Tab |
 | Volume down / up | - / = (or `./play --volume 60`) |
 
+## Settings
+
+F1 opens the settings menu (the game pauses). Changes are saved to `saves/settings.ini` and can
+also be given on the command line:
+
+- **Resolution scale:** `--scale N`.
+- **Aspect ratio:** `--aspect 16:9`.
+- **Horizontal FOV:** `--fov DEG`.
+- **Frame interpolation:** on by default; `--no-interpolate` turns it off. The game runs at 30 Hz,
+  and in-between frames move the camera smoothly. It presents at the display's refresh rate or at
+  `--frame-rate N`.
+- **Square stick range:** maps modern round-gated sticks to the DualShock's range.
+- **Crosshair:** `--crosshair SIZE`.
+- **Volume and debug overlay.**
+
 ## Testing
 
 - `./dev tools/sweep.sh [MINUTES] [SEED]` plays every level with random input, headless and

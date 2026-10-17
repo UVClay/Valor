@@ -7,12 +7,17 @@
 // CLUT/texture window lookups, raw vs modulated textures, the four semi-transparency modes (two
 // passes for textured primitives so only texels with the semi bit blend) and the mask bit.
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstring>
+#include <deque>
+#include <memory>
 #include <vector>
 
 #include "gl.h"
 #include "gpu.h"
 #include "gpu_gl.h"
+#include "interp.h"
 #include "overlay.h"
 #include "runtime.h"
 
@@ -60,6 +65,45 @@ struct BatchState {
 
 std::vector<GLVertex> batch;
 bool warned_mask_check;
+
+// Frame interpolation (interp.cpp): everything drawn for one game tick, so it can be drawn again
+// with the camera moved. Per vertex: the tick's projection it came from (rec), or for a vertex
+// without one, the primitive's other vertices to borrow movement from (group).
+struct VertexSource {
+    int32_t rec = -1, group = -1;
+};
+std::vector<VertexSource> batch_sources;  // parallel to `batch`
+
+struct FrameList {
+    std::shared_ptr<const InterpTick> tick;
+    std::vector<GLVertex> vertices;
+    std::vector<VertexSource> sources;
+    std::vector<std::array<int32_t, 4>> groups;  // projections of a primitive's vertices (-1 = none)
+    struct Op {
+        enum Kind { DRAW, FILL, COPY } kind;
+        BatchState state;          // DRAW
+        uint32_t first, count;     // DRAW: vertex range
+        int x, y, w, h, sx, sy;    // FILL / COPY (sx, sy: copy source)
+        uint32_t color;            // FILL
+    };
+    std::vector<Op> ops;
+    bool has_area = false;
+    int area_x1 = 0, area_y1 = 0, area_x2 = 0, area_y2 = 0;
+    bool moved = false;            // the target holds an interpolated version of this list
+    uint64_t shown_at = 0;         // vblank it was first displayed
+    double period = 2;             // vblanks until the next tick is expected
+    bool shown = false;
+    uint64_t last_frame = 0;       // vblank of the latest draw
+};
+std::unique_ptr<FrameList> recording;            // the list being drawn now
+std::deque<std::unique_ptr<FrameList>> finished;  // complete lists, newest last
+FrameList *last_shown;
+
+uint64_t source_stats[4];  // vertices: not projected, ambiguous, other projection, matched
+
+// The current primitive's projections (filled while submitting it).
+std::array<int32_t, 4> prim_recs;
+int prim_group = -1;
 
 const char *VS = R"(#version 330 core
 layout(location = 0) in vec2 a_pos;
@@ -230,14 +274,31 @@ void bind_target_for_drawing() {
     glViewport(0, 0, 1024 * S, 512 * S);
 }
 
+void draw_vertices(const BatchState &st, const GLVertex *v, size_t n);
+
 void flush() {
     if (batch.empty()) return;
+    if (recording) {
+        FrameList::Op op{};
+        op.kind = FrameList::Op::DRAW;
+        op.state = batch_state;
+        op.first = uint32_t(recording->vertices.size());
+        op.count = uint32_t(batch.size());
+        recording->ops.push_back(op);
+        recording->vertices.insert(recording->vertices.end(), batch.begin(), batch.end());
+        recording->sources.insert(recording->sources.end(), batch_sources.begin(), batch_sources.end());
+    }
+    draw_vertices(batch_state, batch.data(), batch.size());
+    batch.clear();
+    batch_sources.clear();
+}
+
+void draw_vertices(const BatchState &st, const GLVertex *v, size_t n) {
     upload_dirty();
     bind_target_for_drawing();
     glUseProgram(program);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, vram_tex);
-    const BatchState &st = batch_state;
     uint32_t tw = st.tex_window;
     glUniform4i(u_texwin, int(tw & 0x1F) * 8, int((tw >> 5) & 0x1F) * 8, int((tw >> 10) & 0x1F) * 8,
                 int((tw >> 15) & 0x1F) * 8);
@@ -252,12 +313,114 @@ void flush() {
     apply_blend(st.blend);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(batch.size() * sizeof(GLVertex)), batch.data(), GL_STREAM_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, GLsizei(batch.size()));
+    glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(n * sizeof(GLVertex)), v, GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, GLsizei(n));
     overlay_counters.draw_calls++;
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
-    batch.clear();
+}
+
+// Frame interpolation bookkeeping at the start of every primitive or fill: a new tick's drawing
+// starts a new list, as does drawing in a later vblank (2D screens project nothing).
+void begin_draw() {
+    if (!interp_enabled()) {
+        recording.reset();
+        return;
+    }
+    interp_note_draw();
+    auto tick = interp_drawing_tick();
+    if (recording && recording->tick == tick && recording->last_frame == gpu.frames) return;
+    flush();
+    if (recording) {
+        finished.push_back(std::move(recording));
+        while (finished.size() > 3) {
+            if (last_shown == finished.front().get()) last_shown = nullptr;
+            finished.pop_front();
+        }
+    }
+    recording = std::make_unique<FrameList>();
+    recording->tick = tick;
+    recording->last_frame = gpu.frames;
+}
+
+// Find the projections of a primitive's vertices. Different points can land on the same screen
+// coordinate; a primitive's vertices are projected together, so of several candidates take the
+// one projected closest (in order) to the primitive's unambiguous vertices.
+void vertex_sources(const Vertex *const *v, int n, int32_t *out) {
+    for (int i = 0; i < 4; i++) prim_recs[i] = -1;
+    if (!recording || !recording->tick) {
+        for (int i = 0; i < n; i++) out[i] = -1;
+        return;
+    }
+    const InterpTick &t = *recording->tick;
+    int32_t first[4];
+    int64_t anchor = 0;
+    int anchors = 0;
+    for (int i = 0; i < n; i++) {
+        auto it = t.by_sxy.find(v[i]->key);
+        first[i] = it == t.by_sxy.end() ? -1 : int32_t(it->second);
+        if (first[i] >= 0 && t.previous[first[i]] < 0) {
+            anchor += first[i];
+            anchors++;
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        int32_t pick = first[i];
+        if (pick >= 0 && t.previous[pick] >= 0) {
+            if (!anchors) {
+                source_stats[1]++;
+                out[i] = -1;
+                continue;
+            }
+            int64_t center = anchor / anchors, best = INT64_MAX;
+            for (int32_t c = first[i]; c >= 0; c = t.previous[c])
+                if (std::abs(c - center) < best) {
+                    best = std::abs(c - center);
+                    pick = c;
+                }
+            if (best > 64) pick = -1;  // nothing projected near the rest of the primitive
+        }
+        if (pick < 0) {
+            static const char *dump = getenv("VALOR_TRACE_INTERP_FRAME");
+            if (dump && gpu.frames / 2 == strtoull(dump, nullptr, 0) / 2)
+                log("interp: unmatched n=%d i=%d (%d,%d) key %08X", n, i, v[i]->x, v[i]->y, v[i]->key);
+            source_stats[0]++;
+            out[i] = -1;
+        } else if (t.vertices[pick].h != float(config.world_h)) {
+            source_stats[2]++;
+            out[i] = -2;  // projected, but not with the world (weapon): stays put
+        } else {
+            source_stats[3]++;
+            out[i] = prim_recs[i] = pick;
+        }
+    }
+}
+
+// After a primitive's vertices are looked up: a group for vertices without a projection.
+void finish_sources(int n) {
+    prim_group = -1;
+    if (!recording) return;
+    bool any = false;
+    for (int i = 0; i < n; i++) any |= prim_recs[i] >= 0;
+    if (!any) return;
+    std::array<int32_t, 4> g = {-1, -1, -1, -1};
+    for (int i = 0; i < n; i++) g[i] = prim_recs[i];
+    prim_group = int32_t(recording->groups.size());
+    recording->groups.push_back(g);
+}
+
+VertexSource source_for(int32_t rec) {
+    VertexSource s;
+    if (rec >= 0) s.rec = rec;
+    else if (rec == -1) s.group = prim_group;
+    return s;
+}
+
+void note_area() {
+    if (!recording || recording->has_area) return;
+    recording->has_area = true;
+    recording->area_x1 = gpu.area_x1; recording->area_y1 = gpu.area_y1;
+    recording->area_x2 = gpu.area_x2; recording->area_y2 = gpu.area_y2;
 }
 
 void set_state(int blend, bool scissor = true) {
@@ -326,6 +489,9 @@ void submit(const DrawState &s, Emit emit) {
     }
 }
 
+void fill_target(int x, int y, int w, int h, uint32_t color);
+void copy_target(int sx, int sy, int dx, int dy, int w, int h);
+
 }  // namespace
 
 namespace hwgl {
@@ -333,11 +499,20 @@ namespace hwgl {
 bool active() { return enabled; }
 
 void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex &c) {
+    begin_draw();
+    note_area();
+    int32_t src[3];
+    const Vertex *vs[3] = {&a, &b, &c};
+    vertex_sources(vs, 3, src);
+    finish_sources(3);
     bool dither = s.dither && (s.shaded || (s.textured && !s.raw));
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
-        for (const Vertex *v : {&a, &b, &c})
+        int i = 0;
+        for (const Vertex *v : {&a, &b, &c}) {
             batch.push_back(make_vertex(s, float(v->x), float(v->y), float(v->u), float(v->v), v->r, v->g, v->b, f));
+            batch_sources.push_back(source_for(src[i++]));
+        }
     });
 }
 
@@ -348,9 +523,16 @@ void line(const DrawState &s, const Vertex &a, const Vertex &b) {
     bool major_x = std::abs(b.x - a.x) >= std::abs(b.y - a.y);
     float ex = major_x ? (b.x >= a.x ? 0.5f : -0.5f) : 0, ey = major_x ? 0 : (b.y >= a.y ? 0.5f : -0.5f);
     float nx = major_x ? 0 : 0.5f, ny = major_x ? 0.5f : 0;
+    begin_draw();
+    note_area();
+    int32_t src[2];
+    const Vertex *vs[2] = {&a, &b};
+    vertex_sources(vs, 2, src);
+    finish_sources(2);
     bool dither = s.dither && s.shaded;
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
+        for (int i : {0, 0, 1, 0, 1, 1}) batch_sources.push_back(source_for(src[i]));
         GLVertex p0 = make_vertex(s, ax - ex - nx, ay - ey - ny, 0, 0, a.r, a.g, a.b, f);
         GLVertex p1 = make_vertex(s, ax - ex + nx, ay - ey + ny, 0, 0, a.r, a.g, a.b, f);
         GLVertex p2 = make_vertex(s, bx + ex - nx, by + ey - ny, 0, 0, b.r, b.g, b.b, f);
@@ -362,8 +544,15 @@ void line(const DrawState &s, const Vertex &a, const Vertex &b) {
 void rect(const DrawState &s, const Vertex &base, int w, int h) {
     float x0 = float(base.x), y0 = float(base.y), x1 = x0 + w, y1 = y0 + h;
     float u0 = float(base.u), v0 = float(base.v);
+    begin_draw();
+    note_area();
+    int32_t src;
+    const Vertex *vs[1] = {&base};
+    vertex_sources(vs, 1, &src);
+    finish_sources(1);
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, false) | pass;
+        for (int i = 0; i < 6; i++) batch_sources.push_back(source_for(src));
         auto vx = [&](float x, float y, float u, float v) { return make_vertex(s, x, y, u, v, base.r, base.g, base.b, f); };
         GLVertex p0 = vx(x0, y0, u0, v0), p1 = vx(x1, y0, u0 + w, v0), p2 = vx(x0, y1, u0, v0 + h),
                  p3 = vx(x1, y1, u0 + w, v0 + h);
@@ -374,7 +563,22 @@ void rect(const DrawState &s, const Vertex &base, int w, int h) {
 void fill(int x, int y, int w, int h, uint32_t color) {
     vram_changed(x, y, w, h);
     if (!enabled) return;
+    begin_draw();
     flush();
+    if (recording) {
+        FrameList::Op op{};
+        op.kind = FrameList::Op::FILL;
+        op.x = x; op.y = y; op.w = w; op.h = h; op.color = color;
+        recording->ops.push_back(op);
+    }
+    fill_target(x, y, w, h, color);
+}
+
+}  // namespace hwgl
+
+namespace {
+
+void fill_target(int x, int y, int w, int h, uint32_t color) {
     bind_target_for_drawing();
     glEnable(GL_SCISSOR_TEST);
     glScissor(x * S, y * S, std::min(w, 1024 - x) * S, std::min(h, 512 - y) * S);
@@ -384,10 +588,28 @@ void fill(int x, int y, int w, int h, uint32_t color) {
     glDisable(GL_SCISSOR_TEST);
 }
 
+}  // namespace
+
+namespace hwgl {
+
 void copy(int sx, int sy, int dx, int dy, int w, int h) {
     vram_changed(dx, dy, w, h);
     if (!enabled) return;
     flush();
+    if (recording) {
+        FrameList::Op op{};
+        op.kind = FrameList::Op::COPY;
+        op.sx = sx; op.sy = sy; op.x = dx; op.y = dy; op.w = w; op.h = h;
+        recording->ops.push_back(op);
+    }
+    copy_target(sx, sy, dx, dy, w, h);
+}
+
+}  // namespace hwgl
+
+namespace {
+
+void copy_target(int sx, int sy, int dx, int dy, int w, int h) {
     // Through a scratch target: a blit within one framebuffer may not overlap.
     glBindFramebuffer(GL_READ_FRAMEBUFFER, target_fbo);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, temp_fbo);
@@ -398,6 +620,10 @@ void copy(int sx, int sy, int dx, int dy, int w, int h) {
     glBindFramebuffer(GL_FRAMEBUFFER, target_fbo);
 }
 
+}  // namespace
+
+namespace hwgl {
+
 void upload(int x, int y, int w, int h) {
     vram_changed(x, y, w, h);
     if (!enabled) return;
@@ -407,7 +633,10 @@ void upload(int x, int y, int w, int h) {
     float x0 = float(x), y0 = float(y), x1 = float(x + w), y1 = float(y + h);
     auto vx = [&](float px, float py) { return make_vertex(s, px, py, px, py, 0, 0, 0, F_COPY); };
     GLVertex p0 = vx(x0, y0), p1 = vx(x1, y0), p2 = vx(x0, y1), p3 = vx(x1, y1);
-    for (const GLVertex *v : {&p0, &p1, &p2, &p1, &p3, &p2}) batch.push_back(*v);
+    for (const GLVertex *v : {&p0, &p1, &p2, &p1, &p3, &p2}) {
+        batch.push_back(*v);
+        batch_sources.push_back({});
+    }
     flush();
 }
 
@@ -527,6 +756,101 @@ std::vector<uint32_t> gl_renderer_read(int x, int y, int w, int h) {
     glReadPixels(x * S, y * S, w * S, h * S, GL_BGRA, GL_UNSIGNED_BYTE, px.data());
     for (auto &p : px) p |= 0xFF000000u;
     return px;  // rows in VRAM order (top first)
+}
+
+// Frame interpolation: redraw the displayed tick's list with the camera `vblank_time` along
+// toward the next tick's (vblank_time: emulated vblanks, fractional).
+void gl_renderer_interpolate(double vblank_time) {
+    if (!enabled || !interp_enabled()) return;
+    if (recording && (recording->tick != interp_drawing_tick() || recording->last_frame < gpu.frames)) {
+        // A new tick's projections started (or a vblank passed): the list is complete.
+        flush();
+        finished.push_back(std::move(recording));
+        while (finished.size() > 3) {
+            if (last_shown == finished.front().get()) last_shown = nullptr;
+            finished.pop_front();
+        }
+    }
+    // The newest complete list drawn where the display shows.
+    FrameList *list = nullptr;
+    for (auto it = finished.rbegin(); it != finished.rend() && !list; ++it) {
+        FrameList *l = it->get();
+        if (l->has_area && gpu.display_x >= l->area_x1 && gpu.display_x <= l->area_x2 &&
+            gpu.display_y >= l->area_y1 && gpu.display_y <= l->area_y2)
+            list = l;
+    }
+    if (!list || !list->tick) return;
+    uint64_t now = uint64_t(vblank_time);
+    if (!list->shown) {
+        list->shown = true;
+        list->shown_at = now;
+        if (last_shown) list->period = std::clamp(double(now - last_shown->shown_at), 1.0, 4.0);
+        last_shown = list;
+    }
+    double alpha = std::clamp((vblank_time - double(list->shown_at)) / list->period, 0.0, 1.0);
+    auto next = interp_tick(list->tick->seq + 1);
+    InterpTransform tf;
+    bool ok = next && alpha > 0 && interp_transform(*list->tick, *next, alpha, tf);
+    if (!ok && !list->moved) return;  // the target already shows the list as drawn
+    if (!ok) {
+        tf = {};
+        for (int i = 0; i < 3; i++) tf.a[i][i] = 1;
+    }
+    list->moved = ok;
+    if (static bool trace = getenv("VALOR_TRACE_INTERP"); trace) {
+        size_t rec = 0, group = 0;
+        for (const auto &s : list->sources) { rec += s.rec >= 0; group += s.group >= 0; }
+        log("interp: sources none %llu ambiguous %llu other %llu matched %llu", (unsigned long long)source_stats[0],
+            (unsigned long long)source_stats[1], (unsigned long long)source_stats[2], (unsigned long long)source_stats[3]);
+        memset(source_stats, 0, sizeof source_stats);
+        log("interp: t=%.2f tick %llu alpha %.2f ok %d: %zu vertices, %zu matched, %zu by group, %zu projections",
+            vblank_time, (unsigned long long)list->tick->seq, alpha, ok, list->sources.size(), rec, group, list->tick->vertices.size());
+    }
+
+    // Screen movement of every projection this tick.
+    const auto &pv = list->tick->vertices;
+    static std::vector<float> dx, dy;
+    static std::vector<uint8_t> valid;
+    dx.assign(pv.size(), 0);
+    dy.assign(pv.size(), 0);
+    valid.assign(pv.size(), 0);
+    for (size_t i = 0; i < pv.size(); i++) {
+        const InterpVertex &p = pv[i];
+        if (p.h != float(config.world_h) || !p.exact) continue;
+        double q[3];
+        for (int r = 0; r < 3; r++) q[r] = tf.a[r][0] * p.x + tf.a[r][1] * p.y + tf.a[r][2] * p.z + (p.translated ? tf.b[r] : 0);
+        if (q[2] < p.h * 0.5) continue;
+        dx[i] = float(p.h * (q[0] / q[2] - p.x / p.z) * p.kx);
+        dy[i] = float(p.h * (q[1] / q[2] - p.y / p.z) * p.ky);
+        valid[i] = 1;
+    }
+    static std::vector<GLVertex> moved;
+    moved = list->vertices;
+    for (size_t i = 0; i < moved.size(); i++) {
+        const VertexSource &s = list->sources[i];
+        float mx = 0, my = 0;
+        if (s.rec >= 0 && valid[s.rec]) {
+            mx = dx[s.rec];
+            my = dy[s.rec];
+        } else if (s.group >= 0 || s.rec >= 0) {
+            // No usable projection: move with the primitive's other vertices.
+            int n = 0;
+            if (s.group >= 0)
+                for (int32_t r : list->groups[s.group])
+                    if (r >= 0 && valid[r]) { mx += dx[r]; my += dy[r]; n++; }
+            if (n) { mx /= float(n); my /= float(n); }
+        }
+        moved[i].x += mx;
+        moved[i].y += my;
+    }
+    flush();
+    for (const auto &op : list->ops) {
+        switch (op.kind) {
+        case FrameList::Op::DRAW: draw_vertices(op.state, moved.data() + op.first, op.count); break;
+        case FrameList::Op::FILL: fill_target(op.x, op.y, op.w, op.h, op.color); break;
+        case FrameList::Op::COPY: copy_target(op.sx, op.sy, op.x, op.y, op.w, op.h); break;
+        }
+    }
 }
 
 // Copy the displayed area of the high-resolution framebuffer into the bound draw framebuffer.

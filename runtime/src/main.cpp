@@ -34,7 +34,7 @@ static bool parse_press(const char *arg) {
 }
 
 static void usage(const char *argv0) {
-    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--headless] [--hidden]\n"
+    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--window WxH] [--headless] [--hidden]\n"
             "       [--screenshots DIR] [--screenshot-every N] [--screenshot-from FRAME] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--stick FRAME:lx|ly|rx|ry=VALUE[:DURATION]]... [--dump-ram FRAME]\n"
@@ -58,6 +58,11 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--screenshot-from") && i + 1 < argc) config.screenshot_from = strtoull(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--menu-screenshot") && i + 1 < argc) config.menu_screenshot = strtoull(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--overlay") && i + 1 < argc) config.overlay = std::clamp(atoi(argv[++i]), 0, 2);
+        else if (!strcmp(argv[i], "--frame-rate") && i + 1 < argc) config.frame_rate = std::clamp(atoi(argv[++i]), 0, 1000);
+        else if (!strcmp(argv[i], "--no-interpolate")) config.interpolate = false;
+        else if (!strcmp(argv[i], "--window") && i + 1 < argc) {
+            if (sscanf(argv[++i], "%dx%d", &config.window_w, &config.window_h) != 2) { usage(argv[0]); return 2; }
+        }
         else if (!strcmp(argv[i], "--crosshair") && i + 1 < argc) { config.crosshair = true; config.crosshair_size = std::clamp(atoi(argv[++i]), 1, 20); }
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) config.scale = std::clamp(atoi(argv[++i]), 0, 16);
         else if (!strcmp(argv[i], "--no-dither")) config.dither = false;

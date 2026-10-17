@@ -29,6 +29,7 @@ struct Vertex {
     int x, y;
     int r, g, b;
     int u, v;
+    uint32_t key;  // the packet's coordinates as the GTE produced them (frame interpolation)
 };
 
 // Per-primitive drawing state.

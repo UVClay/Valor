@@ -16,6 +16,7 @@
 #include "gpu_gl.h"
 #include "hw.h"
 #include "input.h"
+#include "interp.h"
 #include "overlay.h"
 #include "pad.h"
 #include "settings.h"
@@ -204,7 +205,8 @@ double output_aspect() {
 }
 
 // Draw the PS1's displayed image into the window, letterboxed to the output aspect.
-void present_frame() {
+// vblank_time >= 0: the moment shown, in emulated vblanks, for frame interpolation.
+void present_frame(double vblank_time = -1) {
     static const int widths[] = {256, 320, 512, 640};
     int w = (gpu.display_mode & 0x40) ? 368 : widths[gpu.display_mode & 3];
     int y1 = (gpu.vrange & 0x3FF), y2 = (gpu.vrange >> 10) & 0x3FF;
@@ -231,6 +233,7 @@ void present_frame() {
     glClear(GL_COLOR_BUFFER_BIT);
     if (gpu.display_disabled) return;
     if (use_gl_renderer && !rgb24) {
+        if (vblank_time >= 0) gl_renderer_interpolate(vblank_time);
         gl_renderer_present(dx, dy, dw, dh, gpu.display_x, gpu.display_y, w, h);
         return;
     }
@@ -245,6 +248,13 @@ void present_frame() {
 }
 
 }  // namespace
+
+// Frames per second to present with interpolation: the setting, or the display's refresh rate.
+double present_rate() {
+    if (config.frame_rate > 0) return config.frame_rate;
+    const SDL_DisplayMode *dm = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+    return dm && dm->refresh_rate > 0 ? dm->refresh_rate : 60.0;
+}
 
 void display_apply_settings() {
     if (headless) return;
@@ -268,7 +278,7 @@ void display_init(bool want_window) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    window = SDL_CreateWindow("Valor", 960, 720,
+    window = SDL_CreateWindow("Valor", config.window_w, config.window_h,
                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY |
                                   (config.hidden ? SDL_WINDOW_HIDDEN : 0));
     if (!window || !(gl_context = SDL_GL_CreateContext(window))) {
@@ -331,7 +341,9 @@ static void log_chain() {
 }
 
 void gpu_present() {
+    overlay_frame_emulated();
     log_chain();
+    gte_trace_frame();
     if (config.dump_ram_frame && gpu.frames == config.dump_ram_frame) {
         std::ofstream("build/ram.bin", std::ios::binary).write(reinterpret_cast<const char *>(psx_ram), PSX_RAM_SIZE);
         log("dumped RAM to build/ram.bin at frame %llu", (unsigned long long)gpu.frames);
@@ -353,10 +365,7 @@ void gpu_present() {
     }
     if (headless) return;
 
-    pump_events();
-    present_frame();
-    overlay_render();
-    if (shot && config.screenshot_window) {
+    auto save_window = [](const char *name) {
         int ww, wh;
         SDL_GetWindowSizeInPixels(window, &ww, &wh);
         std::vector<uint32_t> px(size_t(ww) * wh), flipped(px.size());
@@ -364,12 +373,31 @@ void gpu_present() {
         glReadPixels(0, 0, ww, wh, GL_BGRA, GL_UNSIGNED_BYTE, px.data());
         for (int y = 0; y < wh; y++)
             for (int x = 0; x < ww; x++) flipped[size_t(y) * ww + x] = px[size_t(wh - 1 - y) * ww + x] | 0xFF000000u;
-        char name[40];
-        snprintf(name, sizeof name, "window%06llu.png", (unsigned long long)gpu.frames);
         std::filesystem::create_directories(config.screenshots);
         write_png(config.screenshots / name, flipped, ww, wh);
+    };
+
+    pump_events();
+    double vblank = double(gpu.frames);
+    // With frame interpolation, frames are presented on their own clock (below).
+    bool own_clock = interp_enabled() && use_gl_renderer && !fast_forward && present_rate() > 0;
+    if (!own_clock || shot) {
+        present_frame(vblank);
+        overlay_render();
     }
-    SDL_GL_SwapWindow(window);
+    if (shot && config.screenshot_window) {
+        char name[40];
+        snprintf(name, sizeof name, "window%06llu.png", (unsigned long long)gpu.frames);
+        save_window(name);
+        if (interp_enabled()) {
+            // Testing: an in-between frame halfway to the next vblank as well.
+            present_frame(vblank + 0.5);
+            overlay_render();
+            snprintf(name, sizeof name, "window%06llu_5.png", (unsigned long long)gpu.frames);
+            save_window(name);
+        }
+    }
+    if (!own_clock) SDL_GL_SwapWindow(window);
 
     if (config.menu_screenshot && gpu.frames == config.menu_screenshot) {
         // Testing: draw the menu once over this frame and save the window.
@@ -412,10 +440,33 @@ void gpu_present() {
         period *= 1.0 + std::clamp(0.005 * (queued - TARGET) / TARGET, -0.005, 0.005);
     }
     audio_set_fast_forward(fast_forward);
+    uint64_t vblank_ns = next_frame_ns;
     next_frame_ns += uint64_t(period * 1e9);
     uint64_t now_ns = SDL_GetTicksNS();
-    if (fast_forward || now_ns > next_frame_ns + 100000000) next_frame_ns = now_ns;  // don't try to catch up
-    else if (next_frame_ns > now_ns) SDL_DelayPrecise(next_frame_ns - now_ns);
+    if (fast_forward || now_ns > next_frame_ns + 100000000) {
+        next_frame_ns = now_ns;  // don't try to catch up
+    } else if (own_clock) {
+        // Frame interpolation: present on our own clock until the next vblank is due, then
+        // emulate it (possibly a little early; frames are placed by their own time).
+        uint64_t interval = uint64_t(1e9 / present_rate());
+        static uint64_t next_present_ns;
+        if (next_present_ns + 2 * interval < now_ns || next_present_ns > now_ns + 2 * interval)
+            next_present_ns = now_ns + interval;
+        while (next_present_ns < next_frame_ns) {
+            now_ns = SDL_GetTicksNS();
+            if (next_present_ns > now_ns) SDL_DelayPrecise(next_present_ns - now_ns);
+            pump_events();
+            if (menu_is_open()) break;
+            present_frame(vblank + double(next_present_ns - vblank_ns) / (period * 1e9));
+            overlay_render();
+            SDL_GL_SwapWindow(window);
+            next_present_ns += interval;
+            now_ns = SDL_GetTicksNS();
+            if (next_present_ns + interval < now_ns) next_present_ns = now_ns;  // fell behind
+        }
+    } else if (next_frame_ns > now_ns) {
+        SDL_DelayPrecise(next_frame_ns - now_ns);
+    }
     overlay_frame_begin();
 }
 
@@ -481,13 +532,15 @@ uint16_t pad_buttons(int port) {
 PadSticks pad_sticks(int port) {
     PadSticks s = {0x80, 0x80, 0x80, 0x80};
     if (port == 0 && config.monkey_seed && gpu.frames >= config.monkey_from) return monkey_state().sticks;
+    bool scripted = false;
     if (port == 0)
         for (const auto &st : config.sticks)
             if (gpu.frames >= st.frame && gpu.frames < st.frame + st.duration) {
                 uint8_t *axes[] = {&s.lx, &s.ly, &s.rx, &s.ry};
                 *axes[st.axis] = st.value;
+                scripted = true;
             }
-    if (port != 0 || !gamepad) return s;
+    if (port != 0 || !gamepad || scripted) return s;
     auto stick = [](SDL_GamepadAxis ax, SDL_GamepadAxis ay, uint8_t &out_x, uint8_t &out_y) {
         double x = std::max(-1.0, SDL_GetGamepadAxis(gamepad, ax) / 32767.0);
         double y = std::max(-1.0, SDL_GetGamepadAxis(gamepad, ay) / 32767.0);

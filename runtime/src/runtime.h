@@ -35,6 +35,7 @@ struct Config {
     bool dither = true;      // PS1 dithering and 15-bit color
     bool smooth_scaling = true;  // filter the image when scaling it to the window
     bool fullscreen = false;
+    int window_w = 960, window_h = 720;  // initial window size
     double aspect = 4.0 / 3.0;  // output aspect (0 = match the window)
     double fov = 0;             // world horizontal FOV in degrees (0 = original vertical FOV, Hor+)
     // MoH: the world is projected with GTE H = 400 on a 512x240 screen (vertical half-FOV
@@ -56,6 +57,10 @@ struct Config {
     // reaches both axes' limits on diagonals). MoH shapes each axis separately with a steep
     // curve, so on a round-gated stick angling it off-axis loses most of the speed.
     bool square_sticks = true;
+    // Frame interpolation (interp.cpp): the game logic runs at 30 Hz; show frames in between
+    // at `frame_rate` per second (0 = the display's refresh rate).
+    bool interpolate = true;
+    int frame_rate = 0;
     bool crosshair = false;  // draw a + at the center of the 3D view
     int crosshair_size = 4;  // arm length in original (240-line) pixels
     std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)
@@ -88,6 +93,7 @@ void io_write(Cpu *c, uint32_t phys, uint32_t value, int size);
 // gte.cpp
 void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double base_tan);
 extern uint64_t gte_projections;
+void gte_trace_frame();  // VALOR_TRACE_GTE_MAT
 
 // cpu.cpp
 RecompFn find_function(uint32_t addr);
