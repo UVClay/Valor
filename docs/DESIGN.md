@@ -136,6 +136,8 @@ The game logic runs at a fixed 30 Hz (RECON.md, Frame timing). For higher frame 
   (`kbm.cpp`), and the displayed camera is rotated further by three parts: the rest of the current
   tick's turn, all of the next tick's turn, and motion the game hasn't read yet. When the game
   catches up, the view doesn't move, so nothing jumps. Pitch stays inside the game's limit.
+  Each tick also checks that the camera really turned by the look the game took. In aim mode the
+  mouse moves the game's reticle, and cutscenes ignore it, so there the early look is off.
 - **Presentation.** Frames are presented on their own clock at the display's refresh rate (or
   `--frame-rate`). Emulation still advances one vblank at a time, in between presents.
 
