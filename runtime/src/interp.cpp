@@ -95,8 +95,9 @@ bool partial_rotation(const Mat q, double alpha, Mat out) {
 
 }  // namespace
 
-// Only the OpenGL renderer can redraw frames.
-bool interp_enabled() { return (config.interpolate || config.widescreen_hud) && hw::hwgl::active(); }
+// Only the OpenGL renderer can redraw frames. Projections are recorded whenever it draws: they
+// also serve the widescreen HUD and near clipping.
+bool interp_enabled() { return hw::hwgl::active(); }
 bool interp_presenting() { return config.interpolate && hw::hwgl::active(); }
 
 void interp_note_draw() { drawn_since_projection = true; }

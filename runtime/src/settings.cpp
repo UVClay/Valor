@@ -54,6 +54,7 @@ void settings_load() {
         else if (key == "aspect") parse_aspect(value, config.aspect);
         else if (key == "fov") config.fov = std::clamp(atof(value.c_str()), 0.0, 150.0);
         else if (key == "dither") config.dither = value == "true";
+        else if (key == "subpixel") config.subpixel = value == "true";
         else if (key == "smooth_scaling") config.smooth_scaling = value == "true";
         else if (key == "fullscreen") config.fullscreen = value == "true";
         else if (key == "volume") config.volume = std::clamp(atoi(value.c_str()), 0, 200);
@@ -84,6 +85,7 @@ void settings_save() {
     f << "aspect = " << aspect_name(config.aspect) << "\n";
     f << "fov = " << config.fov << "  # horizontal degrees, 0 = original\n";
     f << "dither = " << (config.dither ? "true" : "false") << "\n";
+    f << "subpixel = " << (config.subpixel ? "true" : "false") << "  # sub-pixel vertex positions (no wobble)\n";
     f << "smooth_scaling = " << (config.smooth_scaling ? "true" : "false") << "\n";
     f << "fullscreen = " << (config.fullscreen ? "true" : "false") << "\n";
     f << "volume = " << config.volume << "\n";

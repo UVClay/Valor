@@ -33,6 +33,7 @@ struct Config {
     bool test_run = false;   // headless or hidden: don't touch the player's memory card or settings
     int scale = 0;           // OpenGL renderer resolution scale (0 = fit the window, 1 = software)
     bool dither = true;      // PS1 dithering and 15-bit color
+    bool subpixel = false;   // draw projected vertices at sub-pixel positions (no wobble)
     bool smooth_scaling = true;  // filter the image when scaling it to the window
     bool fullscreen = false;
     int window_w = 960, window_h = 720;  // initial window size

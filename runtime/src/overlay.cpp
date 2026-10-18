@@ -128,6 +128,10 @@ void draw_menu() {
                 if (ImGui::Combo("Frame rate", &current, names, IM_ARRAYSIZE(names))) config.frame_rate = rates[current];
             }
             ImGui::Checkbox("PS1 dithering and 15-bit color", &config.dither);
+            ImGui::Checkbox("Sub-pixel precision", &config.subpixel);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Draw 3D vertices at their exact positions instead of whole pixels:\n"
+                                  "removes the PS1's vertex wobble. Needs a resolution above 1x.");
             ImGui::Checkbox("Smooth scaling", &config.smooth_scaling);
             if (ImGui::Checkbox("Fullscreen (F11)", &config.fullscreen)) display_apply_settings();
             ImGui::EndTabItem();

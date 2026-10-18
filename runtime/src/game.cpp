@@ -103,7 +103,7 @@ extern "C" void hook_view_frustum(Cpu *c, RecompFn body) {
 // let the ones facing the camera through, storing what the test would have for drawing them.
 extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
     body(c);
-    if (c->r[2] != 0 || !hw::hwgl::active() || !interp_enabled()) return;
+    if (c->r[2] != 0 || !interp_enabled()) return;
     uint32_t sz[3] = {gte_mfc2(c, 17), gte_mfc2(c, 18), gte_mfc2(c, 19)};
     if (sz[0] && sz[1] && sz[2]) return;  // in front: really skipped
     // Camera-space vertices from the GTE's rotation and translation.

@@ -31,7 +31,8 @@ and full playthroughs of two missions.
       actions through its own button table. Bindings, sensitivity and invert are in F1 → Controls.
       The mouse turns the view at the display's frame rate instead of the game's 30 Hz.
 - [ ] Saves decoupled from memory cards
-- [ ] Optional sub-pixel vertex precision (PGXP-style) to remove the vertex wobble at high resolution
+- [x] Optional sub-pixel vertex precision (PGXP-style, Video tab, off by default): projected vertices are
+      drawn where they really project, from the camera-space positions recorded for interpolation
 
 ## Later
 

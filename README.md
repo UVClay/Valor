@@ -65,6 +65,7 @@ also be given on the command line:
   and in-between frames move the camera smoothly. It presents at the display's refresh rate or at
   `--frame-rate N`.
 - **Square stick range:** maps modern round-gated sticks to the DualShock's range.
+- **Sub-pixel precision:** `--subpixel` (off by default) removes the PS1's vertex wobble.
 - **Widescreen HUD:** keeps the HUD's proportions, with the compass and ammo count in the corners.
 - **Crosshair:** `--crosshair SIZE` (hidden in aim mode and on the pause screen).
 - **Mouse:** sensitivity (Quake scale: 0.022 degrees per count at 1), invert, key bindings.

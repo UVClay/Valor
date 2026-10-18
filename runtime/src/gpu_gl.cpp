@@ -120,8 +120,10 @@ struct {
     float center, factor;
 } hud;
 
-// The current primitive's projections (filled while submitting it).
-std::array<int32_t, 4> prim_recs;
+// The current primitive's projections (filled while submitting it): world ones, and any.
+std::array<int32_t, 4> prim_recs, prim_any;
+// Sub-pixel corrections of this list's points, by packet coordinates (see precise_positions).
+std::unordered_map<uint32_t, std::pair<float, float>> subpixel_points;
 int prim_group = -1;
 
 const char *VS = R"(#version 330 core
@@ -369,6 +371,7 @@ void begin_draw() {
     auto tick = interp_drawing_tick();
     if (recording && recording->tick == tick && recording->last_frame == gpu.frames) return;
     finish_list();
+    subpixel_points.clear();
     recording = std::make_unique<FrameList>();
     recording->tick = tick;
     recording->last_frame = gpu.frames;
@@ -378,7 +381,7 @@ void begin_draw() {
 // coordinate; a primitive's vertices are projected together, so of several candidates take the
 // one projected closest (in order) to the primitive's unambiguous vertices.
 void vertex_sources(const Vertex *const *v, int n, int32_t *out) {
-    for (int i = 0; i < 4; i++) prim_recs[i] = -1;
+    for (int i = 0; i < 4; i++) prim_recs[i] = prim_any[i] = -1;
     if (!recording || !recording->tick) {
         for (int i = 0; i < n; i++) out[i] = -1;
         return;
@@ -418,11 +421,12 @@ void vertex_sources(const Vertex *const *v, int n, int32_t *out) {
             source_stats[0]++;
             out[i] = -1;
         } else if (t.vertices[pick].h != float(config.world_h)) {
+            prim_any[i] = pick;
             source_stats[2]++;
             out[i] = -2;  // projected, but not with the world (weapon): stays put
         } else {
             source_stats[3]++;
-            out[i] = prim_recs[i] = pick;
+            out[i] = prim_recs[i] = prim_any[i] = pick;
         }
     }
 }
@@ -667,18 +671,67 @@ void submit(const DrawState &s, Emit emit) {
 void fill_target(int x, int y, int w, int h, uint32_t color);
 void copy_target(int sx, int sy, int dx, int dy, int w, int h);
 
-// Near clipping. The GTE's divide saturates for points closer than H/2 and can't project points
-// behind the camera, so the game drops polygons reaching behind it and relies on its narrow view
-// to keep the gaps off screen. A wider view shows them at its edges as holes in nearby walls.
-// A world triangle with a vertex that close is drawn from its camera-space vertices instead,
-// clipped at a near plane and projected exactly (texture coordinates and colors interpolated
-// along the cut edges). game.cpp lets the game submit the ones reaching behind the camera.
+// Where a camera-space point projects, without the GTE's limits (saturating divide, clamping).
 void project_exact(const InterpVertex &p, double x, double y, double z, float &sx, float &sy) {
     double q = p.h / std::max(z, 1.0);
     sx = float(p.ofx + q * x * p.kx);
     sy = float(p.ofy + q * y * p.ky);
 }
 
+// Sub-pixel precision (config.subpixel): the GTE rounds projected positions down to whole pixels,
+// which makes vertices wobble as things move. Projected vertices are drawn where they really
+// project (from their recorded camera-space position); others in the same primitive move by the
+// average of that correction, and a point corrected once in a frame is corrected the same way
+// in every primitive using it.
+
+void precise_positions(const Vertex *const *v, int n, float *x, float *y) {
+    for (int i = 0; i < n; i++) {
+        x[i] = float(v[i]->x);
+        y[i] = float(v[i]->y);
+    }
+    if (!config.subpixel || !recording || !recording->tick) return;
+    const auto &tv = recording->tick->vertices;
+    float cx = 0, cy = 0;
+    int corrected = 0;
+    bool done[4] = {};
+    for (int i = 0; i < n; i++) {
+        float dx, dy;
+        if (prim_any[i] >= 0) {
+            const InterpVertex &p = tv[prim_any[i]];
+            if (p.z < p.h * 0.5f) continue;  // the GTE's divide saturates here
+            float sx, sy;
+            project_exact(p, p.x, p.y, p.z, sx, sy);
+            dx = sx - float(int16_t(v[i]->key & 0xFFFF));
+            dy = sy - float(int16_t(v[i]->key >> 16));
+            if (std::abs(dx) > 1.5f || std::abs(dy) > 1.5f) continue;  // clamped or otherwise off
+            subpixel_points[v[i]->key] = {dx, dy};
+        } else {
+            auto it = subpixel_points.find(v[i]->key);
+            if (it == subpixel_points.end()) continue;
+            dx = it->second.first;
+            dy = it->second.second;
+        }
+        x[i] += dx;
+        y[i] += dy;
+        cx += dx;
+        cy += dy;
+        corrected++;
+        done[i] = true;
+    }
+    if (!corrected) return;
+    for (int i = 0; i < n; i++)
+        if (!done[i]) {
+            x[i] += cx / float(corrected);
+            y[i] += cy / float(corrected);
+        }
+}
+
+// Near clipping. The GTE's divide saturates for points closer than H/2 and can't project points
+// behind the camera, so the game drops polygons reaching behind it and relies on its narrow view
+// to keep the gaps off screen. A wider view shows them at its edges as holes in nearby walls.
+// A world triangle with a vertex that close is drawn from its camera-space vertices instead,
+// clipped at a near plane and projected exactly (texture coordinates and colors interpolated
+// along the cut edges). game.cpp lets the game submit the ones reaching behind the camera.
 bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t src[3], bool dither) {
     if (!recording || !recording->tick) return false;
     const auto &tv = recording->tick->vertices;
@@ -757,12 +810,12 @@ bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t 
     static std::vector<float> ex, ey;  // exact positions, before the corrections below
     ex = sx;
     ey = sy;
-    // Input vertices the GTE projected properly keep its (integer) position, so edges shared with
-    // triangles drawn normally line up; the difference is spread over the rest by screen-space
+    // Without sub-pixel precision, input vertices the GTE projected properly keep its (integer)
+    // position, so edges shared with triangles drawn normally line up; the difference is spread over the rest by screen-space
     // barycentric weights (along an edge, by the position on it).
     float cx[4] = {}, cy[4] = {};
     for (int i = 0; i < n; i++)
-        if (pts[i].corner >= 0 && pts[i].p.z >= pts[i].p.h * 0.5f) {
+        if (!config.subpixel && pts[i].corner >= 0 && pts[i].p.z >= pts[i].p.h * 0.5f) {
             const Vertex *v = vs[pts[i].corner];
             cx[i] = float(int16_t(v->key & 0xFFFF)) - sx[i];
             cy[i] = float(int16_t(v->key >> 16)) - sy[i];
@@ -819,12 +872,14 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
         hud.active = hud.is_hud = false;
         return;
     }
+    float px[3], py[3];
+    precise_positions(vs, 3, px, py);
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
-        int i = 0;
-        for (const Vertex *v : {&a, &b, &c}) {
-            batch.push_back(make_vertex(s, float(v->x), float(v->y), float(v->u), float(v->v), v->r, v->g, v->b, f));
-            batch_sources.push_back(source_for(src[i++], v->key));
+        for (int i = 0; i < 3; i++) {
+            const Vertex *v = vs[i];
+            batch.push_back(make_vertex(s, px[i], py[i], float(v->u), float(v->v), v->r, v->g, v->b, f));
+            batch_sources.push_back(source_for(src[i], v->key));
         }
     });
     hud.active = hud.is_hud = false;

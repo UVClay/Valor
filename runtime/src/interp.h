@@ -66,7 +66,8 @@ struct InterpMotion {
     std::vector<int32_t> group_object;  // per group of the tick: index into objects, or -1
 };
 
-// Projections are recorded for frame interpolation and the widescreen HUD (OpenGL renderer only).
+// Projections are recorded for frame interpolation, the widescreen HUD and near clipping (OpenGL
+// renderer only).
 bool interp_enabled();
 // Frames in between ticks are shown.
 bool interp_presenting();
