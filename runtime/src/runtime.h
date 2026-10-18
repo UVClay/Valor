@@ -35,6 +35,7 @@ struct Config {
     bool dither = true;      // PS1 dithering and 15-bit color
     bool subpixel = false;   // draw projected vertices at sub-pixel positions (no wobble)
     bool depth_buffer = false;  // depth-test the world instead of relying on the game's sorting
+    bool texture_filter = false;  // bilinear texture filtering
     bool smooth_scaling = true;  // filter the image when scaling it to the window
     bool fullscreen = false;
     bool pause_unfocused = true;  // pause while the window is in the background

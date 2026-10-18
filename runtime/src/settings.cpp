@@ -56,6 +56,7 @@ void settings_load() {
         else if (key == "dither") config.dither = value == "true";
         else if (key == "subpixel") config.subpixel = value == "true";
         else if (key == "depth_buffer") config.depth_buffer = value == "true";
+        else if (key == "texture_filter") config.texture_filter = value == "true";
         else if (key == "smooth_scaling") config.smooth_scaling = value == "true";
         else if (key == "fullscreen") config.fullscreen = value == "true";
         else if (key == "pause_unfocused") config.pause_unfocused = value == "true";
@@ -95,6 +96,7 @@ void settings_save() {
     f << "dither = " << (config.dither ? "true" : "false") << "\n";
     f << "subpixel = " << (config.subpixel ? "true" : "false") << "  # sub-pixel vertex positions (no wobble)\n";
     f << "depth_buffer = " << (config.depth_buffer ? "true" : "false") << "  # fixes polygon sorting glitches\n";
+    f << "texture_filter = " << (config.texture_filter ? "true" : "false") << "  # bilinear texture filtering\n";
     f << "smooth_scaling = " << (config.smooth_scaling ? "true" : "false") << "\n";
     f << "fullscreen = " << (config.fullscreen ? "true" : "false") << "\n";
     f << "pause_unfocused = " << (config.pause_unfocused ? "true" : "false") << "  # pause in the background\n";

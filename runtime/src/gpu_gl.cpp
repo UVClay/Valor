@@ -39,7 +39,7 @@ GLuint temp_tex, temp_fbo;      // scratch for VRAM->VRAM copies
 GLuint target_depth;            // depth renderbuffer of the target (config.depth_buffer)
 GLuint vram_tex;                // native VRAM, R16UI
 GLuint program, vao, vbo;
-GLint u_size, u_vram, u_texwin, u_scale, u_mask_set, u_quantize;
+GLint u_size, u_vram, u_texwin, u_scale, u_mask_set, u_quantize, u_filter;
 
 // 64x64 blocks of native VRAM that changed since they were last uploaded.
 constexpr int BLOCK = 64, BX = 1024 / BLOCK, BY = 512 / BLOCK;
@@ -58,6 +58,7 @@ struct GLVertex {
 constexpr uint16_t F_DEPTH = 3, F_TEXTURED = 4, F_RAW = 8, F_DITHER = 16;
 constexpr uint16_t F_PASS_OPAQUE_TEXELS = 1 << 5, F_PASS_SEMI_TEXELS = 2 << 5;
 constexpr uint16_t F_COPY = 128;  // copy native VRAM texels as-is (uploads)
+constexpr uint16_t F_FILTER = 256;  // 3D: filtered with config.texture_filter
 
 // State shared by everything in the current batch.
 struct BatchState {
@@ -177,6 +178,7 @@ uniform ivec4 u_texwin;  // mask x, mask y, offset x, offset y (texels)
 uniform int u_scale;
 uniform int u_mask_set;
 uniform int u_quantize;
+uniform int u_filter;  // bilinear texture filtering (for 3D: flag 256)
 in vec3 v_color;
 noperspective in vec2 v_uv;
 flat in uvec4 v_tex;
@@ -191,6 +193,22 @@ vec4 color15(uint t) {
     return vec4(vec3(t & 31u, (t >> 5) & 31u, (t >> 10) & 31u) / 31.0, (t & 0x8000u) != 0u ? 1.0 : 0.0);
 }
 
+// A texel of the primitive's texture (page, CLUT, texture window), as a 15-bit color.
+uint texel(ivec2 uv) {
+    uv &= 255;
+    uv = (uv & ~u_texwin.xy) | (u_texwin.zw & u_texwin.xy);
+    int tx = int(v_tex.x), ty = int(v_tex.y), cx = int(v_tex.z), cy = int(v_tex.w);
+    uint depth = v_flags & 3u;
+    if (depth == 0u) {
+        uint w = fetch(tx + uv.x / 4, ty + uv.y);
+        return fetch(cx + int((w >> uint((uv.x & 3) * 4)) & 15u), cy);
+    } else if (depth == 1u) {
+        uint w = fetch(tx + uv.x / 2, ty + uv.y);
+        return fetch(cx + int((w >> uint((uv.x & 1) * 8)) & 255u), cy);
+    }
+    return fetch(tx + uv.x, ty + uv.y);
+}
+
 void main() {
     if ((v_flags & 128u) != 0u) {  // upload copy
         uint t = fetch(int(floor(v_uv.x)), int(floor(v_uv.y)));
@@ -200,27 +218,37 @@ void main() {
     vec3 c = v_color;
     bool mask = u_mask_set != 0;
     if ((v_flags & 4u) != 0u) {
-        ivec2 uv = ivec2(floor(v_uv)) & 255;
-        uv = (uv & ~u_texwin.xy) | (u_texwin.zw & u_texwin.xy);
-        int tx = int(v_tex.x), ty = int(v_tex.y), cx = int(v_tex.z), cy = int(v_tex.w);
-        uint depth = v_flags & 3u;
-        uint t;
-        if (depth == 0u) {
-            uint w = fetch(tx + uv.x / 4, ty + uv.y);
-            t = fetch(cx + int((w >> uint((uv.x & 3) * 4)) & 15u), cy);
-        } else if (depth == 1u) {
-            uint w = fetch(tx + uv.x / 2, ty + uv.y);
-            t = fetch(cx + int((w >> uint((uv.x & 1) * 8)) & 255u), cy);
+        vec3 tc;
+        bool semi_texel;
+        if (u_filter == 0 || (v_flags & 256u) == 0u) {
+            uint t = texel(ivec2(floor(v_uv)));
+            if (t == 0u) discard;
+            semi_texel = (t & 0x8000u) != 0u;
+            tc = vec3(t & 31u, (t >> 5) & 31u, (t >> 10) & 31u) * 8.0;
         } else {
-            t = fetch(tx + uv.x, ty + uv.y);
+            // Bilinear: transparent texels (0) carry no weight, and the blend is drawn where most
+            // of the weight is opaque.
+            vec2 f = v_uv - 0.5;
+            ivec2 i = ivec2(floor(f));
+            vec2 w = f - floor(f);
+            uint ts[4] = uint[4](texel(i), texel(i + ivec2(1, 0)), texel(i + ivec2(0, 1)), texel(i + ivec2(1, 1)));
+            float ws[4] = float[4]((1.0 - w.x) * (1.0 - w.y), w.x * (1.0 - w.y), (1.0 - w.x) * w.y, w.x * w.y);
+            vec3 sum = vec3(0.0);
+            float total = 0.0, semi = 0.0;
+            for (int k = 0; k < 4; k++) {
+                if (ts[k] == 0u) continue;
+                sum += ws[k] * vec3(ts[k] & 31u, (ts[k] >> 5) & 31u, (ts[k] >> 10) & 31u);
+                total += ws[k];
+                if ((ts[k] & 0x8000u) != 0u) semi += ws[k];
+            }
+            if (total < 0.5) discard;
+            tc = sum / total * 8.0;
+            semi_texel = semi > total * 0.5;
         }
-        if (t == 0u) discard;
         uint pass = (v_flags >> 5) & 3u;
-        bool semi_texel = (t & 0x8000u) != 0u;
         if (pass == 1u && semi_texel) discard;
         if (pass == 2u && !semi_texel) discard;
         mask = mask || semi_texel;
-        vec3 tc = vec3(t & 31u, (t >> 5) & 31u, (t >> 10) & 31u) * 8.0;
         c = (v_flags & 8u) != 0u ? tc : floor(tc * c / 128.0);
     }
     if ((v_flags & 16u) != 0u) {
@@ -357,6 +385,7 @@ void draw_vertices(const BatchState &st, const GLVertex *v, size_t n) {
                 int((tw >> 15) & 0x1F) * 8);
     glUniform1i(u_mask_set, st.mask_set);
     glUniform1i(u_quantize, config.dither ? 1 : 0);
+    glUniform1i(u_filter, config.texture_filter ? 1 : 0);
     if (st.scissor) {
         glEnable(GL_SCISSOR_TEST);
         glScissor(st.area_x1 * S, st.area_y1 * S, (st.area_x2 - st.area_x1 + 1) * S, (st.area_y2 - st.area_y1 + 1) * S);
@@ -899,7 +928,7 @@ bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t 
         bias = prim_bias;
     }
     submit(s, [&](uint16_t pass) {
-        uint16_t f = base_flags(s, dither) | pass;
+        uint16_t f = base_flags(s, dither) | pass | F_FILTER;
         for (const auto &t : tris)
             for (int i : t) {
                 const Point &q = pts[i];
@@ -947,8 +976,9 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
             begin_depth(z, 3, s.semi);
         }
     }
+    bool projected = src[0] != -1 || src[1] != -1 || src[2] != -1;
     submit(s, [&](uint16_t pass) {
-        uint16_t f = base_flags(s, dither) | pass;
+        uint16_t f = base_flags(s, dither) | pass | (projected ? F_FILTER : 0);
         for (int i = 0; i < 3; i++) {
             const Vertex *v = vs[i];
             batch.push_back(make_vertex(s, px[i], py[i], float(v->u), float(v->v), v->r, v->g, v->b, f));
@@ -1168,6 +1198,7 @@ bool gl_renderer_init(int scale) {
     u_scale = glGetUniformLocation(program, "u_scale");
     u_mask_set = glGetUniformLocation(program, "u_mask_set");
     u_quantize = glGetUniformLocation(program, "u_quantize");
+    u_filter = glGetUniformLocation(program, "u_filter");
     glUniform1i(u_vram, 0);
     glUniform1i(u_scale, S);
     glUniform1i(u_quantize, config.dither ? 1 : 0);

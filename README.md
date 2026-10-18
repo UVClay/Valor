@@ -77,6 +77,8 @@ also be given on the command line:
 - **Sub-pixel precision:** `--subpixel` (off by default) removes the PS1's vertex wobble.
 - **Fast loading:** `--fast-loading` (off by default) reads game data 8x faster; a level loads in
   about 2 seconds instead of 10. Music and movies stream as usual.
+- **Texture filtering:** `--texture-filter` (off by default) smooths 3D textures (bilinear); the HUD
+  and 2D screens stay sharp.
 - **Depth buffer:** `--depth-buffer` (off by default) hides what's behind walls by real depth
   instead of the game's polygon sorting, which can show things through nearby walls.
 - **Widescreen HUD:** keeps the HUD's proportions, with the compass and ammo count in the corners.

@@ -141,6 +141,8 @@ void draw_menu() {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Draw 3D vertices at their exact positions instead of whole pixels:\n"
                                   "removes the PS1's vertex wobble. Needs a resolution above 1x.");
+            ImGui::Checkbox("Texture filtering", &config.texture_filter);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Smooth textures (bilinear) instead of the PS1's sharp texels.");
             ImGui::Checkbox("Depth buffer", &config.depth_buffer);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Hide what's behind walls by real depth instead of the game's polygon sorting,\n"
