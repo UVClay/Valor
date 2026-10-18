@@ -69,7 +69,8 @@ also be given on the command line:
 
 - **Resolution scale:** `--scale N`.
 - **Aspect ratio:** `--aspect 16:9`.
-- **Horizontal FOV:** `--fov DEG`.
+- **Horizontal FOV:** `--fov DEG`. Wide views are fully supported: the game's culling is widened
+  and polygons reaching behind the camera are clipped, so nearby walls don't vanish at the edges.
 - **Frame interpolation:** on by default; `--no-interpolate` turns it off. The game runs at 30 Hz,
   and in-between frames move the camera smoothly. It presents at the display's refresh rate or at
   `--frame-rate N`.
@@ -83,11 +84,12 @@ also be given on the command line:
   instead of the game's polygon sorting, which can show things through nearby walls.
 - **Widescreen HUD:** keeps the HUD's proportions, with the compass and ammo count in the corners.
 - **Crosshair:** `--crosshair SIZE` (hidden in aim mode and on the pause screen).
-- **Mouse:** sensitivity (Quake scale: 0.022 degrees per count at 1), invert, key bindings.
+- **Mouse:** sensitivity (Quake scale: 0.022 degrees per count at 1), invert, key bindings. The
+  view follows the mouse at the display's frame rate, not the game's 30 Hz.
 - **Controller:** modern stick aiming (`--stick-aim`): a small deadzone and smooth curve instead of
   the game's, with turn speeds. Gyro aiming (DualSense and other controllers with a gyro): always,
   or only in aim mode.
-- **Volume and debug overlay.**
+- **Pause in the background** (on by default) and **volume and debug overlay.**
 
 ## Testing
 
