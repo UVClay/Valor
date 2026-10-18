@@ -12,6 +12,10 @@ and full playthroughs of two missions.
       rasterizer keeps PS1 VRAM authoritative underneath
 - [x] **Debug overlay** with levels: off / FPS / extended (frame times, pacing, emulation stats)
 - [x] **FOV / widescreen**: `--aspect`, `--fov`; GTE projection scaling, 2D screens stay 4:3
+- [ ] Near clipping for models (enemies, props): only the world's polygon test is hooked, so a
+      model polygon reaching behind the camera is still dropped (an enemy touching the camera at
+      the screen's edge). The models are drawn by six RTPT routines (0x8006E058, 0x8006F7BC,
+      0x80072310, 0x800732F8, 0x8008080C, 0x80081CDC)
 - [x] **Wide views without holes**: the game's frustum is widened to the actual view, and world
       polygons reaching behind the camera are clipped at a near plane instead of dropped. This
       fixes walls vanishing at the screen edges at wide FOVs (enemies visible through them) and
