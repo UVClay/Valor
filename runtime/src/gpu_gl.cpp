@@ -519,13 +519,13 @@ std::vector<uint32_t> world_packets;              // this frame's packets with w
 uint32_t pool_min = 1, pool_max = 0;              // the primitive pool, from the last two 3D frames
 uint32_t frame_pool_min = 1, frame_pool_max = 0;  // ... from the last one
 
-// A top corner: the top 40%, the outer quarter, and within 80 pixels of the side (the pause menu's
-// right column is farther in).
+// A top corner: the top 40%, that half, and within 80 pixels of the side (the pause menu's score
+// is farther in; a wide ammo icon reaches past the outer quarter).
 int8_t corner_anchor(const FrameList &list, int min_x, int max_x, int max_y) {
     int width = list.area_x2 - list.area_x1 + 1, height = list.area_y2 - list.area_y1 + 1;
     if (max_y > list.area_y1 + height * 2 / 5) return 0;
-    if (max_x <= list.area_x1 + width / 4 && min_x <= list.area_x1 + 80) return -1;
-    if (min_x > list.area_x2 - width / 4 && max_x >= list.area_x2 - 80) return 1;
+    if (max_x < list.area_x1 + width / 2 && min_x <= list.area_x1 + 80) return -1;
+    if (min_x > list.area_x1 + width / 2 && max_x >= list.area_x2 - 80) return 1;
     return 0;
 }
 
