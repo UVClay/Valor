@@ -35,12 +35,12 @@ const ControlInfo controls[KC_COUNT] = {
     {"Jump", "bind_jump"},
     {"Crouch", "bind_crouch"},
     {"Next weapon", "bind_weapon"},
-    {"Look (L3)", "bind_look"},
+    {"Center view", "bind_look"},
     {"Pause", "bind_pause"},
 };
 // The game action each control presses (-1: movement or pause).
 const int control_action[KC_COUNT] = {-1, -1, -1, -1, ACT_FIRE, ACT_AIM, ACT_RELOAD, ACT_USE, ACT_JUMP,
-                                      ACT_CROUCH, ACT_WEAPON, ACT_LOOK, -1};
+                                      ACT_CROUCH, ACT_WEAPON, ACT_CENTER, -1};
 
 bool scancode_down[SDL_SCANCODE_COUNT];
 bool mouse_down[8];

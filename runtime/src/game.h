@@ -14,7 +14,7 @@ bool game_aiming();
 
 // The game's actions (its per-port action button table, 0x800B7790).
 enum GameAction {
-    ACT_FIRE, ACT_JUMP, ACT_WEAPON, ACT_CROUCH, ACT_RELOAD, ACT_USE, ACT_PAUSE, ACT_LOOK, ACT_AIM, ACT_COUNT
+    ACT_FIRE, ACT_JUMP, ACT_WEAPON, ACT_CROUCH, ACT_RELOAD, ACT_USE, ACT_PAUSE, ACT_CENTER, ACT_AIM, ACT_COUNT
 };
 // The pad buttons (input.h bits) assigned to an action in the current controller configuration.
 uint16_t game_action_buttons(GameAction a);

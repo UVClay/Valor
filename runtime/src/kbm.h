@@ -11,7 +11,7 @@ namespace psx::hw {
 // The bindable controls.
 enum KbmControl {
     KC_FORWARD, KC_BACK, KC_LEFT, KC_RIGHT, KC_FIRE, KC_AIM, KC_RELOAD, KC_USE, KC_JUMP, KC_CROUCH,
-    KC_WEAPON, KC_LOOK, KC_PAUSE, KC_COUNT
+    KC_WEAPON, KC_CENTER, KC_PAUSE, KC_COUNT
 };
 const char *kbm_control_label(int control);  // for the settings menu
 const char *kbm_control_key(int control);    // settings.ini key ("bind_fire")

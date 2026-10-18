@@ -101,7 +101,7 @@ Measured:
 Actions (fire, reload, ...):
 - Button masks per action are at `0x800B7790 + (port*9 + action)*4`, with an optional second mask at `0x800B77E0` (same layout). Masks have the pad's two bytes swapped (Cross is `0x40`, Start `0x800`).
 - `0x8007570C(port, action)` tests whether an action is held, and `0x80075778(port, action)` whether it was just pressed. Pad state is at `0x80093B7C + port*4` and the previous frame's at `0x80093B84`.
-- Default buttons: 0 fire (Cross), 1 jump (Triangle), 2 next weapon (Circle), 3 crouch (L2), 4 reload (Square), 5 use (Square), 6 Start, 7 L3, 8 aim mode (R2).
+- Default buttons: 0 fire (Cross), 1 jump (Triangle), 2 next weapon (Circle), 3 crouch (L2), 4 reload (Square), 5 use (Square), 6 Start, 7 center view (L3: `0x8007F084` eases the look offsets back), 8 aim mode (R2).
 
 Look roles, measured:
 - A turn role value is added to the yaw as is, in 16.16 angle units with 4096 units per turn.

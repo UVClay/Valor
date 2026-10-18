@@ -42,7 +42,7 @@ Rebind them in F1 → Controls.
 | Reload / use | R / E |
 | Jump / crouch | Space / C |
 | Next weapon | Mouse wheel down |
-| The game's L3 action | V |
+| Center view (the game's L3) | V |
 | Pause | Esc |
 | Menus | Arrows or WASD, Enter or Space accepts, Backspace goes back |
 
