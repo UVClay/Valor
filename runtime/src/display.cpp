@@ -6,6 +6,7 @@
 #include <iterator>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <string>
 #include <fstream>
 #include <vector>
@@ -40,6 +41,7 @@ bool fast_forward;
 uint64_t next_frame_ns;
 
 SDL_Gamepad *gamepad;
+bool screenshot_requested;  // F12
 
 std::vector<uint32_t> frame;  // ARGB8888 display area
 int frame_w, frame_h;
@@ -142,6 +144,7 @@ bool handle_key(SDL_Keycode key, bool down) {
             settings_save();
         }
         return true;
+    case SDLK_F12: if (down) screenshot_requested = true; return true;
     case SDLK_MINUS: if (down) audio_adjust_volume(-10); return true;
     case SDLK_EQUALS: if (down) audio_adjust_volume(10); return true;
     default: return false;
@@ -403,6 +406,20 @@ void gpu_present() {
             save_window(name);
         }
     }
+    if (screenshot_requested) {
+        // F12: the window as shown, into screenshots/.
+        screenshot_requested = false;
+        present_frame(vblank);
+        overlay_render();
+        char name[64];
+        time_t now = time(nullptr);
+        strftime(name, sizeof name, "valor-%Y%m%d-%H%M%S.png", localtime(&now));
+        auto saved = config.screenshots;
+        config.screenshots = "screenshots";
+        save_window(name);
+        config.screenshots = saved;
+        log("screenshot: screenshots/%s", name);
+    }
     if (!own_clock) SDL_GL_SwapWindow(window);
 
     if (config.menu_screenshot && gpu.frames == config.menu_screenshot) {
@@ -423,10 +440,15 @@ void gpu_present() {
         menu_toggle();
     }
 
-    // The game pauses while the settings menu is open.
-    if (menu_is_open()) {
+    // The game pauses while the settings menu is open, and (config.pause_unfocused) while the
+    // window is in the background.
+    auto paused = [] {
+        return menu_is_open() || (config.pause_unfocused && !config.hidden &&
+                                  !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS));
+    };
+    if (paused()) {
         audio_pause(true);
-        while (menu_is_open()) {
+        while (paused()) {
             pump_events();
             present_frame();
             overlay_render();

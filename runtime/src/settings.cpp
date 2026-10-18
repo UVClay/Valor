@@ -57,6 +57,7 @@ void settings_load() {
         else if (key == "subpixel") config.subpixel = value == "true";
         else if (key == "smooth_scaling") config.smooth_scaling = value == "true";
         else if (key == "fullscreen") config.fullscreen = value == "true";
+        else if (key == "pause_unfocused") config.pause_unfocused = value == "true";
         else if (key == "volume") config.volume = std::clamp(atoi(value.c_str()), 0, 200);
         else if (key == "square_sticks") config.square_sticks = value == "true";
         else if (key == "interpolate") config.interpolate = value == "true";
@@ -93,6 +94,7 @@ void settings_save() {
     f << "subpixel = " << (config.subpixel ? "true" : "false") << "  # sub-pixel vertex positions (no wobble)\n";
     f << "smooth_scaling = " << (config.smooth_scaling ? "true" : "false") << "\n";
     f << "fullscreen = " << (config.fullscreen ? "true" : "false") << "\n";
+    f << "pause_unfocused = " << (config.pause_unfocused ? "true" : "false") << "  # pause in the background\n";
     f << "volume = " << config.volume << "\n";
     f << "square_sticks = " << (config.square_sticks ? "true" : "false") << "\n";
     f << "interpolate = " << (config.interpolate ? "true" : "false") << "  # frames between the game's 30 Hz ticks\n";

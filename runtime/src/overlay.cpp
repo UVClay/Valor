@@ -134,6 +134,7 @@ void draw_menu() {
                                   "removes the PS1's vertex wobble. Needs a resolution above 1x.");
             ImGui::Checkbox("Smooth scaling", &config.smooth_scaling);
             if (ImGui::Checkbox("Fullscreen (F11)", &config.fullscreen)) display_apply_settings();
+            ImGui::Checkbox("Pause in the background", &config.pause_unfocused);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Audio")) {

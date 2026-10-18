@@ -48,6 +48,7 @@ Rebind them in F1 → Controls.
 | Runtime | Key |
 |---|---|
 | Settings menu | F1 |
+| Screenshot (into `screenshots/`) | F12 |
 | Debug overlay: off / FPS / extended stats | F3 |
 | Analog mode on/off (the DualShock's Analog button) | F7 |
 | Fast-forward (hold) | Tab |

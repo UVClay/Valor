@@ -6,8 +6,9 @@ extracted/
 *.iso
 *.chd
 
-# Memory cards
+# Memory cards, settings and screenshots (F12)
 saves/
+screenshots/
 
 # Build output (the container's $HOME is build/home)
 build/
