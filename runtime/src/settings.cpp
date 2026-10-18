@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 
+#include "kbm.h"
 #include "runtime.h"
 #include "settings.h"
 
@@ -46,7 +47,8 @@ void settings_load() {
     std::string line;
     while (std::getline(f, line)) {
         auto eq = line.find('=');
-        if (line.empty() || line[0] == '#' || eq == std::string::npos) continue;
+        if (auto hash = line.find('#'); hash != std::string::npos) line.resize(hash);  // comments
+        if (line.empty() || eq >= line.size()) continue;
         std::string key = trim(line.substr(0, eq)), value = trim(line.substr(eq + 1));
         if (key == "scale") config.scale = std::clamp(atoi(value.c_str()), 0, 16);
         else if (key == "aspect") parse_aspect(value, config.aspect);
@@ -63,6 +65,13 @@ void settings_load() {
         else if (key == "crosshair") config.crosshair = value == "true";
         else if (key == "crosshair_size") config.crosshair_size = std::clamp(atoi(value.c_str()), 1, 20);
         else if (key == "overlay") config.overlay = std::clamp(atoi(value.c_str()), 0, 2);
+        else if (key == "mouse_look") config.mouse_look = value == "true";
+        else if (key == "mouse_sensitivity") config.mouse_sensitivity = std::clamp(atof(value.c_str()), 0.05, 50.0);
+        else if (key == "invert_mouse") config.invert_mouse = value == "true";
+        else
+            for (int c = 0; c < hw::KC_COUNT; c++)
+                if (key == hw::kbm_control_key(c))
+                    if (int input = hw::kbm_parse_input(value); input >= 0) hw::kbm_bindings[c] = input;
     }
 }
 
@@ -86,6 +95,12 @@ void settings_save() {
     f << "crosshair = " << (config.crosshair ? "true" : "false") << "\n";
     f << "crosshair_size = " << config.crosshair_size << "\n";
     f << "overlay = " << config.overlay << "\n";
+    f << "mouse_look = " << (config.mouse_look ? "true" : "false") << "\n";
+    f << "mouse_sensitivity = " << config.mouse_sensitivity << "  # 0.022 degrees per count at 1 (as in Quake)\n";
+    f << "invert_mouse = " << (config.invert_mouse ? "true" : "false") << "\n";
+    f << "# Key bindings: SDL key names, Mouse 1-7, Wheel Up/Down, None\n";
+    for (int c = 0; c < hw::KC_COUNT; c++)
+        f << hw::kbm_control_key(c) << " = " << hw::kbm_input_name(hw::kbm_bindings[c]) << "\n";
 }
 
 }  // namespace psx

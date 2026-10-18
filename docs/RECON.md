@@ -98,6 +98,21 @@ Measured:
 - The "strafing kills forward movement" feel comes from the per-axis curve. On a round stick gate, holding the stick fully deflected 30° off forward gives (0.5, 0.87). That is 7.5 units per frame instead of 17.4.
 - A DualShock reports a square range, so its diagonals reach both axes' limits. The runtime reproduces that by mapping round gamepad input onto the square range (`square_sticks`, default on). At 30° the speed is then 17.9.
 
+Actions (fire, reload, ...):
+- Button masks per action are at `0x800B7790 + (port*9 + action)*4`, with an optional second mask at `0x800B77E0` (same layout). Masks have the pad's two bytes swapped (Cross is `0x40`, Start `0x800`).
+- `0x8007570C(port, action)` tests whether an action is held, and `0x80075778(port, action)` whether it was just pressed. Pad state is at `0x80093B7C + port*4` and the previous frame's at `0x80093B84`.
+- Default buttons: 0 fire (Cross), 1 jump (Triangle), 2 next weapon (Circle), 3 crouch (L2), 4 reload (Square), 5 use (Square), 6 Start, 7 L3, 8 aim mode (R2).
+
+Look roles, measured:
+- A turn role value is added to the yaw as is, in 16.16 angle units with 4096 units per turn.
+- Pitch gets half of the value and is clamped to about ±53°.
+- Neither springs back to center.
+
+Other state:
+- `0x8009A5E0` is non-zero while the pause screen is up. It is set by the Start handler `0x800625BC`.
+- `*(0x8009D654) + 0x10`: bit `0x10` is set while in aim mode, where the game draws its own red reticle.
+- The overlay at `0x80039D90` identifies itself by its first word: 7 is SHELL, 5 is LEVEL, 6 is LEVEL2P.
+
 ## Frame timing (LEVEL.BIN)
 
 The simulation is a fixed 30 Hz tick:

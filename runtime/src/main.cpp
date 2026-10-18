@@ -8,6 +8,7 @@
 #include "gpu.h"
 #include "hw.h"
 #include "input.h"
+#include "kbm.h"
 #include "memcard.h"
 #include "settings.h"
 #include "runtime.h"
@@ -37,7 +38,8 @@ static void usage(const char *argv0) {
     fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--window WxH] [--headless] [--hidden]\n"
             "       [--screenshots DIR] [--screenshot-every N] [--screenshot-from FRAME] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
-            "       [--stick FRAME:lx|ly|rx|ry=VALUE[:DURATION]]... [--dump-ram FRAME]\n"
+            "       [--kbm FRAME:CONTROL[:DURATION]]... [--mouse FRAME:DX,DY]...\n"
+            "       [--stick FRAME:lx|ly|rx|ry=VALUE[:DURATION]]... [--dump-ram FRAME[:FILE]]\n"
             "       [--poke-on-call CALLHEX:ADDRHEX=VALUE]...\n"
             "       [--trace-io] [--trace-calls] [--trace-cd] [--trace-audio] [--max-cycles N]\n", argv0);
 }
@@ -91,8 +93,24 @@ int main(int argc, char **argv) {
             for (int k = 0; k < 4; k++) if (!strcmp(axis, names[k])) a = k;
             if (a < 0 || value > 255) { usage(argv[0]); return 2; }
             config.sticks.push_back({frame, duration, a, uint8_t(value)});
+        } else if (!strcmp(argv[i], "--kbm") && i + 1 < argc) {
+            unsigned long long frame, duration = 6;
+            char name[32] = {};
+            if (sscanf(argv[++i], "%llu:%31[a-z]:%llu", &frame, name, &duration) < 2) { usage(argv[0]); return 2; }
+            int control = -1;
+            for (int k = 0; k < hw::KC_COUNT; k++)
+                if (!strcmp(hw::kbm_control_key(k) + 5, name)) control = k;
+            if (control < 0) { usage(argv[0]); return 2; }
+            config.kbm_presses.push_back({frame, duration, control});
+        } else if (!strcmp(argv[i], "--mouse") && i + 1 < argc) {
+            unsigned long long frame;
+            double dx, dy;
+            if (sscanf(argv[++i], "%llu:%lf,%lf", &frame, &dx, &dy) != 3) { usage(argv[0]); return 2; }
+            config.mouse_moves.push_back({frame, dx, dy, {false, false}});
         } else if (!strcmp(argv[i], "--dump-ram") && i + 1 < argc) {
-            config.dump_ram_frame = strtoull(argv[++i], nullptr, 0);
+            char *end;
+            config.dump_ram_frame = strtoull(argv[++i], &end, 0);
+            if (*end == ':') config.dump_ram_path = end + 1;
         } else if (!strcmp(argv[i], "--press") && i + 1 < argc) { if (!parse_press(argv[++i])) { usage(argv[0]); return 2; } }
         else if (!strcmp(argv[i], "--screenshots") && i + 1 < argc) config.screenshots = argv[++i];
         else if (!strcmp(argv[i], "--screenshot-every") && i + 1 < argc) config.screenshot_every = strtoull(argv[++i], nullptr, 0);

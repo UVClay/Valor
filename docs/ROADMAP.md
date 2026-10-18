@@ -26,8 +26,10 @@ and full playthroughs of two missions.
 - [x] **High frame rate**: the game logic is a fixed 30 Hz tick, so the last frame is redrawn with
       the camera and moving objects (enemy limbs, doors) interpolated toward the next tick, at the
       display's refresh rate (DESIGN.md, Frame interpolation). No added latency.
-- [x] Crosshair (Interface tab; size slider)
-- [ ] Mouse and keyboard controls
+- [x] Crosshair (Interface tab; size slider). Hidden in aim mode and on the pause screen
+- [x] **Mouse and keyboard controls**: mouse look and movement go straight into the game's
+      control roles (a recompiler hook on the role axis function), and keys press the game's
+      actions through its own button table. Bindings, sensitivity and invert are in F1 → Controls.
 - [ ] Saves decoupled from memory cards
 - [ ] Optional sub-pixel vertex precision (PGXP-style) to remove the vertex wobble at high resolution
 

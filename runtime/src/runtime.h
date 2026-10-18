@@ -64,6 +64,11 @@ struct Config {
     // Keep the 2D HUD's proportions in widescreen (it would otherwise stretch with the image).
     bool widescreen_hud = true;
     bool hud_edges = true;  // ... and move the corner elements to the screen's edges
+    // Mouse and keyboard (kbm.cpp): mouse look in missions, Quake-style sensitivity (0.022
+    // degrees per count at 1).
+    bool mouse_look = true;
+    double mouse_sensitivity = 3.0;
+    bool invert_mouse = false;
     bool crosshair = false;  // draw a + at the center of the 3D view
     int crosshair_size = 4;  // arm length in original (240-line) pixels
     std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)
@@ -71,7 +76,12 @@ struct Config {
     std::vector<Press> presses;  // scripted input (--press FRAME:BUTTON[:DURATION])
     struct Stick { uint64_t frame, duration; int axis; uint8_t value; };  // axis: 0 lx 1 ly 2 rx 3 ry
     std::vector<Stick> sticks;   // scripted sticks (--stick FRAME:AXIS=VALUE[:DURATION])
-    uint64_t dump_ram_frame = 0;  // testing: write RAM to build/ram.bin at this frame
+    struct KbmPress { uint64_t frame, duration; int control; };
+    std::vector<KbmPress> kbm_presses;  // scripted controls (--kbm FRAME:CONTROL[:DURATION])
+    struct MouseMove { uint64_t frame; double dx, dy; bool taken[2]; };
+    std::vector<MouseMove> mouse_moves;  // scripted mouse motion (--mouse FRAME:DX,DY)
+    uint64_t dump_ram_frame = 0;  // testing: write RAM to dump_ram_path at this frame
+    std::string dump_ram_path = "build/ram.bin";
     uint64_t monkey_seed = 0, monkey_from = 0;  // random input from this frame on (--monkey SEED:FRAME)
     // Debugging: write a word into RAM the first time a function is called
     // (--poke-on-call CALL:ADDR=VALUE), e.g. to pick the level the game loads.

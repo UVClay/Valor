@@ -51,6 +51,11 @@ time are followed by a tiny interpreter.
   (inline longjmp) and execution continues at `$ra`. Return addresses of `setjmp` calls are
   entry points of their own, since a longjmp can resume there.
 - COP2 (GTE) instructions → calls into the runtime GTE implementation.
+- Hooks (`[hooks.<module>]` in the game config): the function's body is generated as
+  `<fn>_body` and its name calls a native `hook(c, body)`, which runs the original and can
+  adjust arguments or results. PC features use them to change the game's behavior at a precise
+  point. Example: mouse and keyboard input is added to the control role values
+  (`runtime/src/game.cpp`).
 
 ### Overlays
 

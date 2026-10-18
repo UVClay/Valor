@@ -190,8 +190,12 @@ def cmd_generate(proj: Project, outdir):
             by_name = {n: a for a, n in syms.items()}
             dynamic = [(by_name[n], by_name[n] + 4 * words)
                        for n, words in proj.cfg.get("dynamic_code", {}).items() if n in by_name]
+            hooks = {int(a, 16): fn for a, fn in proj.cfg.get("hooks", {}).get(module, {}).items()}
+            missing = [f"{a:08X}" for a in hooks if a not in fs]
+            if missing:
+                sys.exit(f"{module}: hooked functions not found: {', '.join(missing)}")
             files = generate_module(module, fs, resolve, syms, headers,
-                                    proj.cfg.get("overrides", {}), dynamic)
+                                    proj.cfg.get("overrides", {}), dynamic, hooks)
         except CodegenError as e:
             sys.exit(f"{module}: {e}")
         for name, text in files.items():

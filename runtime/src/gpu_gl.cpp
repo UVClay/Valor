@@ -98,6 +98,7 @@ struct FrameList {
     double period = 2;             // vblanks until the next tick is expected
     bool shown = false;
     uint64_t last_frame = 0;       // vblank of the latest draw
+    uint32_t world_prims = 0;      // primitives with world vertices
 };
 std::unique_ptr<FrameList> recording;            // the list being drawn now
 std::deque<std::unique_ptr<FrameList>> finished;  // complete lists, newest last
@@ -335,6 +336,23 @@ void draw_vertices(const BatchState &st, const GLVertex *v, size_t n) {
 // starts a new list, as does drawing in a later vblank (2D screens project nothing).
 void layout_hud(const FrameList &list);
 
+// The list being recorded is complete.
+void finish_list() {
+    flush();
+    if (!recording) return;
+    layout_hud(*recording);
+    static const char *trace = getenv("VALOR_TRACE_LISTS");
+    if (trace && recording->tick)
+        log("list: frame %llu tick frame %llu seq %llu verts %zu world_prims %u ops %zu", (unsigned long long)gpu.frames,
+            (unsigned long long)recording->tick->frame, (unsigned long long)recording->tick->seq,
+            recording->tick->vertices.size(), recording->world_prims, recording->ops.size());
+    finished.push_back(std::move(recording));
+    while (finished.size() > 3) {
+        if (last_shown == finished.front().get()) last_shown = nullptr;
+        finished.pop_front();
+    }
+}
+
 void begin_draw() {
     if (!interp_enabled()) {
         recording.reset();
@@ -343,15 +361,7 @@ void begin_draw() {
     interp_note_draw();
     auto tick = interp_drawing_tick();
     if (recording && recording->tick == tick && recording->last_frame == gpu.frames) return;
-    flush();
-    if (recording) {
-        layout_hud(*recording);
-        finished.push_back(std::move(recording));
-        while (finished.size() > 3) {
-            if (last_shown == finished.front().get()) last_shown = nullptr;
-            finished.pop_front();
-        }
-    }
+    finish_list();
     recording = std::make_unique<FrameList>();
     recording->tick = tick;
     recording->last_frame = gpu.frames;
@@ -519,7 +529,10 @@ void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int m
         projected |= src[i] != -1;
         world |= prim_recs[i] >= 0;
     }
-    if (world) world_packets.push_back(gpu_packet_addr);
+    if (world) {
+        world_packets.push_back(gpu_packet_addr);
+        recording->world_prims++;
+    }
     if (projected || world) return;
     if (recording->tick->frame + 3 < gpu.frames || recording->tick->vertices.size() < 64) return;  // 2D screen
     uint32_t p = gpu_packet_addr;
@@ -908,13 +921,7 @@ void gl_renderer_interpolate(double vblank_time) {
     if (!enabled || !interp_presenting()) return;
     if (recording && (recording->tick != interp_drawing_tick() || recording->last_frame < gpu.frames)) {
         // A new tick's projections started (or a vblank passed): the list is complete.
-        flush();
-        layout_hud(*recording);
-        finished.push_back(std::move(recording));
-        while (finished.size() > 3) {
-            if (last_shown == finished.front().get()) last_shown = nullptr;
-            finished.pop_front();
-        }
+        finish_list();
     }
     // The newest complete list drawn where the display shows.
     FrameList *list = nullptr;

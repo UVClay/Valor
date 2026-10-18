@@ -357,12 +357,15 @@ class FunctionWriter:
 
 
 def generate_module(module: str, funcs: dict, resolve_call, symbols: dict, header_names, overrides=None,
-                    dynamic=()):
+                    dynamic=(), hooks=None):
     """Returns {filename: text} for one module (exe or overlay).
 
     overrides maps symbol names to native runtime functions that replace the recompiled body.
+    hooks maps function addresses to native runtime functions that wrap it: the recompiled body
+    becomes <fn>_body, and the hook is called as hook(c, <fn>_body) in its place.
     """
     overrides = overrides or {}
+    hooks = hooks or {}
     files = {}
     starts = sorted(funcs)
     for chunk in range(0, len(starts), FUNCS_PER_FILE):
@@ -375,6 +378,12 @@ def generate_module(module: str, funcs: dict, resolve_call, symbols: dict, heade
                 native = overrides[name]
                 body.append(f"void {native}(Cpu *c);")
                 body.append(f"void {fn_name(module, s)}(Cpu *c) {{ {native}(c); }}")
+            elif s in hooks:
+                name = fn_name(module, s)
+                text = FunctionWriter(module, funcs[s], resolve_call, dynamic).emit()
+                body.append(text.replace(f"void {name}(Cpu *c) {{", f"static void {name}_body(Cpu *c) {{", 1))
+                body.append(f"void {hooks[s]}(Cpu *c, RecompFn body);")
+                body.append(f"void {name}(Cpu *c) {{ {hooks[s]}(c, {name}_body); }}")
             else:
                 body.append(FunctionWriter(module, funcs[s], resolve_call, dynamic).emit())
             body.append("")

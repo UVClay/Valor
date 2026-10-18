@@ -29,14 +29,25 @@ Supported image: Medal of Honor (USA), SLUS-00974, SHA1 `cf503f1dab8d6f9ae25d11b
 
 ## Controls
 
-Any SDL-supported controller works (DualShock/DualSense map 1:1). Keyboard fallback:
+Any SDL-supported controller works (DualShock/DualSense map 1:1).
 
-| PlayStation | Keyboard |
+Mouse and keyboard: in a mission the mouse looks around (captured while playing) and keys are
+bound to the game's actions, whichever controller configuration is selected in its options.
+Rebind them in F1 → Controls.
+
+| Action | Default |
 |---|---|
-| D-pad | Arrow keys |
-| Cross / Circle / Square / Triangle | X / C / Z / S |
-| L1 / R1 / L2 / R2 | Q / E / 1 / 3 |
-| Start / Select | Enter / Backspace |
+| Move / strafe | W A S D |
+| Fire / aim mode | Left / right mouse button |
+| Reload / use | R / E |
+| Jump / crouch | Space / C |
+| Next weapon | Mouse wheel |
+| Pause | Esc |
+| Menus | Arrows or WASD, Enter or Space accepts, Backspace goes back |
+
+| Runtime | Key |
+|---|---|
+| Settings menu | F1 |
 | Debug overlay: off / FPS / extended stats | F3 |
 | Analog mode on/off (the DualShock's Analog button) | F7 |
 | Fast-forward (hold) | Tab |
@@ -55,7 +66,8 @@ also be given on the command line:
   `--frame-rate N`.
 - **Square stick range:** maps modern round-gated sticks to the DualShock's range.
 - **Widescreen HUD:** keeps the HUD's proportions, with the compass and ammo count in the corners.
-- **Crosshair:** `--crosshair SIZE`.
+- **Crosshair:** `--crosshair SIZE` (hidden in aim mode and on the pause screen).
+- **Mouse:** sensitivity (Quake scale: 0.022 degrees per count at 1), invert, key bindings.
 - **Volume and debug overlay.**
 
 ## Testing

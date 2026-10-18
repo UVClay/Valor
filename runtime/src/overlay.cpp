@@ -7,12 +7,14 @@
 #include <vector>
 
 #include "audio.h"
+#include "game.h"
 #include "gpu.h"
 #include "gpu_gl.h"
 #include "hw.h"
 #include "imgui.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_sdl3.h"
+#include "kbm.h"
 #include "overlay.h"
 #include "runtime.h"
 #include "settings.h"
@@ -139,6 +141,28 @@ void draw_menu() {
             ImGui::Checkbox("Square stick range (DualShock-like)", &config.square_sticks);
             ImGui::TextDisabled("Full deflection reaches both axes on diagonals, as on a DualShock.\n"
                                 "Without it, angling a round-gated stick off-axis loses most of the speed.");
+            ImGui::Separator();
+            ImGui::Checkbox("Mouse look", &config.mouse_look);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(captured while playing a mission)");
+            float sens = float(config.mouse_sensitivity);
+            if (ImGui::SliderFloat("Mouse sensitivity", &sens, 0.1f, 20.0f, "%.2f", ImGuiSliderFlags_Logarithmic))
+                config.mouse_sensitivity = sens;
+            ImGui::Checkbox("Invert mouse", &config.invert_mouse);
+            ImGui::TextUnformatted("Keys (missions; menus use arrows/WASD, Enter, Backspace)");
+            if (ImGui::BeginTable("binds", 2, ImGuiTableFlags_SizingStretchProp)) {
+                for (int c = 0; c < KC_COUNT; c++) {
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::TextUnformatted(kbm_control_label(c));
+                    ImGui::TableNextColumn();
+                    std::string label = kbm_rebinding() == c ? "Press a key... (Esc cancels)" : kbm_input_name(kbm_bindings[c]);
+                    label += "##bind" + std::to_string(c);
+                    if (ImGui::Button(label.c_str(), ImVec2(-1, 0))) kbm_begin_rebind(c);
+                }
+                ImGui::EndTable();
+            }
+            if (ImGui::Button("Default keys")) kbm_reset_bindings();
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Interface")) {
@@ -174,6 +198,7 @@ namespace {
 // A plain white + at the center of the 3D view, scaled with the image.
 void draw_crosshair() {
     if (!view.world || view.h <= 0) return;
+    if (game_aiming() || game_paused()) return;  // aim mode draws the game's own reticle
     float px = float(view.h) / 240.0f;
     float cx = float(view.x) + float(view.w) * 0.5f, cy = float(view.y) + float(view.h) * 0.5f;
     float arm = float(config.crosshair_size) * px, thick = std::max(1.0f, std::round(px));

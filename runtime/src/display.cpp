@@ -17,6 +17,7 @@
 #include "hw.h"
 #include "input.h"
 #include "interp.h"
+#include "kbm.h"
 #include "overlay.h"
 #include "pad.h"
 #include "settings.h"
@@ -38,7 +39,6 @@ bool fast_forward;
 uint64_t next_frame_ns;
 
 SDL_Gamepad *gamepad;
-uint16_t keyboard_buttons;  // pressed (active high)
 
 std::vector<uint32_t> frame;  // ARGB8888 display area
 int frame_w, frame_h;
@@ -123,51 +123,48 @@ void write_png(const std::filesystem::path &path, const std::vector<uint32_t> &p
     chunk("IEND", {});
 }
 
-void handle_key(SDL_Keycode key, bool down) {
-    uint16_t bit = 0;
+// Runtime keys (the game's controls are in kbm.cpp). True when the key was one of them.
+bool handle_key(SDL_Keycode key, bool down) {
     switch (key) {
-    case SDLK_UP: bit = BTN_UP; break;
-    case SDLK_DOWN: bit = BTN_DOWN; break;
-    case SDLK_LEFT: bit = BTN_LEFT; break;
-    case SDLK_RIGHT: bit = BTN_RIGHT; break;
-    case SDLK_X: bit = BTN_CROSS; break;
-    case SDLK_C: bit = BTN_CIRCLE; break;
-    case SDLK_Z: bit = BTN_SQUARE; break;
-    case SDLK_S: bit = BTN_TRIANGLE; break;
-    case SDLK_Q: bit = BTN_L1; break;
-    case SDLK_E: bit = BTN_R1; break;
-    case SDLK_1: bit = BTN_L2; break;
-    case SDLK_3: bit = BTN_R2; break;
-    case SDLK_RETURN: bit = BTN_START; break;
-    case SDLK_BACKSPACE: bit = BTN_SELECT; break;
-    case SDLK_TAB: fast_forward = down; return;
-    case SDLK_F7: if (down) pad_toggle_analog(); return;
-    case SDLK_F3: if (down) overlay_cycle(); return;
-    case SDLK_F1: if (down) menu_toggle(); return;
-    case SDLK_ESCAPE: if (down && menu_is_open()) menu_toggle(); return;
+    case SDLK_TAB: fast_forward = down; return true;
+    case SDLK_F7: if (down) pad_toggle_analog(); return true;
+    case SDLK_F3: if (down) overlay_cycle(); return true;
+    case SDLK_F1: if (down) menu_toggle(); return true;
+    case SDLK_ESCAPE:
+        if (!menu_is_open()) return false;
+        if (down) menu_toggle();
+        return true;
     case SDLK_F11:
         if (down) {
             config.fullscreen = !config.fullscreen;
             display_apply_settings();
             settings_save();
         }
-        return;
-    case SDLK_MINUS: if (down) audio_adjust_volume(-10); return;
-    case SDLK_EQUALS: if (down) audio_adjust_volume(10); return;
-    default: return;
+        return true;
+    case SDLK_MINUS: if (down) audio_adjust_volume(-10); return true;
+    case SDLK_EQUALS: if (down) audio_adjust_volume(10); return true;
+    default: return false;
     }
-    keyboard_buttons = down ? (keyboard_buttons | bit) : (keyboard_buttons & ~bit);
 }
 
 void pump_events() {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
+        if (kbm_rebinding() >= 0 && kbm_event(e)) continue;  // the settings menu is rebinding
         overlay_event(e);
+        bool release = e.type == SDL_EVENT_KEY_UP || e.type == SDL_EVENT_MOUSE_BUTTON_UP;
         switch (e.type) {
         case SDL_EVENT_QUIT: throw Halt("window closed");
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
-            if (!e.key.repeat) handle_key(e.key.key, e.type == SDL_EVENT_KEY_DOWN);
+            if (e.key.repeat) break;
+            if (!handle_key(e.key.key, e.type == SDL_EVENT_KEY_DOWN) && (!menu_is_open() || release)) kbm_event(e);
+            break;
+        case SDL_EVENT_MOUSE_MOTION:
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+        case SDL_EVENT_MOUSE_WHEEL:
+            if (!menu_is_open() || release) kbm_event(e);
             break;
         case SDL_EVENT_GAMEPAD_ADDED:
             if (!gamepad) {
@@ -184,6 +181,7 @@ void pump_events() {
             break;
         }
     }
+    kbm_update(window);
 }
 
 // The aspect the image is shown at; 3D projection is adjusted to match (see gte_set_projection).
@@ -345,8 +343,8 @@ void gpu_present() {
     log_chain();
     gte_trace_frame();
     if (config.dump_ram_frame && gpu.frames == config.dump_ram_frame) {
-        std::ofstream("build/ram.bin", std::ios::binary).write(reinterpret_cast<const char *>(psx_ram), PSX_RAM_SIZE);
-        log("dumped RAM to build/ram.bin at frame %llu", (unsigned long long)gpu.frames);
+        std::ofstream(config.dump_ram_path, std::ios::binary).write(reinterpret_cast<const char *>(psx_ram), PSX_RAM_SIZE);
+        log("dumped RAM to %s at frame %llu", config.dump_ram_path.c_str(), (unsigned long long)gpu.frames);
     }
     bool shot = !config.screenshots.empty() && gpu.frames >= config.screenshot_from &&
                 gpu.frames % config.screenshot_every == 0;
@@ -507,7 +505,7 @@ bool pad_connected(int port) { return port == 0; }
 
 uint16_t pad_buttons(int port) {
     if (port != 0) return 0xFFFF;
-    uint16_t pressed = keyboard_buttons;
+    uint16_t pressed = kbm_buttons();
     for (const auto &p : config.presses)
         if (gpu.frames >= p.frame && gpu.frames < p.frame + p.duration) pressed |= p.buttons;
     pressed |= monkey_state().pressed;
