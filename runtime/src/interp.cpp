@@ -100,8 +100,8 @@ bool interp_presenting() { return config.interpolate && hw::hwgl::active(); }
 
 void interp_note_draw() { drawn_since_projection = true; }
 
-void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, double kx, double ky,
-                   const int16_t rt[3][3], const int32_t tr[3], const int16_t mv[3], uint32_t pc) {
+void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, double kx, double ky, int32_t ofx,
+                   int32_t ofy, const int16_t rt[3][3], const int32_t tr[3], const int16_t mv[3], uint32_t pc) {
     if (drawn_since_projection) {  // a new tick's projection phase
         drawn_since_projection = false;
         auto t = std::make_shared<InterpTick>();
@@ -149,10 +149,9 @@ void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, dou
     v.h = float(h);
     memcpy(v.v, mv, sizeof v.v);
     v.group = gi;
+    v.ofx = float(ofx / 65536.0);
+    v.ofy = float(ofy / 65536.0);
     v.translated = tr[0] || tr[1] || tr[2];
-    // The GTE clamps the divide for z < h/2 and the result to -0x400..0x3FF: such points can't
-    // be moved from their screen position.
-    v.exact = v.z >= h * 0.5f && sx > -0x400 && sx < 0x3FF && sy > -0x400 && sy < 0x3FF;
     auto [it, added] = t.by_sxy.try_emplace(interp_key(sx, sy), uint32_t(t.vertices.size()));
     int32_t previous = -1;
     if (!added) {

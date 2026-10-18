@@ -8,10 +8,12 @@
 // passes for textured primitives so only texels with the semi bit blend) and the mask bit.
 #include <algorithm>
 #include <array>
+#include <climits>
 #include <cmath>
 #include <cstring>
 #include <deque>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "gl.h"
@@ -71,6 +73,8 @@ bool warned_mask_check;
 // without one, the primitive's other vertices to borrow movement from (group).
 struct VertexSource {
     int32_t rec = -1, group = -1;
+    uint32_t key = 0;  // screen position as drawn (for vertices without a projection)
+    bool hud = false;  // part of the 2D HUD: never moved
 };
 std::vector<VertexSource> batch_sources;  // parallel to `batch`
 
@@ -103,7 +107,8 @@ uint64_t source_stats[4];  // vertices: not projected, ambiguous, other projecti
 
 // Widescreen HUD: while a HUD primitive is submitted, x is squeezed toward the frame's center.
 struct {
-    bool active;
+    bool is_hud;  // the primitive being submitted is part of the HUD
+    bool active;  // ... and is squeezed
     float center, factor;
 } hud;
 
@@ -328,6 +333,8 @@ void draw_vertices(const BatchState &st, const GLVertex *v, size_t n) {
 
 // Frame interpolation bookkeeping at the start of every primitive or fill: a new tick's drawing
 // starts a new list, as does drawing in a later vblank (2D screens project nothing).
+void layout_hud(const FrameList &list);
+
 void begin_draw() {
     if (!interp_enabled()) {
         recording.reset();
@@ -338,6 +345,7 @@ void begin_draw() {
     if (recording && recording->tick == tick && recording->last_frame == gpu.frames) return;
     flush();
     if (recording) {
+        layout_hud(*recording);
         finished.push_back(std::move(recording));
         while (finished.size() > 3) {
             if (last_shown == finished.front().get()) last_shown = nullptr;
@@ -415,35 +423,132 @@ void finish_sources(int n) {
     recording->groups.push_back(g);
 }
 
-// Widescreen HUD: in a 3D frame, a primitive nobody projected and narrower than the screen is
-// part of the 2D HUD (full-width ones are backdrops, fades and flashes). It's drawn at its 4:3
-// proportions: squeezed toward the center, or with config.hud_edges, toward the left or right
-// edge when it lies entirely in a top corner of the original frame (the compass and the ammo
-// count; menus and messages elsewhere stay centered so their lines don't come apart). Primitives
-// touching the frame's left or right edge stay on that edge.
-void begin_hud(const int32_t *src, int n, int min_x, int max_x, int max_y) {
-    hud.active = false;
-    if (!config.widescreen_hud || gte_squeeze >= 1 || !recording || !recording->tick || !recording->has_area) return;
+// Widescreen HUD. In a 3D frame, the HUD is the primitives nobody projected that aren't
+// full-width (backdrops, fades and flashes): sprites and lines, and polygons from outside the
+// game's primitive pool (where the previous frame's packets with world vertices were; world
+// polygons clipped by the CPU come from there too).
+// They're drawn at their 4:3 proportions, squeezed toward the center. With config.hud_edges, HUD
+// elements entirely in a top corner of the original frame, close to its side (the compass, the
+// ammo count), are squeezed toward that edge instead. An element is a run of consecutive packets that also touch
+// on screen (glyphs of a line, segments of the compass), laid out from the latest frames, so its
+// parts stay together (menus and messages stay centered).
+// Primitives touching the frame's left or right edge stay on that edge.
+struct HudPrim { uint32_t packet; int min_x, max_x, min_y, max_y; };
+std::vector<HudPrim> hud_prims;                  // this frame's
+// Packet -> -1 left, 0 center, 1 right, from the latest frames that drew it (the game alternates
+// packet buffers between frames, so this isn't cleared every frame).
+std::unordered_map<uint32_t, int8_t> hud_anchor;
+std::vector<uint32_t> world_packets;              // this frame's packets with world vertices
+uint32_t pool_min = 1, pool_max = 0;              // the primitive pool, from the last two 3D frames
+uint32_t frame_pool_min = 1, frame_pool_max = 0;  // ... from the last one
+
+// At the end of a frame's list: group its HUD primitives into elements and pick their anchors.
+void layout_hud(const FrameList &list) {
+    if (world_packets.size() >= 32) {
+        // The pool: the biggest run of world packets without a 32 KB gap (a world primitive kept
+        // elsewhere doesn't count), with some margin, together with the previous frame's (the
+        // game may alternate buffers).
+        std::sort(world_packets.begin(), world_packets.end());
+        size_t best = 0, best_n = 0;
+        for (size_t i = 0; i < world_packets.size();) {
+            size_t j = i + 1;
+            while (j < world_packets.size() && world_packets[j] - world_packets[j - 1] < 0x8000) j++;
+            if (j - i > best_n) {
+                best = i;
+                best_n = j - i;
+            }
+            i = j;
+        }
+        uint32_t lo = world_packets[best] - 0x2000, hi = world_packets[best + best_n - 1] + 0x2000;
+        pool_min = frame_pool_max ? std::min(lo, frame_pool_min) : lo;
+        pool_max = std::max(hi, frame_pool_max);
+        frame_pool_min = lo;
+        frame_pool_max = hi;
+    }
+    world_packets.clear();
+    if (hud_prims.empty()) return;
+    if (hud_anchor.size() > 8192) hud_anchor.clear();
+    // Elements: primitives that touch on screen, side by side on a row (glyphs of a line, the
+    // ammo count's digits and icon) or overlapping (the compass's ring and disc).
+    size_t n = hud_prims.size();
+    std::vector<uint32_t> parent(n);
+    for (size_t i = 0; i < n; i++) parent[i] = uint32_t(i);
+    auto root = [&](uint32_t i) {
+        while (parent[i] != i) i = parent[i] = parent[parent[i]];
+        return i;
+    };
+    for (size_t i = 0; i < n; i++)
+        for (size_t j = i + 1; j < n; j++) {
+            const HudPrim &a = hud_prims[i], &b = hud_prims[j];
+            if (a.min_x <= b.max_x + 24 && b.min_x <= a.max_x + 24 && a.min_y <= b.max_y + 2 && b.min_y <= a.max_y + 2)
+                parent[root(uint32_t(i))] = root(uint32_t(j));
+        }
+    std::vector<HudPrim> elements(n, HudPrim{0, INT_MAX, INT_MIN, INT_MAX, INT_MIN});
+    for (size_t i = 0; i < n; i++) {
+        HudPrim &e = elements[root(uint32_t(i))];
+        const HudPrim &p = hud_prims[i];
+        e.min_x = std::min(e.min_x, p.min_x);
+        e.max_x = std::max(e.max_x, p.max_x);
+        e.min_y = std::min(e.min_y, p.min_y);
+        e.max_y = std::max(e.max_y, p.max_y);
+    }
+    int width = list.area_x2 - list.area_x1 + 1, height = list.area_y2 - list.area_y1 + 1;
+    for (size_t i = 0; i < n; i++) {
+        const HudPrim &e = elements[root(uint32_t(i))];
+        // A top corner: the top 40%, the outer quarter, and within 80 pixels of the side (the pause
+        // menu's right column is farther in).
+        int8_t anchor = 0;
+        if (e.max_y <= list.area_y1 + height * 2 / 5) {
+            if (e.max_x <= list.area_x1 + width / 4 && e.min_x <= list.area_x1 + 80) anchor = -1;
+            else if (e.min_x > list.area_x2 - width / 4 && e.max_x >= list.area_x2 - 80) anchor = 1;
+        }
+        hud_anchor[hud_prims[i].packet] = anchor;
+        static const char *dump = getenv("VALOR_TRACE_HUD");
+        if (dump && root(uint32_t(i)) == i)
+            log("hud element x %d..%d y %d..%d anchor %d (pool %08X..%08X)", e.min_x, e.max_x, e.min_y, e.max_y, anchor,
+                pool_min, pool_max);
+    }
+    hud_prims.clear();
+}
+
+void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int max_y, bool polygon) {
+    hud.active = hud.is_hud = false;
+    if (!recording || !recording->tick || !recording->has_area) return;
+    bool projected = false, world = false;
+    for (int i = 0; i < n; i++) {
+        projected |= src[i] != -1;
+        world |= prim_recs[i] >= 0;
+    }
+    if (world) world_packets.push_back(gpu_packet_addr);
+    if (projected || world) return;
     if (recording->tick->frame + 3 < gpu.frames || recording->tick->vertices.size() < 64) return;  // 2D screen
-    for (int i = 0; i < n; i++)
-        if (src[i] != -1 || prim_recs[i] >= 0) return;
+    uint32_t p = gpu_packet_addr;
+    if (polygon && p >= pool_min && p <= pool_max) return;  // world
     int width = recording->area_x2 - recording->area_x1 + 1;
     if (max_x - min_x >= width * 9 / 10) return;
+    hud.is_hud = true;
+    if (!config.widescreen_hud || gte_squeeze >= 1) return;
+    hud_prims.push_back({p, min_x, max_x, min_y, max_y});
     hud.active = true;
     float left = float(recording->area_x1), right = float(recording->area_x2 + 1);
     hud.center = (left + right) * 0.5f;
-    bool top = max_y <= recording->area_y1 + (recording->area_y2 - recording->area_y1 + 1) / 4;
-    if (min_x <= left) hud.center = left;  // touching an edge (borders): stays on it
-    else if (max_x >= right - 1) hud.center = right;
-    else if (config.hud_edges && top && max_x <= left + width / 4) hud.center = left;
-    else if (config.hud_edges && top && min_x >= right - width / 4) hud.center = right;
+    if (min_x <= left) {
+        hud.center = left;  // touching an edge (borders): stays on it
+    } else if (max_x >= right - 1) {
+        hud.center = right;
+    } else if (config.hud_edges) {
+        auto it = hud_anchor.find(p);
+        if (it != hud_anchor.end() && it->second) hud.center = it->second < 0 ? left : right;
+    }
     hud.factor = float(gte_squeeze);
 }
 
-VertexSource source_for(int32_t rec) {
+VertexSource source_for(int32_t rec, uint32_t key) {
     VertexSource s;
     if (rec >= 0) s.rec = rec;
     else if (rec == -1) s.group = prim_group;
+    s.key = key;
+    s.hud = hud.is_hud;
     return s;
 }
 
@@ -537,17 +642,18 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
     const Vertex *vs[3] = {&a, &b, &c};
     vertex_sources(vs, 3, src);
     finish_sources(3);
-    begin_hud(src, 3, std::min({a.x, b.x, c.x}), std::max({a.x, b.x, c.x}), std::max({a.y, b.y, c.y}));
+    begin_hud(src, 3, std::min({a.x, b.x, c.x}), std::max({a.x, b.x, c.x}), std::min({a.y, b.y, c.y}),
+              std::max({a.y, b.y, c.y}), true);
     bool dither = s.dither && (s.shaded || (s.textured && !s.raw));
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
         int i = 0;
         for (const Vertex *v : {&a, &b, &c}) {
             batch.push_back(make_vertex(s, float(v->x), float(v->y), float(v->u), float(v->v), v->r, v->g, v->b, f));
-            batch_sources.push_back(source_for(src[i++]));
+            batch_sources.push_back(source_for(src[i++], v->key));
         }
     });
-    hud.active = false;
+    hud.active = hud.is_hud = false;
 }
 
 void line(const DrawState &s, const Vertex &a, const Vertex &b) {
@@ -563,18 +669,18 @@ void line(const DrawState &s, const Vertex &a, const Vertex &b) {
     const Vertex *vs[2] = {&a, &b};
     vertex_sources(vs, 2, src);
     finish_sources(2);
-    begin_hud(src, 2, std::min(a.x, b.x), std::max(a.x, b.x), std::max(a.y, b.y));
+    begin_hud(src, 2, std::min(a.x, b.x), std::max(a.x, b.x), std::min(a.y, b.y), std::max(a.y, b.y), false);
     bool dither = s.dither && s.shaded;
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
-        for (int i : {0, 0, 1, 0, 1, 1}) batch_sources.push_back(source_for(src[i]));
+        for (int i : {0, 0, 1, 0, 1, 1}) batch_sources.push_back(source_for(src[i], vs[i]->key));
         GLVertex p0 = make_vertex(s, ax - ex - nx, ay - ey - ny, 0, 0, a.r, a.g, a.b, f);
         GLVertex p1 = make_vertex(s, ax - ex + nx, ay - ey + ny, 0, 0, a.r, a.g, a.b, f);
         GLVertex p2 = make_vertex(s, bx + ex - nx, by + ey - ny, 0, 0, b.r, b.g, b.b, f);
         GLVertex p3 = make_vertex(s, bx + ex + nx, by + ey + ny, 0, 0, b.r, b.g, b.b, f);
         for (const GLVertex *v : {&p0, &p1, &p2, &p1, &p3, &p2}) batch.push_back(*v);
     });
-    hud.active = false;
+    hud.active = hud.is_hud = false;
 }
 
 void rect(const DrawState &s, const Vertex &base, int w, int h) {
@@ -586,16 +692,16 @@ void rect(const DrawState &s, const Vertex &base, int w, int h) {
     const Vertex *vs[1] = {&base};
     vertex_sources(vs, 1, &src);
     finish_sources(1);
-    begin_hud(&src, 1, base.x, base.x + w, base.y + h);
+    begin_hud(&src, 1, base.x, base.x + w, base.y, base.y + h, false);
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, false) | pass;
-        for (int i = 0; i < 6; i++) batch_sources.push_back(source_for(src));
+        for (int i = 0; i < 6; i++) batch_sources.push_back(source_for(src, base.key));
         auto vx = [&](float x, float y, float u, float v) { return make_vertex(s, x, y, u, v, base.r, base.g, base.b, f); };
         GLVertex p0 = vx(x0, y0, u0, v0), p1 = vx(x1, y0, u0 + w, v0), p2 = vx(x0, y1, u0, v0 + h),
                  p3 = vx(x1, y1, u0 + w, v0 + h);
         for (const GLVertex *v : {&p0, &p1, &p2, &p1, &p3, &p2}) batch.push_back(*v);
     });
-    hud.active = false;
+    hud.active = hud.is_hud = false;
 }
 
 void fill(int x, int y, int w, int h, uint32_t color) {
@@ -803,6 +909,7 @@ void gl_renderer_interpolate(double vblank_time) {
     if (recording && (recording->tick != interp_drawing_tick() || recording->last_frame < gpu.frames)) {
         // A new tick's projections started (or a vblank passed): the list is complete.
         flush();
+        layout_hud(*recording);
         finished.push_back(std::move(recording));
         while (finished.size() > 3) {
             if (last_shown == finished.front().get()) last_shown = nullptr;
@@ -852,7 +959,7 @@ void gl_renderer_interpolate(double vblank_time) {
     valid.assign(pv.size(), 0);
     for (size_t i = 0; i < pv.size(); i++) {
         const InterpVertex &p = pv[i];
-        if (!ok || p.h != float(config.world_h) || !p.exact) continue;
+        if (!ok || p.h != float(config.world_h)) continue;
         double q[3];
         int32_t object = p.group < int32_t(motion.group_object.size()) ? motion.group_object[p.group] : -1;
         if (object >= 0) {
@@ -862,26 +969,48 @@ void gl_renderer_interpolate(double vblank_time) {
             for (int r = 0; r < 3; r++)
                 q[r] = motion.a[r][0] * p.x + motion.a[r][1] * p.y + motion.a[r][2] * p.z + (p.translated ? motion.b[r] : 0);
         }
-        if (q[2] < p.h * 0.5) continue;
-        dx[i] = float(p.h * (q[0] / q[2] - p.x / p.z) * p.kx);
-        dy[i] = float(p.h * (q[1] / q[2] - p.y / p.z) * p.ky);
+        float x0, y0, x1, y1;
+        interp_project(p, p.x, p.y, p.z, x0, y0);
+        interp_project(p, q[0], q[1], q[2], x1, y1);
+        dx[i] = x1 - x0;
+        dy[i] = y1 - y0;
         valid[i] = 1;
     }
+    // A screen point resolved to a projection in one primitive moves the same way in all of them
+    // (with several candidates, a primitive may not have been able to pick one).
+    static std::unordered_map<uint32_t, int32_t> point_rec;
+    point_rec.clear();
+    for (const VertexSource &s : list->sources)
+        if (s.rec >= 0) point_rec.try_emplace(s.key, s.rec);
     static std::vector<GLVertex> moved;
+    static std::unordered_map<uint32_t, std::pair<float, float>> unprojected;
+    unprojected.clear();
     moved = list->vertices;
     for (size_t i = 0; i < moved.size(); i++) {
         const VertexSource &s = list->sources[i];
         float mx = 0, my = 0;
-        if (s.rec >= 0 && valid[s.rec]) {
-            mx = dx[s.rec];
-            my = dy[s.rec];
-        } else if (s.group >= 0 || s.rec >= 0) {
-            // No usable projection: move with the primitive's other vertices.
-            int n = 0;
-            if (s.group >= 0)
+        int32_t rec = s.rec;
+        if (rec < 0 && !s.hud) {
+            auto it = point_rec.find(s.key);
+            if (it != point_rec.end()) rec = it->second;
+        }
+        if (rec >= 0 && valid[rec]) {
+            mx = dx[rec];
+            my = dy[rec];
+        } else if (s.group >= 0) {
+            // No projection (a point the CPU computed, like a clipped edge): move with the
+            // primitive's other vertices, the same way wherever this point is used so neighbours
+            // don't crack apart.
+            auto [it, added] = unprojected.try_emplace(s.key);
+            if (added) {
+                int n = 0;
                 for (int32_t r : list->groups[s.group])
                     if (r >= 0 && valid[r]) { mx += dx[r]; my += dy[r]; n++; }
-            if (n) { mx /= float(n); my /= float(n); }
+                if (n) { mx /= float(n); my /= float(n); }
+                it->second = {mx, my};
+            }
+            mx = it->second.first;
+            my = it->second.second;
         }
         moved[i].x += mx;
         moved[i].y += my;

@@ -15,9 +15,20 @@ struct InterpVertex {
     float h;         // projection plane distance
     int16_t v[3];    // model-space input
     int32_t group;   // the transform it was projected with (InterpTick::groups)
+    float ofx, ofy;  // screen offset (OFX/OFY)
     bool translated; // projected with a translation (world objects); false: rotation only (sky)
-    bool exact;      // the screen position is h*x/z (not clamped, no divide overflow)
 };
+
+// Where the GTE puts a camera-space point on screen: its divide saturates for z < h/2 and the
+// result is clamped, so near and off-screen points land where the hardware would put them.
+inline void interp_project(const InterpVertex &p, double x, double y, double z, float &sx, float &sy) {
+    double sz = z < 0 ? 0 : z > 65535 ? 65535 : z;
+    double q = p.h >= 2 * sz ? 131071.0 / 65536 : p.h / sz;
+    auto ir = [](double v) { return v < -32768 ? -32768 : v > 32767 ? 32767 : v; };
+    auto clamp = [](double v) { return float(v < -1024 ? -1024 : v > 1023 ? 1023 : v); };
+    sx = clamp(p.ofx + q * ir(x) * p.kx);
+    sy = clamp(p.ofy + q * ir(y) * p.ky);
+}
 
 // A transform (GTE rotation and translation) the game projected vertices with, and where from.
 struct InterpGroup {
@@ -59,8 +70,8 @@ bool interp_enabled();
 // Frames in between ticks are shown.
 bool interp_presenting();
 // gte.cpp: a vertex was projected (acc: camera-space position * 4096; v: model-space input).
-void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, double kx, double ky,
-                   const int16_t rt[3][3], const int32_t tr[3], const int16_t v[3], uint32_t pc);
+void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, double kx, double ky, int32_t ofx,
+                   int32_t ofy, const int16_t rt[3][3], const int32_t tr[3], const int16_t v[3], uint32_t pc);
 // The tick whose projections the GPU is drawing now (the latest one), and the one after `seq`.
 std::shared_ptr<const InterpTick> interp_drawing_tick();
 std::shared_ptr<const InterpTick> interp_tick(uint64_t seq);

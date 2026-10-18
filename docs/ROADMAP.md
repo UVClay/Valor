@@ -12,8 +12,11 @@ and full playthroughs of two missions.
       rasterizer keeps PS1 VRAM authoritative underneath
 - [x] **Debug overlay** with levels: off / FPS / extended (frame times, pacing, emulation stats)
 - [x] **FOV / widescreen**: `--aspect`, `--fov`; GTE projection scaling, 2D screens stay 4:3
-- [ ] **Lamp pop-in in widescreen** (reported at the start of mission 2 level 2): an object culled
-      with a 4:3 assumption; level geometry, enemies and the reticle are fine. Needs the exact spot.
+- [ ] **Lamp pop-in in widescreen**: the wall lantern at the start of mission 1 level 2 vanishes
+      near the left edge in 21:9 while its bracket stays. Ruled out: the world's frustum tests
+      (0x8008E5B0 and the tree walk around 0x8008BAD4 project p-vertices through the
+      widescreen-scaled GTE; disabling their side tests changes nothing). It's culled elsewhere,
+      probably by the object or light code.
 - [x] **Widescreen HUD**: in 3D frames, 2D primitives that nobody projected (and aren't
       full-width) keep their 4:3 proportions. The compass and ammo count move to the screen's
       corners; menus and messages stay centered (Interface tab).

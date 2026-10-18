@@ -274,7 +274,7 @@ void rtp(int n, bool last) {
     push_sxy(x, y);
     if (!hud && psx::interp_enabled()) {
         int16_t model[3] = {v.x, v.y, v.z};
-        psx::interp_record(g.sxy[2][0], g.sxy[2][1], accs, g.h, kx, ky, g.rt, g.tr, model, current_pc);
+        psx::interp_record(g.sxy[2][0], g.sxy[2][1], accs, g.h, kx, ky, g.ofx, g.ofy, g.rt, g.tr, model, current_pc);
     }
     if (last) {
         int64_t dq = int64_t(g.dqa) * q + g.dqb;
