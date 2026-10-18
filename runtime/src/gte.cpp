@@ -619,6 +619,11 @@ void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double
         2.0 * std::atan(base_tan / k * aspect) * 180.0 / M_PI);
 }
 
+void gte_world_scale(double &kx, double &ky) {
+    kx = projection.world.x;
+    ky = projection.world.y;
+}
+
 void gte_trace_frame() {
     if (!trace_mat) return;
     std::sort(mat_uses.begin(), mat_uses.end(), [](const MatUse &a, const MatUse &b) { return a.count > b.count; });

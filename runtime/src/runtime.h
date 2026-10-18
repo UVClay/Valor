@@ -108,6 +108,8 @@ void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double
 extern uint64_t gte_projections;
 extern double gte_squeeze;  // horizontal squeeze applied to 3D for the output aspect (1 at 4:3)
 void gte_trace_frame();  // VALOR_TRACE_GTE_MAT
+// The scale applied to the world's projected x and y (widescreen, FOV); 1 for the original.
+void gte_world_scale(double &kx, double &ky);
 
 // cpu.cpp
 RecompFn find_function(uint32_t addr);

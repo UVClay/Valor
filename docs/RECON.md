@@ -113,6 +113,29 @@ Other state:
 - `*(0x8009D654) + 0x10`: bit `0x10` is set while in aim mode, where the game draws its own red reticle.
 - The overlay at `0x80039D90` identifies itself by its first word: 7 is SHELL, 5 is LEVEL, 6 is LEVEL2P.
 
+## World rendering
+
+- `0x80053C20` draws the level. It calls `0x8008BF00` for each TSP (world chunk) loaded.
+- `0x8008BF00` walks the TSP's node tree with `0x8008B3E8` and draws the visible leaves with
+  `0x80010B60` (exe, hand-written assembly).
+- The tree walk filters nodes in three ways:
+  - Two visibility masks from the camera's position: `node+0x10 & [0x800AA178]` and
+    `node+0x14 & [0x800AA17C]`. They are a PVS, and don't depend on the view direction.
+  - The bounding box's corner nearest each frustum plane must project on screen (`[0x8009C828]` =
+    540 by `[0x8009C82C]` = 240).
+  - The far plane.
+  - Visible leaves go to the list at `0x800AA1A0`, with the count at `0x800AA19C`.
+- The frustum planes are built by `0x8008D0CC` from the camera struct `*(*(player+0x388)+0xC8)`:
+  - `+0x0` is the position.
+  - `+0x30` and `+0x34` are the half extents (16.16; 512 and 384), and `+0x3C` the distance (400).
+  - The planes are at `+0x60`, `+0x7C`, `+0x98` and `+0xB4` (a point, then a normal at `+0xC`).
+- `0x80011214` tests each polygon after its RTPT. It rejects on GTE errors, on NCLIP ≤ 0, when too
+  near or too far, and on outcodes. It returns flags for vertices nearer than `[0x1F8003A4]*4`,
+  which send the polygon to the subdivider `0x80010000` (split depth `[0x800AA164]` = 1, leaf
+  drawn by `0x80010A7C` as a POLY_GT3).
+  - The GTE work is pipelined: during the test, `r23` already points at the next polygon. The
+    current polygon's vertex indices are in `r20`..`r22`.
+
 ## Frame timing (LEVEL.BIN)
 
 The simulation is a fixed 30 Hz tick:

@@ -20,6 +20,7 @@
 #include <cstring>
 #include <deque>
 
+#include "game.h"
 #include "gpu.h"
 #include "interp.h"
 #include "runtime.h"
@@ -107,6 +108,7 @@ void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, dou
         auto t = std::make_shared<InterpTick>();
         t->seq = next_seq++;
         t->frame = hw::gpu.frames;
+        kbm_tick_look(t->look_yaw, t->look_pitch);
         t->vertices.reserve(4096);
         ticks.push_back(t);
         while (ticks.size() > 4) ticks.pop_front();
@@ -300,7 +302,16 @@ void pair_ticks(const InterpTick &from, const InterpTick &to, Pairing &p) {
 
 }  // namespace
 
-bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, InterpMotion &out) {
+// Rotation by `angle` radians about the unit axis (x, y, z).
+void axis_rotation(double x, double y, double z, double angle, Mat out) {
+    double c = std::cos(angle), s = std::sin(angle), v = 1 - c;
+    out[0][0] = c + x * x * v;     out[0][1] = x * y * v - z * s; out[0][2] = x * z * v + y * s;
+    out[1][0] = y * x * v + z * s; out[1][1] = c + y * y * v;     out[1][2] = y * z * v - x * s;
+    out[2][0] = z * x * v - y * s; out[2][1] = z * y * v + x * s; out[2][2] = c + z * z * v;
+}
+
+bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, double yaw, double pitch,
+                   InterpMotion &out) {
     static Pairing p;
     if (p.from != from.seq || p.to != to.seq) pair_ticks(from, to, p);
     if (!p.ok) return false;
@@ -315,6 +326,20 @@ bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, I
     mul(r1, r0t, q);  // rotation from tick 0's camera to tick 1's
     if (!partial_rotation(q, alpha, qa)) return false;
     mul(qa, r0, ra);
+    if (yaw != 0 || pitch != 0) {
+        // Turning the camera turns the world the other way about the camera's position: yaw
+        // about the world's vertical axis (as seen from the camera), pitch about the camera's
+        // horizontal one, kept within the game's pitch limit (looking down: forward.y > 0).
+        constexpr double LIMIT = 53.0;
+        double down = std::asin(std::clamp(ra[2][1], -1.0, 1.0)) * 180 / M_PI;
+        pitch = std::clamp(pitch, down - LIMIT, down + LIMIT);
+        Mat ey, ep, e;
+        double n = std::sqrt(ra[0][1] * ra[0][1] + ra[1][1] * ra[1][1] + ra[2][1] * ra[2][1]);
+        axis_rotation(ra[0][1] / n, ra[1][1] / n, ra[2][1] / n, -yaw * M_PI / 180, ey);
+        axis_rotation(1, 0, 0, -pitch * M_PI / 180, ep);
+        mul(ep, ey, e);
+        mul(e, ra, ra);
+    }
     for (int i = 0; i < 3; i++)
         for (int j = 0; j < 3; j++) ma[i][j] = (s0[i] + (s1[i] - s0[i]) * alpha) * ra[i][j];
     if (!invert(p.cam0.m, m0inv) || !invert(p.cam1.m, m1inv)) return false;

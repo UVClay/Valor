@@ -12,10 +12,12 @@
 #include <cmath>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
+#include "game.h"
 #include "gl.h"
 #include "gpu.h"
 #include "gpu_gl.h"
@@ -73,6 +75,7 @@ bool warned_mask_check;
 // without one, the primitive's other vertices to borrow movement from (group).
 struct VertexSource {
     int32_t rec = -1, group = -1;
+    int32_t near = -1;  // a vertex of a near-clipped triangle: FrameList::near
     uint32_t key = 0;  // screen position as drawn (for vertices without a projection)
     bool hud = false;  // part of the 2D HUD: never moved
 };
@@ -99,6 +102,10 @@ struct FrameList {
     bool shown = false;
     uint64_t last_frame = 0;       // vblank of the latest draw
     uint32_t world_prims = 0;      // primitives with world vertices
+    // Vertices of triangles clipped at the near plane (see near_triangle): camera-space points
+    // projected exactly, and what to add to that (the drawing offset and a seam correction).
+    struct Near { InterpVertex p; float ox, oy; };
+    std::vector<Near> near;
 };
 std::unique_ptr<FrameList> recording;            // the list being drawn now
 std::deque<std::unique_ptr<FrameList>> finished;  // complete lists, newest last
@@ -439,18 +446,31 @@ void finish_sources(int n) {
 // polygons clipped by the CPU come from there too).
 // They're drawn at their 4:3 proportions, squeezed toward the center. With config.hud_edges, HUD
 // elements entirely in a top corner of the original frame, close to its side (the compass, the
-// ammo count), are squeezed toward that edge instead. An element is a run of consecutive packets that also touch
-// on screen (glyphs of a line, segments of the compass), laid out from the latest frames, so its
-// parts stay together (menus and messages stay centered).
+// ammo count), are squeezed toward that edge instead. An element is a group of primitives that
+// touch on screen (glyphs of a line, segments of the compass), so its parts stay together (menus
+// and messages stay centered). A frame's primitives take the anchor of the previous frame's
+// element they're in (the HUD hardly moves; packet addresses do, as the world's primitive count
+// changes), or else the corner rule for themselves alone.
 // Primitives touching the frame's left or right edge stay on that edge.
 struct HudPrim { uint32_t packet; int min_x, max_x, min_y, max_y; };
-std::vector<HudPrim> hud_prims;                  // this frame's
-// Packet -> -1 left, 0 center, 1 right, from the latest frames that drew it (the game alternates
-// packet buffers between frames, so this isn't cleared every frame).
-std::unordered_map<uint32_t, int8_t> hud_anchor;
+std::vector<HudPrim> hud_prims;  // this frame's
+// The latest frame's elements, relative to its drawing area, and their anchor (-1 left, 0 center,
+// 1 right).
+struct HudBox { int min_x, max_x, min_y, max_y; int8_t anchor; };
+std::vector<HudBox> hud_boxes;
 std::vector<uint32_t> world_packets;              // this frame's packets with world vertices
 uint32_t pool_min = 1, pool_max = 0;              // the primitive pool, from the last two 3D frames
 uint32_t frame_pool_min = 1, frame_pool_max = 0;  // ... from the last one
+
+// A top corner: the top 40%, the outer quarter, and within 80 pixels of the side (the pause menu's
+// right column is farther in).
+int8_t corner_anchor(const FrameList &list, int min_x, int max_x, int max_y) {
+    int width = list.area_x2 - list.area_x1 + 1, height = list.area_y2 - list.area_y1 + 1;
+    if (max_y > list.area_y1 + height * 2 / 5) return 0;
+    if (max_x <= list.area_x1 + width / 4 && min_x <= list.area_x1 + 80) return -1;
+    if (min_x > list.area_x2 - width / 4 && max_x >= list.area_x2 - 80) return 1;
+    return 0;
+}
 
 // At the end of a frame's list: group its HUD primitives into elements and pick their anchors.
 void layout_hud(const FrameList &list) {
@@ -477,7 +497,6 @@ void layout_hud(const FrameList &list) {
     }
     world_packets.clear();
     if (hud_prims.empty()) return;
-    if (hud_anchor.size() > 8192) hud_anchor.clear();
     // Elements: primitives that touch on screen, side by side on a row (glyphs of a line, the
     // ammo count's digits and icon) or overlapping (the compass's ring and disc).
     size_t n = hud_prims.size();
@@ -502,19 +521,15 @@ void layout_hud(const FrameList &list) {
         e.min_y = std::min(e.min_y, p.min_y);
         e.max_y = std::max(e.max_y, p.max_y);
     }
-    int width = list.area_x2 - list.area_x1 + 1, height = list.area_y2 - list.area_y1 + 1;
+    hud_boxes.clear();
     for (size_t i = 0; i < n; i++) {
-        const HudPrim &e = elements[root(uint32_t(i))];
-        // A top corner: the top 40%, the outer quarter, and within 80 pixels of the side (the pause
-        // menu's right column is farther in).
-        int8_t anchor = 0;
-        if (e.max_y <= list.area_y1 + height * 2 / 5) {
-            if (e.max_x <= list.area_x1 + width / 4 && e.min_x <= list.area_x1 + 80) anchor = -1;
-            else if (e.min_x > list.area_x2 - width / 4 && e.max_x >= list.area_x2 - 80) anchor = 1;
-        }
-        hud_anchor[hud_prims[i].packet] = anchor;
+        if (root(uint32_t(i)) != i) continue;
+        const HudPrim &e = elements[i];
+        int8_t anchor = corner_anchor(list, e.min_x, e.max_x, e.max_y);
+        hud_boxes.push_back({e.min_x - list.area_x1, e.max_x - list.area_x1, e.min_y - list.area_y1, e.max_y - list.area_y1,
+                             anchor});
         static const char *dump = getenv("VALOR_TRACE_HUD");
-        if (dump && root(uint32_t(i)) == i)
+        if (dump)
             log("hud element x %d..%d y %d..%d anchor %d (pool %08X..%08X)", e.min_x, e.max_x, e.min_y, e.max_y, anchor,
                 pool_min, pool_max);
     }
@@ -550,8 +565,18 @@ void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int m
     } else if (max_x >= right - 1) {
         hud.center = right;
     } else if (config.hud_edges) {
-        auto it = hud_anchor.find(p);
-        if (it != hud_anchor.end() && it->second) hud.center = it->second < 0 ? left : right;
+        int x0 = min_x - recording->area_x1, x1 = max_x - recording->area_x1;
+        int y0 = min_y - recording->area_y1, y1 = max_y - recording->area_y1;
+        int anchor = 0;
+        bool inside = false;
+        for (const HudBox &b : hud_boxes)
+            if (x0 >= b.min_x - 24 && x1 <= b.max_x + 24 && y0 >= b.min_y - 2 && y1 <= b.max_y + 2) {
+                anchor = b.anchor;
+                inside = true;
+                break;
+            }
+        if (!inside) anchor = corner_anchor(*recording, min_x, max_x, max_y);
+        if (anchor) hud.center = anchor < 0 ? left : right;
     }
     hud.factor = float(gte_squeeze);
 }
@@ -642,6 +667,138 @@ void submit(const DrawState &s, Emit emit) {
 void fill_target(int x, int y, int w, int h, uint32_t color);
 void copy_target(int sx, int sy, int dx, int dy, int w, int h);
 
+// Near clipping. The GTE's divide saturates for points closer than H/2 and can't project points
+// behind the camera, so the game drops polygons reaching behind it and relies on its narrow view
+// to keep the gaps off screen. A wider view shows them at its edges as holes in nearby walls.
+// A world triangle with a vertex that close is drawn from its camera-space vertices instead,
+// clipped at a near plane and projected exactly (texture coordinates and colors interpolated
+// along the cut edges). game.cpp lets the game submit the ones reaching behind the camera.
+void project_exact(const InterpVertex &p, double x, double y, double z, float &sx, float &sy) {
+    double q = p.h / std::max(z, 1.0);
+    sx = float(p.ofx + q * x * p.kx);
+    sy = float(p.ofy + q * y * p.ky);
+}
+
+bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t src[3], bool dither) {
+    if (!recording || !recording->tick) return false;
+    const auto &tv = recording->tick->vertices;
+    bool near = false;
+    for (int i = 0; i < 3; i++) {
+        if (src[i] < 0 || tv[src[i]].h != float(config.world_h)) return false;
+        near |= tv[src[i]].z < tv[src[i]].h * 0.5f;
+    }
+    if (!near) return false;
+    struct Point { InterpVertex p; float u, v, r, g, b; int corner; };  // corner: input vertex, or -1
+    Point in[3], out[4];
+    for (int i = 0; i < 3; i++)
+        in[i] = {tv[src[i]], float(vs[i]->u), float(vs[i]->v), float(vs[i]->r), float(vs[i]->g), float(vs[i]->b), i};
+    constexpr float NEAR_Z = 16;
+    int n = 0;
+    for (int i = 0; i < 3; i++) {
+        const Point &a = in[i], &b = in[(i + 1) % 3];
+        bool a_in = a.p.z >= NEAR_Z, b_in = b.p.z >= NEAR_Z;
+        if (a_in) out[n++] = a;
+        if (a_in != b_in) {
+            float t = (NEAR_Z - a.p.z) / (b.p.z - a.p.z);
+            auto mix = [t](float x, float y) { return x + (y - x) * t; };
+            Point m = a;
+            m.corner = -1;
+            m.p.x = mix(a.p.x, b.p.x);
+            m.p.y = mix(a.p.y, b.p.y);
+            m.p.z = NEAR_Z;
+            for (int k = 0; k < 3; k++) m.p.v[k] = int16_t(std::lround(mix(a.p.v[k], b.p.v[k])));
+            m.u = mix(a.u, b.u); m.v = mix(a.v, b.v);
+            m.r = mix(a.r, b.r); m.g = mix(a.g, b.g); m.b = mix(a.b, b.b);
+            out[n++] = m;
+        }
+    }
+    if (n < 3) return true;  // entirely behind the near plane
+    // The PS1 maps textures affinely: split the pieces in camera space until their depth varies
+    // little, so the mapping stays close to perspective (the game subdivides near polygons too).
+    static std::vector<Point> pts;
+    static std::vector<std::array<int, 3>> tris;
+    pts.assign(out, out + n);
+    tris.clear();
+    auto midpoint = [](const Point &a, const Point &b) {
+        Point m = a;
+        m.corner = -1;
+        m.p.x = (a.p.x + b.p.x) * 0.5f; m.p.y = (a.p.y + b.p.y) * 0.5f; m.p.z = (a.p.z + b.p.z) * 0.5f;
+        for (int k = 0; k < 3; k++) m.p.v[k] = int16_t((a.p.v[k] + b.p.v[k]) / 2);
+        m.u = (a.u + b.u) * 0.5f; m.v = (a.v + b.v) * 0.5f;
+        m.r = (a.r + b.r) * 0.5f; m.g = (a.g + b.g) * 0.5f; m.b = (a.b + b.b) * 0.5f;
+        return m;
+    };
+    static std::vector<int> owner;  // the piece (0 or 1) a split point belongs to
+    owner.assign(pts.size(), -1);
+    std::function<void(int, int, int, int, int)> split = [&](int a, int b, int c, int piece, int depth) {
+        float z0 = std::min({pts[a].p.z, pts[b].p.z, pts[c].p.z}), z1 = std::max({pts[a].p.z, pts[b].p.z, pts[c].p.z});
+        if (depth == 0 || z1 < z0 * 1.25f) {
+            tris.push_back({a, b, c});
+            return;
+        }
+        int ab = int(pts.size()); pts.push_back(midpoint(pts[a], pts[b]));
+        int bc = int(pts.size()); pts.push_back(midpoint(pts[b], pts[c]));
+        int ca = int(pts.size()); pts.push_back(midpoint(pts[c], pts[a]));
+        owner.resize(pts.size(), piece);
+        split(a, ab, ca, piece, depth - 1);
+        split(ab, b, bc, piece, depth - 1);
+        split(ca, bc, c, piece, depth - 1);
+        split(ab, bc, ca, piece, depth - 1);
+    };
+    split(0, 1, 2, 0, 4);
+    if (n == 4) split(0, 2, 3, 1, 4);
+    // The drawing offset: submitted coordinates are the packet's plus the offset.
+    float ox = float(vs[0]->x - int16_t(vs[0]->key & 0xFFFF)), oy = float(vs[0]->y - int16_t(vs[0]->key >> 16));
+    int32_t first = int32_t(recording->near.size());
+    static std::vector<float> sx, sy;
+    sx.resize(pts.size());
+    sy.resize(pts.size());
+    for (size_t i = 0; i < pts.size(); i++) project_exact(pts[i].p, pts[i].p.x, pts[i].p.y, pts[i].p.z, sx[i], sy[i]);
+    static std::vector<float> ex, ey;  // exact positions, before the corrections below
+    ex = sx;
+    ey = sy;
+    // Input vertices the GTE projected properly keep its (integer) position, so edges shared with
+    // triangles drawn normally line up; the difference is spread over the rest by screen-space
+    // barycentric weights (along an edge, by the position on it).
+    float cx[4] = {}, cy[4] = {};
+    for (int i = 0; i < n; i++)
+        if (pts[i].corner >= 0 && pts[i].p.z >= pts[i].p.h * 0.5f) {
+            const Vertex *v = vs[pts[i].corner];
+            cx[i] = float(int16_t(v->key & 0xFFFF)) - sx[i];
+            cy[i] = float(int16_t(v->key >> 16)) - sy[i];
+        }
+    for (size_t i = n; i < pts.size(); i++) {
+        static const int pieces[2][3] = {{0, 1, 2}, {0, 2, 3}};
+        const int *k = pieces[owner[i]];
+        float x0 = sx[k[0]], y0 = sy[k[0]], x1 = sx[k[1]], y1 = sy[k[1]], x2 = sx[k[2]], y2 = sy[k[2]];
+        float d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+        if (std::abs(d) < 1e-6f) continue;
+        float w0 = ((y1 - y2) * (sx[i] - x2) + (x2 - x1) * (sy[i] - y2)) / d;
+        float w1 = ((y2 - y0) * (sx[i] - x2) + (x0 - x2) * (sy[i] - y2)) / d;
+        float w2 = 1 - w0 - w1;
+        sx[i] += w0 * cx[k[0]] + w1 * cx[k[1]] + w2 * cx[k[2]];
+        sy[i] += w0 * cy[k[0]] + w1 * cy[k[1]] + w2 * cy[k[2]];
+    }
+    for (int i = 0; i < n; i++) {
+        sx[i] += cx[i];
+        sy[i] += cy[i];
+    }
+    for (size_t i = 0; i < pts.size(); i++) recording->near.push_back({pts[i].p, ox + sx[i] - ex[i], oy + sy[i] - ey[i]});
+    submit(s, [&](uint16_t pass) {
+        uint16_t f = base_flags(s, dither) | pass;
+        for (const auto &t : tris)
+            for (int i : t) {
+                const Point &q = pts[i];
+                batch.push_back(make_vertex(s, sx[i] + ox, sy[i] + oy, q.u, q.v, int(std::lround(q.r)),
+                                            int(std::lround(q.g)), int(std::lround(q.b)), f));
+                VertexSource vs_;
+                vs_.near = first + i;
+                batch_sources.push_back(vs_);
+            }
+    });
+    return true;
+}
+
 }  // namespace
 
 namespace hwgl {
@@ -658,6 +815,10 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
     begin_hud(src, 3, std::min({a.x, b.x, c.x}), std::max({a.x, b.x, c.x}), std::min({a.y, b.y, c.y}),
               std::max({a.y, b.y, c.y}), true);
     bool dither = s.dither && (s.shaded || (s.textured && !s.raw));
+    if (!hud.is_hud && near_triangle(s, vs, src, dither)) {
+        hud.active = hud.is_hud = false;
+        return;
+    }
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
         int i = 0;
@@ -942,7 +1103,17 @@ void gl_renderer_interpolate(double vblank_time) {
     double alpha = std::clamp((vblank_time - double(list->shown_at)) / list->period, 0.0, 1.0);
     auto next = interp_tick(list->tick->seq + 1);
     static InterpMotion motion;
-    bool ok = next && alpha > 0 && interp_motion(*list->tick, *next, alpha, motion);
+    // Mouse look shows at once instead of with the ticks. A tick's camera shows the mouse look the
+    // game took before the previous tick (its control code runs after the projections), so: the
+    // rest of this tick's turn toward the next instead of easing it in, all of the next tick's
+    // (seen only in the one after), and the motion the game hasn't taken yet.
+    double yaw = 0, pitch = 0;
+    if (next) {
+        kbm_pending_look(yaw, pitch);
+        yaw += list->tick->look_yaw * (1 - alpha) + next->look_yaw;
+        pitch += list->tick->look_pitch * (1 - alpha) + next->look_pitch;
+    }
+    bool ok = next && (alpha > 0 || yaw != 0 || pitch != 0) && interp_motion(*list->tick, *next, alpha, yaw, pitch, motion);
     if (!ok && !list->moved) return;  // the target already shows the list as drawn
     list->moved = ok;
     if (static bool trace = getenv("VALOR_TRACE_INTERP"); trace) {
@@ -964,10 +1135,8 @@ void gl_renderer_interpolate(double vblank_time) {
     dx.assign(pv.size(), 0);
     dy.assign(pv.size(), 0);
     valid.assign(pv.size(), 0);
-    for (size_t i = 0; i < pv.size(); i++) {
-        const InterpVertex &p = pv[i];
-        if (!ok || p.h != float(config.world_h)) continue;
-        double q[3];
+    // Where a projected point is at this moment, in camera space.
+    auto move = [&](const InterpVertex &p, double q[3]) {
         int32_t object = p.group < int32_t(motion.group_object.size()) ? motion.group_object[p.group] : -1;
         if (object >= 0) {
             const auto &o = motion.objects[object];
@@ -976,6 +1145,12 @@ void gl_renderer_interpolate(double vblank_time) {
             for (int r = 0; r < 3; r++)
                 q[r] = motion.a[r][0] * p.x + motion.a[r][1] * p.y + motion.a[r][2] * p.z + (p.translated ? motion.b[r] : 0);
         }
+    };
+    for (size_t i = 0; i < pv.size(); i++) {
+        const InterpVertex &p = pv[i];
+        if (!ok || p.h != float(config.world_h)) continue;
+        double q[3];
+        move(p, q);
         float x0, y0, x1, y1;
         interp_project(p, p.x, p.y, p.z, x0, y0);
         interp_project(p, q[0], q[1], q[2], x1, y1);
@@ -995,6 +1170,18 @@ void gl_renderer_interpolate(double vblank_time) {
     moved = list->vertices;
     for (size_t i = 0; i < moved.size(); i++) {
         const VertexSource &s = list->sources[i];
+        if (s.near >= 0) {
+            // Near-clipped: projected exactly from where the point is now.
+            if (!ok) continue;
+            const FrameList::Near &nv = list->near[s.near];
+            double q[3];
+            move(nv.p, q);
+            float x, y;
+            project_exact(nv.p, q[0], q[1], q[2], x, y);
+            moved[i].x = x + nv.ox;
+            moved[i].y = y + nv.oy;
+            continue;
+        }
         float mx = 0, my = 0;
         int32_t rec = s.rec;
         if (rec < 0 && !s.hud) {

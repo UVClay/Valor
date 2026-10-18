@@ -75,6 +75,27 @@ Runtime devices: interrupt controller, timers, DMA, CD-ROM (reads the BIN direct
 GPU (software rasterizer reproducing affine texturing, dithering, semi-transparency, mask bit),
 MDEC, GTE, SPU (Mednafen's, vendored from Beetle PSX), controller port.
 
+### Wide views: culling and near clipping
+
+The game was built for a 4:3 view of about 65° (`gte_set_projection` scales projections for
+widescreen and FOV). Two things it relies on break with a wider view:
+
+- **Frustum.** `0x8008D0CC` builds the frustum planes used to cull rooms and objects from the
+  camera's screen extents. A hook widens those extents to the actual projection, with 10% extra
+  for interpolated frames turning toward the next tick.
+- **Near clipping.** The GTE can't project points behind the camera, and its divide saturates
+  for points nearer than H/2. The world renderer (`0x80010B60`) only subdivides near polygons
+  once and drops the ones reaching behind the camera. On the PS1 that gap was always outside the
+  narrow view. A wider one shows it at the edges as holes in nearby walls, through which enemies
+  could be seen.
+  - The game side: a hook on the polygon test (`0x80011214`) lets such polygons through when they
+    face the camera, checked in camera space.
+  - The OpenGL renderer side: it redraws every world triangle with a vertex that near from the
+    recorded camera-space vertices. It clips the triangle at a near plane, splits it until each
+    piece's depth range is small (texture mapping stays affine, so this keeps it close to
+    perspective) and projects it exactly. Vertices the GTE projected properly keep its integer
+    position, so shared edges line up.
+
 ### Frame interpolation
 
 The game logic runs at a fixed 30 Hz (RECON.md, Frame timing). For higher frame rates
@@ -106,9 +127,15 @@ The game logic runs at a fixed 30 Hz (RECON.md, Frame timing). For higher frame 
 - **Widescreen HUD.** The same matching also finds the HUD. In a 3D frame, a primitive with no
   projected vertex that isn't full-width is HUD if it is a sprite or line, or a polygon from
   outside the game's primitive pool (where the frame's world packets are). It is drawn squeezed
-  back to 4:3 proportions. Elements are primitives touching on screen, laid out from the previous
-  frames. Elements in a top corner near the side (compass, ammo) are anchored to that screen edge;
-  the rest are anchored to the center.
+  back to 4:3 proportions. Elements are primitives touching on screen. A primitive takes the
+  anchor of the previous frame's element it falls in; packet addresses shift as the number of
+  world primitives changes, so anchors are not keyed by packet. Elements in a top corner near the
+  side (compass, ammo) are anchored to that screen edge; the rest are anchored to the center.
+- **Mouse look.** The game applies the mouse turn it reads one tick later. Interpolating it would
+  lag behind the mouse by up to two ticks. Instead, each tick records the turn the game took
+  (`kbm.cpp`), and the displayed camera is rotated further by three parts: the rest of the current
+  tick's turn, all of the next tick's turn, and motion the game hasn't read yet. When the game
+  catches up, the view doesn't move, so nothing jumps. Pitch stays inside the game's limit.
 - **Presentation.** Frames are presented on their own clock at the display's refresh rate (or
   `--frame-rate`). Emulation still advances one vblank at a time, in between presents.
 

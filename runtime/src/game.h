@@ -24,5 +24,9 @@ uint16_t game_action_buttons(GameAction a);
 void kbm_movement(double &forward, double &strafe);
 double kbm_take_turn();
 double kbm_take_pitch();
+// Mouse look taken by the game since the last call (degrees), for a new tick (interp.cpp), and
+// mouse motion it hasn't taken yet.
+void kbm_tick_look(double &yaw, double &pitch);
+void kbm_pending_look(double &yaw, double &pitch);
 
 }  // namespace psx

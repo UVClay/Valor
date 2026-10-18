@@ -53,6 +53,7 @@ struct InterpTick {
     std::vector<InterpGroup> groups;
     std::unordered_map<uint64_t, uint32_t> group_index;
     int32_t last_group = -1;
+    double look_yaw = 0, look_pitch = 0;  // mouse look the game took for this tick (degrees)
 };
 
 // Where a tick's vertices go at some point between it and the next tick: q = a * p + b (b only
@@ -77,9 +78,11 @@ std::shared_ptr<const InterpTick> interp_drawing_tick();
 std::shared_ptr<const InterpTick> interp_tick(uint64_t seq);
 // Called by the GPU for every primitive: a drawing phase starts after projections.
 void interp_note_draw();
-// Motion from tick `from` to `alpha` of the way to tick `to`. False when there is no sensible
-// in-between (camera cut, no camera found).
-bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, InterpMotion &out);
+// Motion from tick `from` to `alpha` of the way to tick `to`, with the camera turned a further
+// `yaw` / `pitch` degrees (right / up). False when there is no sensible in-between (camera cut,
+// no camera found).
+bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, double yaw, double pitch,
+                   InterpMotion &out);
 
 inline uint32_t interp_key(int16_t sx, int16_t sy) { return uint32_t(uint16_t(sx)) | uint32_t(uint16_t(sy)) << 16; }
 

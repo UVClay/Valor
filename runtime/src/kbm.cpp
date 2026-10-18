@@ -185,6 +185,13 @@ void kbm_update(SDL_Window *window) {
 
 uint16_t kbm_buttons() {
     update_taps();
+    // Scripted mouse motion arrives like a real mouse's.
+    for (auto &m : config.mouse_moves)
+        if (!m.taken[0] && gpu.frames >= m.frame) {
+            mouse_dx += m.dx;
+            mouse_dy += m.dy;
+            m.taken[0] = true;
+        }
     uint16_t pressed = 0;
     if (playing()) {
         for (int c = 0; c < KC_COUNT; c++) {
@@ -219,27 +226,40 @@ void kbm_movement(double &forward, double &strafe) {
     strafe = double(control_down(KC_RIGHT)) - double(control_down(KC_LEFT));
 }
 
+static double tick_yaw, tick_pitch;
+
 // Mouse counts to degrees: Quake's 0.022 degrees per count at sensitivity 1.
-static double scripted_mouse(bool x) {
-    double sum = 0;
-    for (auto &m : config.mouse_moves)
-        if (!m.taken[x] && gpu.frames >= m.frame) {
-            sum += x ? m.dx : m.dy;
-            m.taken[x] = true;
-        }
-    return sum;
+static double turn_degrees(double counts) { return counts * 0.022 * config.mouse_sensitivity; }
+static double pitch_degrees(double counts) {
+    return -counts * 0.022 * config.mouse_sensitivity * (config.invert_mouse ? -1 : 1);
 }
 
 double kbm_take_turn() {
-    double counts = mouse_dx + scripted_mouse(true);
+    double counts = mouse_dx;
     mouse_dx = 0;
-    return playing() ? counts * 0.022 * config.mouse_sensitivity : 0;
+    double d = playing() ? turn_degrees(counts) : 0;
+    tick_yaw += d;
+    return d;
 }
 
 double kbm_take_pitch() {
-    double counts = mouse_dy + scripted_mouse(false);
+    double counts = mouse_dy;
     mouse_dy = 0;
-    return playing() ? -counts * 0.022 * config.mouse_sensitivity * (config.invert_mouse ? -1 : 1) : 0;
+    double d = playing() ? pitch_degrees(counts) : 0;
+    tick_pitch += d;
+    return d;
+}
+
+void kbm_tick_look(double &yaw, double &pitch) {
+    yaw = tick_yaw;
+    pitch = tick_pitch;
+    tick_yaw = tick_pitch = 0;
+}
+
+void kbm_pending_look(double &yaw, double &pitch) {
+    bool on = playing() && config.mouse_look;
+    yaw = on ? turn_degrees(mouse_dx) : 0;
+    pitch = on ? pitch_degrees(mouse_dy) : 0;
 }
 
 }  // namespace psx

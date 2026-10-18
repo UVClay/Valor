@@ -12,11 +12,10 @@ and full playthroughs of two missions.
       rasterizer keeps PS1 VRAM authoritative underneath
 - [x] **Debug overlay** with levels: off / FPS / extended (frame times, pacing, emulation stats)
 - [x] **FOV / widescreen**: `--aspect`, `--fov`; GTE projection scaling, 2D screens stay 4:3
-- [ ] **Lamp pop-in in widescreen**: the wall lantern at the start of mission 1 level 2 vanishes
-      near the left edge in 21:9 while its bracket stays. Ruled out: the world's frustum tests
-      (0x8008E5B0 and the tree walk around 0x8008BAD4 project p-vertices through the
-      widescreen-scaled GTE; disabling their side tests changes nothing). It's culled elsewhere,
-      probably by the object or light code.
+- [x] **Wide views without holes**: the game's frustum is widened to the actual view, and world
+      polygons reaching behind the camera are clipped at a near plane instead of dropped. This
+      fixes walls vanishing at the screen edges at wide FOVs (enemies visible through them) and
+      the wall lantern pop-in in mission 1 level 2 (DESIGN.md, Wide views).
 - [x] **Widescreen HUD**: in 3D frames, 2D primitives that nobody projected (and aren't
       full-width) keep their 4:3 proportions. The compass and ammo count move to the screen's
       corners; menus and messages stay centered (Interface tab).
@@ -30,6 +29,7 @@ and full playthroughs of two missions.
 - [x] **Mouse and keyboard controls**: mouse look and movement go straight into the game's
       control roles (a recompiler hook on the role axis function), and keys press the game's
       actions through its own button table. Bindings, sensitivity and invert are in F1 → Controls.
+      The mouse turns the view at the display's frame rate instead of the game's 30 Hz.
 - [ ] Saves decoupled from memory cards
 - [ ] Optional sub-pixel vertex precision (PGXP-style) to remove the vertex wobble at high resolution
 
