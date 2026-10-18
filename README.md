@@ -41,7 +41,8 @@ Rebind them in F1 → Controls.
 | Fire / aim mode | Left / right mouse button |
 | Reload / use | R / E |
 | Jump / crouch | Space / C |
-| Next weapon | Mouse wheel |
+| Next weapon | Mouse wheel down |
+| The game's L3 action | V |
 | Pause | Esc |
 | Menus | Arrows or WASD, Enter or Space accepts, Backspace goes back |
 
@@ -74,6 +75,8 @@ also be given on the command line:
   `--frame-rate N`.
 - **Square stick range:** maps modern round-gated sticks to the DualShock's range.
 - **Sub-pixel precision:** `--subpixel` (off by default) removes the PS1's vertex wobble.
+- **Depth buffer:** `--depth-buffer` (off by default) hides what's behind walls by real depth
+  instead of the game's polygon sorting, which can show things through nearby walls.
 - **Widescreen HUD:** keeps the HUD's proportions, with the compass and ammo count in the corners.
 - **Crosshair:** `--crosshair SIZE` (hidden in aim mode and on the pause screen).
 - **Mouse:** sensitivity (Quake scale: 0.022 degrees per count at 1), invert, key bindings.

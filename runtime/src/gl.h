@@ -9,6 +9,11 @@
     X(PFNGLFRAMEBUFFERTEXTURE2DPROC, glFramebufferTexture2D)                                     \
     X(PFNGLCHECKFRAMEBUFFERSTATUSPROC, glCheckFramebufferStatus)                                 \
     X(PFNGLBLITFRAMEBUFFERPROC, glBlitFramebuffer)                                               \
+    X(PFNGLGENRENDERBUFFERSPROC, glGenRenderbuffers)                                             \
+    X(PFNGLDELETERENDERBUFFERSPROC, glDeleteRenderbuffers)                                       \
+    X(PFNGLBINDRENDERBUFFERPROC, glBindRenderbuffer)                                             \
+    X(PFNGLRENDERBUFFERSTORAGEPROC, glRenderbufferStorage)                                       \
+    X(PFNGLFRAMEBUFFERRENDERBUFFERPROC, glFramebufferRenderbuffer)                               \
     X(PFNGLGENBUFFERSPROC, glGenBuffers)                                                         \
     X(PFNGLBINDBUFFERPROC, glBindBuffer)                                                         \
     X(PFNGLBUFFERDATAPROC, glBufferData)                                                         \

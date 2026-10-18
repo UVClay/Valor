@@ -35,6 +35,8 @@ and full playthroughs of two missions.
 - [x] **Saves decoupled from memory cards**: saves are single-save files (`.mcs`) in `saves/card1/`.
       The game sees a card assembled from them; after it writes, the card is split back into them,
       and deleted saves go to `deleted/`. The old `memcard1.mcd` is imported once and left untouched
+- [x] Optional depth buffer (Video tab, off by default): world triangles are depth-tested by their
+      recorded depths instead of relying on the game's sorting; sky, weapon and HUD keep its order
 - [x] Optional sub-pixel vertex precision (PGXP-style, Video tab, off by default): projected vertices are
       drawn where they really project, from the camera-space positions recorded for interpolation
 

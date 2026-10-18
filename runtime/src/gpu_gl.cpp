@@ -36,6 +36,7 @@ int S = 1;  // scale
 
 GLuint target_tex, target_fbo;  // (1024*S) x (512*S) RGBA8; alpha = mask bit
 GLuint temp_tex, temp_fbo;      // scratch for VRAM->VRAM copies
+GLuint target_depth;            // depth renderbuffer of the target (config.depth_buffer)
 GLuint vram_tex;                // native VRAM, R16UI
 GLuint program, vao, vbo;
 GLint u_size, u_vram, u_texwin, u_scale, u_mask_set, u_quantize;
@@ -50,6 +51,7 @@ struct GLVertex {
     uint8_t r, g, b, a;
     uint16_t tex_x, tex_y, clut_x, clut_y;
     uint16_t flags, pad;
+    float depth;  // depth buffer (config.depth_buffer): 0 nearest .. 1
 };
 
 // Vertex flags
@@ -64,6 +66,7 @@ struct BatchState {
     bool scissor = true;
     uint32_t tex_window = 0;
     bool mask_set = false;
+    uint8_t depth = 0;  // 0: painter's order only, 1: depth test and write, 2: test only
     bool operator==(const BatchState &) const = default;
 } batch_state;
 
@@ -76,6 +79,7 @@ bool warned_mask_check;
 struct VertexSource {
     int32_t rec = -1, group = -1;
     int32_t near = -1;  // a vertex of a near-clipped triangle: FrameList::near
+    float depth_bias = -1;  // depth-tested (config.depth_buffer): its primitive's bias, else -1
     uint32_t key = 0;  // screen position as drawn (for vertices without a projection)
     bool hud = false;  // part of the 2D HUD: never moved
 };
@@ -120,6 +124,26 @@ struct {
     float center, factor;
 } hud;
 
+// Depth buffer (config.depth_buffer). The game sorts polygons by their average depth, so a large
+// wall can sort behind something that's really behind it, which then shows through. World
+// triangles are depth-tested by their vertices' real depth instead; a tiny bias per primitive
+// keeps the game's order where depths tie (decals on walls). The sky, the weapon, the HUD and
+// anything not projected keep the game's order.
+uint8_t prim_depth_mode;  // the primitive being submitted: BatchState::depth
+float prim_depth[4], prim_bias;
+uint32_t depth_seq;  // primitives depth-tested in this list
+
+float depth_of(float z) { return std::max(0.0f, 1.0f - 16.0f / std::max(z, 16.0f)); }
+
+// Before submitting a world primitive whose vertices are at camera depths z.
+void begin_depth(const float *z, int n, bool semi) {
+    prim_depth_mode = 0;
+    if (!config.depth_buffer) return;
+    prim_bias = float(++depth_seq) * 2e-7f;
+    for (int i = 0; i < n; i++) prim_depth[i] = depth_of(z[i]) - prim_bias;
+    prim_depth_mode = semi ? 2 : 1;
+}
+
 // The current primitive's projections (filled while submitting it): world ones, and any.
 std::array<int32_t, 4> prim_recs, prim_any;
 // Sub-pixel corrections of this list's points, by packet coordinates (see precise_positions).
@@ -132,6 +156,7 @@ layout(location = 1) in vec2 a_uv;
 layout(location = 2) in vec4 a_color;
 layout(location = 3) in uvec4 a_tex;
 layout(location = 4) in uint a_flags;
+layout(location = 5) in float a_depth;
 uniform vec2 u_size;
 out vec3 v_color;
 noperspective out vec2 v_uv;
@@ -142,7 +167,7 @@ void main() {
     v_uv = a_uv;
     v_tex = a_tex;
     v_flags = a_flags;
-    gl_Position = vec4(a_pos / u_size * 2.0 - 1.0, 0.0, 1.0);
+    gl_Position = vec4(a_pos / u_size * 2.0 - 1.0, a_depth * 2.0 - 1.0, 1.0);
 }
 )";
 
@@ -222,7 +247,7 @@ GLuint compile(GLenum type, const char *src) {
     return sh;
 }
 
-void make_target(GLuint &tex, GLuint &fbo) {
+void make_target(GLuint &tex, GLuint &fbo, GLuint *depth = nullptr) {
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1024 * S, 512 * S, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -231,9 +256,16 @@ void make_target(GLuint &tex, GLuint &fbo) {
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+    if (depth) {
+        glGenRenderbuffers(1, depth);
+        glBindRenderbuffer(GL_RENDERBUFFER, *depth);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, 1024 * S, 512 * S);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, *depth);
+    }
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) fatal("gl: framebuffer incomplete");
     glClearColor(0, 0, 0, 0);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClearDepth(1.0);
+    glClear(GL_COLOR_BUFFER_BIT | (depth ? GL_DEPTH_BUFFER_BIT : 0));
 }
 
 void upload_dirty() {
@@ -332,6 +364,11 @@ void draw_vertices(const BatchState &st, const GLVertex *v, size_t n) {
         glDisable(GL_SCISSOR_TEST);
     }
     apply_blend(st.blend);
+    if (st.depth) {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glDepthMask(st.depth == 1 ? GL_TRUE : GL_FALSE);
+    }
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, GLsizeiptr(n * sizeof(GLVertex)), v, GL_STREAM_DRAW);
@@ -339,11 +376,26 @@ void draw_vertices(const BatchState &st, const GLVertex *v, size_t n) {
     overlay_counters.draw_calls++;
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
 }
 
 // Frame interpolation bookkeeping at the start of every primitive or fill: a new tick's drawing
 // starts a new list, as does drawing in a later vblank (2D screens project nothing).
 void layout_hud(const FrameList &list);
+
+void bind_target_for_drawing();
+
+// A new frame's drawing starts with an empty depth buffer.
+void clear_depth() {
+    depth_seq = 0;
+    if (!config.depth_buffer) return;
+    flush();
+    bind_target_for_drawing();
+    glDepthMask(GL_TRUE);
+    glClearDepth(1.0);
+    glClear(GL_DEPTH_BUFFER_BIT);
+}
 
 // The list being recorded is complete.
 void finish_list() {
@@ -372,6 +424,7 @@ void begin_draw() {
     if (recording && recording->tick == tick && recording->last_frame == gpu.frames) return;
     finish_list();
     subpixel_points.clear();
+    clear_depth();
     recording = std::make_unique<FrameList>();
     recording->tick = tick;
     recording->last_frame = gpu.frames;
@@ -609,6 +662,7 @@ void set_state(int blend, bool scissor = true) {
     st.area_x2 = gpu.area_x2; st.area_y2 = gpu.area_y2;
     st.tex_window = gpu.tex_window;
     st.mask_set = gpu.mask_set;
+    st.depth = prim_depth_mode;
     if (!(st == batch_state)) {
         flush();
         batch_state = st;
@@ -837,6 +891,13 @@ bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t 
         sy[i] += cy[i];
     }
     for (size_t i = 0; i < pts.size(); i++) recording->near.push_back({pts[i].p, ox + sx[i] - ex[i], oy + sy[i] - ey[i]});
+    bool depth = config.depth_buffer && pts[0].p.translated;
+    float bias = 0;
+    if (depth) {
+        float z = pts[0].p.z;
+        begin_depth(&z, 1, s.semi);  // for the mode and bias
+        bias = prim_bias;
+    }
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
         for (const auto &t : tris)
@@ -846,9 +907,14 @@ bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t 
                                             int(std::lround(q.g)), int(std::lround(q.b)), f));
                 VertexSource vs_;
                 vs_.near = first + i;
+                if (depth) {
+                    batch.back().depth = depth_of(q.p.z) - bias;
+                    vs_.depth_bias = bias;
+                }
                 batch_sources.push_back(vs_);
             }
     });
+    prim_depth_mode = 0;
     return true;
 }
 
@@ -874,14 +940,26 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
     }
     float px[3], py[3];
     precise_positions(vs, 3, px, py);
+    if (!hud.is_hud && recording && recording->tick && src[0] >= 0 && src[1] >= 0 && src[2] >= 0) {
+        const auto &tv = recording->tick->vertices;
+        if (tv[src[0]].translated && tv[src[1]].translated && tv[src[2]].translated) {
+            float z[3] = {tv[src[0]].z, tv[src[1]].z, tv[src[2]].z};
+            begin_depth(z, 3, s.semi);
+        }
+    }
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
         for (int i = 0; i < 3; i++) {
             const Vertex *v = vs[i];
             batch.push_back(make_vertex(s, px[i], py[i], float(v->u), float(v->v), v->r, v->g, v->b, f));
             batch_sources.push_back(source_for(src[i], v->key));
+            if (prim_depth_mode) {
+                batch.back().depth = prim_depth[i];
+                batch_sources.back().depth_bias = prim_bias;
+            }
         }
     });
+    prim_depth_mode = 0;
     hud.active = hud.is_hud = false;
 }
 
@@ -1023,7 +1101,7 @@ void vram_changed(int x, int y, int w, int h) {
 }  // namespace hwgl
 
 static void make_targets() {
-    make_target(target_tex, target_fbo);
+    make_target(target_tex, target_fbo, &target_depth);
     make_target(temp_tex, temp_fbo);
 }
 
@@ -1031,6 +1109,7 @@ static void free_targets() {
     GLuint tex[2] = {target_tex, temp_tex}, fbo[2] = {target_fbo, temp_fbo};
     glDeleteTextures(2, tex);
     glDeleteFramebuffers(2, fbo);
+    glDeleteRenderbuffers(1, &target_depth);
 }
 
 // Repaint the whole high-resolution target from native VRAM (after creating or resizing it).
@@ -1110,6 +1189,8 @@ bool gl_renderer_init(int scale) {
     glVertexAttribIPointer(3, 4, GL_UNSIGNED_SHORT, sizeof(GLVertex), off(offsetof(GLVertex, tex_x)));
     glEnableVertexAttribArray(4);
     glVertexAttribIPointer(4, 1, GL_UNSIGNED_SHORT, sizeof(GLVertex), off(offsetof(GLVertex, flags)));
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(GLVertex), off(offsetof(GLVertex, depth)));
 
     // Everything currently in VRAM must be uploaded before the first textured draw.
     for (auto &row : dirty) std::fill(std::begin(row), std::end(row), true);
@@ -1185,10 +1266,11 @@ void gl_renderer_interpolate(double vblank_time) {
 
     // Screen movement of every projection this tick.
     const auto &pv = list->tick->vertices;
-    static std::vector<float> dx, dy;
+    static std::vector<float> dx, dy, qz;
     static std::vector<uint8_t> valid;
     dx.assign(pv.size(), 0);
     dy.assign(pv.size(), 0);
+    qz.assign(pv.size(), 0);
     valid.assign(pv.size(), 0);
     // Where a projected point is at this moment, in camera space.
     auto move = [&](const InterpVertex &p, double q[3]) {
@@ -1211,6 +1293,7 @@ void gl_renderer_interpolate(double vblank_time) {
         interp_project(p, q[0], q[1], q[2], x1, y1);
         dx[i] = x1 - x0;
         dy[i] = y1 - y0;
+        qz[i] = float(q[2]);
         valid[i] = 1;
     }
     // A screen point resolved to a projection in one primitive moves the same way in all of them
@@ -1235,6 +1318,7 @@ void gl_renderer_interpolate(double vblank_time) {
             project_exact(nv.p, q[0], q[1], q[2], x, y);
             moved[i].x = x + nv.ox;
             moved[i].y = y + nv.oy;
+            if (s.depth_bias >= 0) moved[i].depth = depth_of(float(q[2])) - s.depth_bias;
             continue;
         }
         float mx = 0, my = 0;
@@ -1246,6 +1330,7 @@ void gl_renderer_interpolate(double vblank_time) {
         if (rec >= 0 && valid[rec]) {
             mx = dx[rec];
             my = dy[rec];
+            if (s.depth_bias >= 0) moved[i].depth = depth_of(qz[rec]) - s.depth_bias;
         } else if (s.group >= 0) {
             // No projection (a point the CPU computed, like a clipped edge): move with the
             // primitive's other vertices, the same way wherever this point is used so neighbours
@@ -1265,6 +1350,7 @@ void gl_renderer_interpolate(double vblank_time) {
         moved[i].y += my;
     }
     flush();
+    clear_depth();
     for (const auto &op : list->ops) {
         switch (op.kind) {
         case FrameList::Op::DRAW: draw_vertices(op.state, moved.data() + op.first, op.count); break;

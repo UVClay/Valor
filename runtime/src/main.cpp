@@ -35,7 +35,7 @@ static bool parse_press(const char *arg) {
 }
 
 static void usage(const char *argv0) {
-    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--subpixel] [--stick-aim] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd|FOLDER] [--memcard-import FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--window WxH] [--headless] [--hidden]\n"
+    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--subpixel] [--depth-buffer] [--stick-aim] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd|FOLDER] [--memcard-import FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--window WxH] [--headless] [--hidden]\n"
             "       [--screenshots DIR] [--screenshot-every N] [--screenshot-from FRAME] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--kbm FRAME:CONTROL[:DURATION]]... [--mouse FRAME:DX,DY]...\n"
@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--scale") && i + 1 < argc) config.scale = std::clamp(atoi(argv[++i]), 0, 16);
         else if (!strcmp(argv[i], "--no-dither")) config.dither = false;
         else if (!strcmp(argv[i], "--subpixel")) config.subpixel = true;
+        else if (!strcmp(argv[i], "--depth-buffer")) config.depth_buffer = true;
         else if (!strcmp(argv[i], "--stick-aim")) config.stick_aim = true;
         else if (!strcmp(argv[i], "--fov") && i + 1 < argc) config.fov = std::clamp(atof(argv[++i]), 0.0, 150.0);
         else if (!strcmp(argv[i], "--aspect") && i + 1 < argc) {
