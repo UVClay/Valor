@@ -30,6 +30,8 @@ and full playthroughs of two missions.
       control roles (a recompiler hook on the role axis function), and keys press the game's
       actions through its own button table. Bindings, sensitivity and invert are in F1 → Controls.
       The mouse turns the view at the display's frame rate instead of the game's 30 Hz.
+- [x] Fast loading option (CD data reads 8x faster, XA streams untouched), pause in the background,
+      F12 screenshots
 - [x] Controller options: modern stick aiming (small deadzone, smooth curve, set turn speeds) and
       gyro aiming, both off by default
 - [x] **Saves decoupled from memory cards**: saves are single-save files (`.mcs`) in `saves/card1/`.

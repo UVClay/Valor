@@ -148,6 +148,9 @@ void draw_menu() {
             ImGui::Checkbox("Smooth scaling", &config.smooth_scaling);
             if (ImGui::Checkbox("Fullscreen (F11)", &config.fullscreen)) display_apply_settings();
             ImGui::Checkbox("Pause in the background", &config.pause_unfocused);
+            ImGui::Checkbox("Fast loading", &config.fast_loading);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Read game data from the disc 8x faster (music and movies stream as usual).");
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Audio", nullptr, tab_flags("Audio"))) {

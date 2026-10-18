@@ -75,6 +75,8 @@ also be given on the command line:
   `--frame-rate N`.
 - **Square stick range:** maps modern round-gated sticks to the DualShock's range.
 - **Sub-pixel precision:** `--subpixel` (off by default) removes the PS1's vertex wobble.
+- **Fast loading:** `--fast-loading` (off by default) reads game data 8x faster; a level loads in
+  about 2 seconds instead of 10. Music and movies stream as usual.
 - **Depth buffer:** `--depth-buffer` (off by default) hides what's behind walls by real depth
   instead of the game's polygon sorting, which can show things through nearby walls.
 - **Widescreen HUD:** keeps the HUD's proportions, with the compass and ammo count in the corners.

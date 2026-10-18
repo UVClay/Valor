@@ -38,6 +38,7 @@ struct Config {
     bool smooth_scaling = true;  // filter the image when scaling it to the window
     bool fullscreen = false;
     bool pause_unfocused = true;  // pause while the window is in the background
+    bool fast_loading = false;    // CD data reads 8x faster (not XA audio streams)
     int window_w = 960, window_h = 720;  // initial window size
     double aspect = 4.0 / 3.0;  // output aspect (0 = match the window)
     double fov = 0;             // world horizontal FOV in degrees (0 = original vertical FOV, Hor+)

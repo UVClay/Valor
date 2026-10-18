@@ -213,7 +213,11 @@ int64_t next_sector_at;
 bool reading, setloc_pending;
 uint8_t filter_file, filter_chan;
 
-int64_t read_period() { return (mode & 0x80) ? READ_PERIOD_1X / 2 : READ_PERIOD_1X; }
+// Fast loading (config.fast_loading): data reads and seeks run 8x faster, except with XA audio
+// enabled (0x40): music and movies (whose sound is XA) stream in real time.
+int64_t speedup() { return psx::config.fast_loading && !(mode & 0x40) ? 8 : 1; }
+
+int64_t read_period() { return ((mode & 0x80) ? READ_PERIOD_1X / 2 : READ_PERIOD_1X) / speedup(); }
 
 void schedule_delivery() {
     if (int_flag || queue.empty()) return;
@@ -234,7 +238,7 @@ void drop_queued_sectors() {
 
 int64_t seek_time(int from, int to) {
     int64_t d = std::abs(to - from);
-    return std::min<int64_t>(CPU_HZ / 2, 100000 + d * 12);
+    return std::min<int64_t>(CPU_HZ / 2, 100000 + d * 12) / speedup();
 }
 
 void start_reading() {
