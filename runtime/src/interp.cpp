@@ -30,6 +30,7 @@ namespace psx {
 namespace {
 
 std::deque<std::shared_ptr<InterpTick>> ticks;  // oldest first; the last one is being built
+bool look_applies = true;  // the camera turns by the mouse look the game takes (see pair_ticks)
 uint64_t next_seq = 1;
 bool drawn_since_projection = true;
 
@@ -252,6 +253,18 @@ void pair_ticks(const InterpTick &from, const InterpTick &to, Pairing &p) {
         }
     }
     if (!p.ok) return;
+    // Does the game turn the camera by the mouse look it takes? Not in aim mode (it moves the
+    // reticle) or cutscenes: showing the look early would then turn the view and snap it back.
+    if (std::abs(from.look_yaw) > 0.3 || std::abs(from.look_pitch) > 0.3) {
+        double s0[3], s1[3];
+        Mat r0, r1;
+        split(p.cam0.m, s0, r0);
+        split(p.cam1.m, s1, r1);
+        double yaw = std::remainder((std::atan2(r1[2][0], r1[2][2]) - std::atan2(r0[2][0], r0[2][2])) * 180 / M_PI, 360.0);
+        double pitch = (std::asin(std::clamp(r0[2][1], -1.0, 1.0)) - std::asin(std::clamp(r1[2][1], -1.0, 1.0))) * 180 / M_PI;
+        auto close = [](double got, double want) { return std::abs(got - want) < std::abs(want) * 0.35 + 0.2; };
+        look_applies = close(yaw, from.look_yaw) && close(pitch, from.look_pitch);
+    }
 
     // Objects: their transform relative to the camera, W = Mcam^-1 * M and w = Mcam^-1 * (T - Tcam)
     // (W is the object's rotation, w its position in the world).
@@ -311,11 +324,14 @@ void axis_rotation(double x, double y, double z, double angle, Mat out) {
     out[2][0] = z * x * v - y * s; out[2][1] = z * y * v + x * s; out[2][2] = c + z * z * v;
 }
 
+bool interp_look_applies() { return look_applies; }
+
 bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, double yaw, double pitch,
                    InterpMotion &out) {
     static Pairing p;
     if (p.from != from.seq || p.to != to.seq) pair_ticks(from, to, p);
     if (!p.ok) return false;
+    if (!look_applies) yaw = pitch = 0;
 
     // The camera between the two: rotation slerped (scale per axis lerped), position lerped.
     double s0[3], s1[3];

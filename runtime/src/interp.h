@@ -85,6 +85,9 @@ void interp_note_draw();
 bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, double yaw, double pitch,
                    InterpMotion &out);
 
+// Whether mouse look turns the camera as the game takes it (false in aim mode, cutscenes).
+bool interp_look_applies();
+
 inline uint32_t interp_key(int16_t sx, int16_t sy) { return uint32_t(uint16_t(sx)) | uint32_t(uint16_t(sy)) << 16; }
 
 }  // namespace psx

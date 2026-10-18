@@ -1275,7 +1275,7 @@ void gl_renderer_interpolate(double vblank_time) {
     // rest of this tick's turn toward the next instead of easing it in, all of the next tick's
     // (seen only in the one after), and the motion the game hasn't taken yet.
     double yaw = 0, pitch = 0;
-    if (next) {
+    if (next && !game_aiming()) {
         kbm_pending_look(yaw, pitch);
         yaw += list->tick->look_yaw * (1 - alpha) + next->look_yaw;
         pitch += list->tick->look_pitch * (1 - alpha) + next->look_pitch;
