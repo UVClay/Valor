@@ -69,6 +69,9 @@ also be given on the command line:
 - **Widescreen HUD:** keeps the HUD's proportions, with the compass and ammo count in the corners.
 - **Crosshair:** `--crosshair SIZE` (hidden in aim mode and on the pause screen).
 - **Mouse:** sensitivity (Quake scale: 0.022 degrees per count at 1), invert, key bindings.
+- **Controller:** modern stick aiming (`--stick-aim`): a small deadzone and smooth curve instead of
+  the game's, with turn speeds. Gyro aiming (DualSense and other controllers with a gyro): always,
+  or only in aim mode.
 - **Volume and debug overlay.**
 
 ## Testing

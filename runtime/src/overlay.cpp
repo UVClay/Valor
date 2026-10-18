@@ -145,6 +145,23 @@ void draw_menu() {
             ImGui::Checkbox("Square stick range (DualShock-like)", &config.square_sticks);
             ImGui::TextDisabled("Full deflection reaches both axes on diagonals, as on a DualShock.\n"
                                 "Without it, angling a round-gated stick off-axis loses most of the speed.");
+            ImGui::Checkbox("Modern stick aiming", &config.stick_aim);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Look with a small deadzone and a smooth curve instead of the game's\n"
+                                  "large deadzone and steep response (whichever stick your controller\n"
+                                  "configuration uses for looking).");
+            if (config.stick_aim) {
+                float yaw = float(config.stick_yaw_speed), pitch = float(config.stick_pitch_speed);
+                if (ImGui::SliderFloat("Turn speed", &yaw, 30, 720, "%.0f deg/s")) config.stick_yaw_speed = yaw;
+                if (ImGui::SliderFloat("Look up/down speed", &pitch, 30, 720, "%.0f deg/s")) config.stick_pitch_speed = pitch;
+            }
+            static const char *gyro_modes[] = {"Off", "Always", "In aim mode"};
+            ImGui::Combo("Gyro aiming", &config.gyro, gyro_modes, IM_ARRAYSIZE(gyro_modes));
+            if (config.gyro) {
+                float g = float(config.gyro_sensitivity);
+                if (ImGui::SliderFloat("Gyro sensitivity", &g, 0.1f, 10.0f, "%.2f", ImGuiSliderFlags_Logarithmic))
+                    config.gyro_sensitivity = g;
+            }
             ImGui::Separator();
             ImGui::Checkbox("Mouse look", &config.mouse_look);
             ImGui::SameLine();

@@ -17,6 +17,7 @@
 #include "hw.h"
 #include "input.h"
 #include "interp.h"
+#include "game.h"
 #include "kbm.h"
 #include "overlay.h"
 #include "pad.h"
@@ -169,8 +170,15 @@ void pump_events() {
         case SDL_EVENT_GAMEPAD_ADDED:
             if (!gamepad) {
                 gamepad = SDL_OpenGamepad(e.gdevice.which);
-                if (gamepad) log("input: %s connected", SDL_GetGamepadName(gamepad));
+                if (gamepad) {
+                    bool gyro = SDL_GamepadHasSensor(gamepad, SDL_SENSOR_GYRO) &&
+                                SDL_SetGamepadSensorEnabled(gamepad, SDL_SENSOR_GYRO, true);
+                    log("input: %s connected%s", SDL_GetGamepadName(gamepad), gyro ? " (gyro)" : "");
+                }
             }
+            break;
+        case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
+            if (e.gsensor.sensor == SDL_SENSOR_GYRO) kbm_gyro(e.gsensor.data, e.gsensor.sensor_timestamp);
             break;
         case SDL_EVENT_GAMEPAD_REMOVED:
             if (gamepad && SDL_GetGamepadID(gamepad) == e.gdevice.which) {

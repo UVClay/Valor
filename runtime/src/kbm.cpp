@@ -234,10 +234,27 @@ static double pitch_degrees(double counts) {
     return -counts * 0.022 * config.mouse_sensitivity * (config.invert_mouse ? -1 : 1);
 }
 
+static double gyro_yaw, gyro_pitch;  // degrees not taken yet
+
+void kbm_gyro(const float rate[3], uint64_t timestamp_ns) {
+    static uint64_t last;
+    double dt = last && timestamp_ns > last ? std::min(double(timestamp_ns - last) * 1e-9, 0.05) : 0;
+    last = timestamp_ns;
+    bool on = config.gyro == 1 || (config.gyro == 2 && game_aiming());
+    if (!on || !playing() || dt == 0) return;
+    // Counter-clockwise positive: about y (up) is turning left, about x (right) tilting up.
+    // A small deadzone keeps a resting controller's drift from turning the view.
+    constexpr double DEADZONE = 0.01;  // radians per second
+    auto rate_deg = [](float r) { return std::abs(r) < DEADZONE ? 0.0 : double(r) * 180 / M_PI; };
+    gyro_yaw -= rate_deg(rate[1]) * dt * config.gyro_sensitivity;
+    gyro_pitch += rate_deg(rate[0]) * dt * config.gyro_sensitivity * (config.invert_mouse ? -1 : 1);
+}
+
 double kbm_take_turn() {
     double counts = mouse_dx;
     mouse_dx = 0;
-    double d = playing() ? turn_degrees(counts) : 0;
+    double d = playing() ? turn_degrees(counts) + gyro_yaw : 0;
+    gyro_yaw = 0;
     tick_yaw += d;
     return d;
 }
@@ -245,7 +262,8 @@ double kbm_take_turn() {
 double kbm_take_pitch() {
     double counts = mouse_dy;
     mouse_dy = 0;
-    double d = playing() ? pitch_degrees(counts) : 0;
+    double d = playing() ? pitch_degrees(counts) + gyro_pitch : 0;
+    gyro_pitch = 0;
     tick_pitch += d;
     return d;
 }
@@ -257,9 +275,9 @@ void kbm_tick_look(double &yaw, double &pitch) {
 }
 
 void kbm_pending_look(double &yaw, double &pitch) {
-    bool on = playing() && config.mouse_look;
-    yaw = on ? turn_degrees(mouse_dx) : 0;
-    pitch = on ? pitch_degrees(mouse_dy) : 0;
+    bool on = playing();
+    yaw = on ? (config.mouse_look ? turn_degrees(mouse_dx) : 0) + gyro_yaw : 0;
+    pitch = on ? (config.mouse_look ? pitch_degrees(mouse_dy) : 0) + gyro_pitch : 0;
 }
 
 }  // namespace psx

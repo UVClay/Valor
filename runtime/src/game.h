@@ -27,6 +27,8 @@ double kbm_take_pitch();
 // Mouse look taken by the game since the last call (degrees), for a new tick (interp.cpp), and
 // mouse motion it hasn't taken yet.
 void kbm_tick_look(double &yaw, double &pitch);
+// display.cpp: a gamepad gyroscope reading (radians per second about x, y, z; SDL's axes).
+void kbm_gyro(const float rate[3], uint64_t timestamp_ns);
 void kbm_pending_look(double &yaw, double &pitch);
 
 }  // namespace psx

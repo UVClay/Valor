@@ -70,6 +70,12 @@ struct Config {
     bool mouse_look = true;
     double mouse_sensitivity = 3.0;
     bool invert_mouse = false;
+    // Controller look: the game's own response (a large deadzone and a steep curve per axis), or
+    // a modern one (small deadzone, smooth curve, these top speeds in degrees per second).
+    bool stick_aim = false;
+    double stick_yaw_speed = 180, stick_pitch_speed = 120;
+    int gyro = 0;  // gyro aiming: 0 off, 1 always, 2 in aim mode
+    double gyro_sensitivity = 1.0;  // 1: the view turns as much as the controller
     bool crosshair = false;  // draw a + at the center of the 3D view
     int crosshair_size = 4;  // arm length in original (240-line) pixels
     std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)

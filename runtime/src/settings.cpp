@@ -69,6 +69,11 @@ void settings_load() {
         else if (key == "mouse_look") config.mouse_look = value == "true";
         else if (key == "mouse_sensitivity") config.mouse_sensitivity = std::clamp(atof(value.c_str()), 0.05, 50.0);
         else if (key == "invert_mouse") config.invert_mouse = value == "true";
+        else if (key == "stick_aim") config.stick_aim = value == "true";
+        else if (key == "stick_yaw_speed") config.stick_yaw_speed = std::clamp(atof(value.c_str()), 30.0, 720.0);
+        else if (key == "stick_pitch_speed") config.stick_pitch_speed = std::clamp(atof(value.c_str()), 30.0, 720.0);
+        else if (key == "gyro") config.gyro = std::clamp(atoi(value.c_str()), 0, 2);
+        else if (key == "gyro_sensitivity") config.gyro_sensitivity = std::clamp(atof(value.c_str()), 0.1, 10.0);
         else
             for (int c = 0; c < hw::KC_COUNT; c++)
                 if (key == hw::kbm_control_key(c))
@@ -100,6 +105,11 @@ void settings_save() {
     f << "mouse_look = " << (config.mouse_look ? "true" : "false") << "\n";
     f << "mouse_sensitivity = " << config.mouse_sensitivity << "  # 0.022 degrees per count at 1 (as in Quake)\n";
     f << "invert_mouse = " << (config.invert_mouse ? "true" : "false") << "\n";
+    f << "stick_aim = " << (config.stick_aim ? "true" : "false") << "  # modern controller look response\n";
+    f << "stick_yaw_speed = " << config.stick_yaw_speed << "  # degrees per second\n";
+    f << "stick_pitch_speed = " << config.stick_pitch_speed << "\n";
+    f << "gyro = " << config.gyro << "  # gyro aiming: 0 off, 1 always, 2 in aim mode\n";
+    f << "gyro_sensitivity = " << config.gyro_sensitivity << "\n";
     f << "# Key bindings: SDL key names, Mouse 1-7, Wheel Up/Down, None\n";
     for (int c = 0; c < hw::KC_COUNT; c++)
         f << hw::kbm_control_key(c) << " = " << hw::kbm_input_name(hw::kbm_bindings[c]) << "\n";

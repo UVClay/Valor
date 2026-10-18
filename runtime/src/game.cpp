@@ -20,8 +20,10 @@ constexpr uint32_t PAUSED = 0x8009A5E0;        // set by the start-button handle
 constexpr uint32_t PLAYER_STATE = 0x8009D654;  // -> struct; +0x10 bit 0x10: aim mode
 constexpr uint32_t ACTION_BUTTONS = 0x800B7790;  // (port * 9 + action) * 4: button mask
 constexpr uint32_t ROLE_AXES = 0x800B74B0;       // port * 160 + role * 40: analog role config
+constexpr uint32_t STICKS = 0x80093B70;          // port * 4: rx, ry, lx, ly; +8 + port: analog mode
 
 uint32_t r32(uint32_t addr) { return psx_r32(hw::cpu, addr); }
+uint8_t r8(uint32_t addr) { return psx_r8(hw::cpu, addr); }
 
 bool in_ram(uint32_t p) { return (p & 0xFFE00003) == 0x80000000; }
 
@@ -57,13 +59,24 @@ extern "C" void hook_role_axis(Cpu *c, RecompFn body) {
     body(c);
     if (port != 0 || role > 3) return;
     double full = 255.0 * double(r32(ROLE_AXES + role * 40 + 0x20) >> 8);
+    constexpr double UNITS_PER_DEGREE = 4096.0 * 65536.0 / 360.0;
+    if (role >= 2 && config.stick_aim && r8(STICKS + 8 + port) != 0) {
+        // Modern stick response, from the same stick axis (the stick copy holds rx, ry, lx, ly):
+        // a small deadzone and a smooth curve up to a top speed, instead of the game's.
+        uint32_t cfg = ROLE_AXES + role * 40;
+        double d = (double(r8(STICKS + (r8(cfg) & 3))) - 128.0) / 127.0;
+        d = std::clamp(d, -1.0, 1.0) * (r32(cfg + 0x24) ? -1 : 1);
+        constexpr double DEADZONE = 0.12;
+        double a = std::abs(d) < DEADZONE ? 0 : std::pow((std::abs(d) - DEADZONE) / (1 - DEADZONE), 1.6);
+        double degrees = std::copysign(a, d) * (role == 3 ? config.stick_yaw_speed : config.stick_pitch_speed) / 30.0;
+        c->r[2] = uint32_t(int32_t(degrees * UNITS_PER_DEGREE * (role == 2 ? 2 : 1)));
+    }
     double add = 0;
     if (role <= 1) {
         double forward, strafe;
         kbm_movement(forward, strafe);
         add = role == 0 ? -forward * full : strafe * full;
     } else {
-        constexpr double UNITS_PER_DEGREE = 4096.0 * 65536.0 / 360.0;
         double degrees = role == 3 ? kbm_take_turn() : -kbm_take_pitch();
         add = degrees * UNITS_PER_DEGREE * (role == 2 ? 2 : 1);
     }
