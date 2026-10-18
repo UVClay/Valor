@@ -54,6 +54,7 @@ also be given on the command line:
   and in-between frames move the camera smoothly. It presents at the display's refresh rate or at
   `--frame-rate N`.
 - **Square stick range:** maps modern round-gated sticks to the DualShock's range.
+- **Widescreen HUD:** keeps the HUD's proportions, with the compass and ammo count in the corners.
 - **Crosshair:** `--crosshair SIZE`.
 - **Volume and debug overlay.**
 

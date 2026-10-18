@@ -33,6 +33,7 @@ struct InterpGroup {
 // Everything projected between two drawing phases (one game tick).
 struct InterpTick {
     uint64_t seq = 0;
+    uint64_t frame = 0;  // vblank its projections started
     std::vector<InterpVertex> vertices;
     // Projected SXY -> the latest vertex projected there; earlier ones at the same coordinate
     // are chained through `previous` (-1 ends the chain).
@@ -53,7 +54,10 @@ struct InterpMotion {
     std::vector<int32_t> group_object;  // per group of the tick: index into objects, or -1
 };
 
+// Projections are recorded for frame interpolation and the widescreen HUD (OpenGL renderer only).
 bool interp_enabled();
+// Frames in between ticks are shown.
+bool interp_presenting();
 // gte.cpp: a vertex was projected (acc: camera-space position * 4096; v: model-space input).
 void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, double kx, double ky,
                    const int16_t rt[3][3], const int32_t tr[3], const int16_t v[3], uint32_t pc);

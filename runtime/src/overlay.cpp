@@ -142,6 +142,8 @@ void draw_menu() {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Interface")) {
+            ImGui::Checkbox("Widescreen HUD (keep its proportions)", &config.widescreen_hud);
+            if (config.widescreen_hud) ImGui::Checkbox("HUD at the screen's edges", &config.hud_edges);
             ImGui::Checkbox("Crosshair", &config.crosshair);
             if (config.crosshair) ImGui::SliderInt("Crosshair size", &config.crosshair_size, 1, 20);
             ImGui::Separator();

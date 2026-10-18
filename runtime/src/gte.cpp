@@ -193,7 +193,8 @@ void mul_matrix(const int16_t m[3][3], const int32_t t[3], int64_t t_scale, int1
 }  // namespace
 
 namespace psx {
-uint64_t gte_projections;  // RTPS/RTPT vertices projected so far
+uint64_t gte_projections;
+double gte_squeeze = 1;  // RTPS/RTPT vertices projected so far
 }
 
 namespace {
@@ -609,6 +610,7 @@ void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double
     }
     // The FOV applies to every projection, the weapon included: its muzzle flash and tracers are
     // world objects, so a weapon left at the original framing would detach from them.
+    gte_squeeze = squeeze;
     projection.world_h = world_h;
     projection.world = {k * squeeze, k};
     projection.other = {k * squeeze, k};

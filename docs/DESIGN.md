@@ -92,6 +92,9 @@ The game logic runs at a fixed 30 Hz (RECON.md, Frame timing). For higher frame 
 - **What stays put.** The weapon (projected with another H), the HUD (never projected) and the
   compass (a HUD projection) are left in place. Camera cuts larger than 90° or 1500 units are not
   interpolated.
+- **Widescreen HUD.** The same matching also finds the HUD: in a 3D frame, a primitive with no
+  projected vertex that isn't full-width is drawn squeezed back to 4:3 proportions. Top-corner
+  elements are anchored to the screen's edges, the rest to the center.
 - **Presentation.** Frames are presented on their own clock at the display's refresh rate (or
   `--frame-rate`). Emulation still advances one vblank at a time, in between presents.
 

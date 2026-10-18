@@ -61,6 +61,9 @@ struct Config {
     // at `frame_rate` per second (0 = the display's refresh rate).
     bool interpolate = true;
     int frame_rate = 0;
+    // Keep the 2D HUD's proportions in widescreen (it would otherwise stretch with the image).
+    bool widescreen_hud = true;
+    bool hud_edges = true;  // ... and move the corner elements to the screen's edges
     bool crosshair = false;  // draw a + at the center of the 3D view
     int crosshair_size = 4;  // arm length in original (240-line) pixels
     std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)
@@ -93,6 +96,7 @@ void io_write(Cpu *c, uint32_t phys, uint32_t value, int size);
 // gte.cpp
 void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double base_tan);
 extern uint64_t gte_projections;
+extern double gte_squeeze;  // horizontal squeeze applied to 3D for the output aspect (1 at 4:3)
 void gte_trace_frame();  // VALOR_TRACE_GTE_MAT
 
 // cpu.cpp

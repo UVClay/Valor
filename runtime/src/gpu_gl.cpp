@@ -101,6 +101,12 @@ FrameList *last_shown;
 
 uint64_t source_stats[4];  // vertices: not projected, ambiguous, other projection, matched
 
+// Widescreen HUD: while a HUD primitive is submitted, x is squeezed toward the frame's center.
+struct {
+    bool active;
+    float center, factor;
+} hud;
+
 // The current primitive's projections (filled while submitting it).
 std::array<int32_t, 4> prim_recs;
 int prim_group = -1;
@@ -409,6 +415,31 @@ void finish_sources(int n) {
     recording->groups.push_back(g);
 }
 
+// Widescreen HUD: in a 3D frame, a primitive nobody projected and narrower than the screen is
+// part of the 2D HUD (full-width ones are backdrops, fades and flashes). It's drawn at its 4:3
+// proportions: squeezed toward the center, or with config.hud_edges, toward the left or right
+// edge when it lies entirely in a top corner of the original frame (the compass and the ammo
+// count; menus and messages elsewhere stay centered so their lines don't come apart). Primitives
+// touching the frame's left or right edge stay on that edge.
+void begin_hud(const int32_t *src, int n, int min_x, int max_x, int max_y) {
+    hud.active = false;
+    if (!config.widescreen_hud || gte_squeeze >= 1 || !recording || !recording->tick || !recording->has_area) return;
+    if (recording->tick->frame + 3 < gpu.frames || recording->tick->vertices.size() < 64) return;  // 2D screen
+    for (int i = 0; i < n; i++)
+        if (src[i] != -1 || prim_recs[i] >= 0) return;
+    int width = recording->area_x2 - recording->area_x1 + 1;
+    if (max_x - min_x >= width * 9 / 10) return;
+    hud.active = true;
+    float left = float(recording->area_x1), right = float(recording->area_x2 + 1);
+    hud.center = (left + right) * 0.5f;
+    bool top = max_y <= recording->area_y1 + (recording->area_y2 - recording->area_y1 + 1) / 4;
+    if (min_x <= left) hud.center = left;  // touching an edge (borders): stays on it
+    else if (max_x >= right - 1) hud.center = right;
+    else if (config.hud_edges && top && max_x <= left + width / 4) hud.center = left;
+    else if (config.hud_edges && top && min_x >= right - width / 4) hud.center = right;
+    hud.factor = float(gte_squeeze);
+}
+
 VertexSource source_for(int32_t rec) {
     VertexSource s;
     if (rec >= 0) s.rec = rec;
@@ -455,6 +486,7 @@ void prepare_texture(const DrawState &s) {
 
 GLVertex make_vertex(const DrawState &s, float x, float y, float u, float v, int r, int g, int b, uint16_t flags) {
     GLVertex gv{};
+    if (hud.active) x = hud.center + (x - hud.center) * hud.factor;
     gv.x = x; gv.y = y; gv.u = u; gv.v = v;
     gv.r = uint8_t(r); gv.g = uint8_t(g); gv.b = uint8_t(b); gv.a = 255;
     gv.tex_x = uint16_t(s.tex_x); gv.tex_y = uint16_t(s.tex_y);
@@ -505,6 +537,7 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
     const Vertex *vs[3] = {&a, &b, &c};
     vertex_sources(vs, 3, src);
     finish_sources(3);
+    begin_hud(src, 3, std::min({a.x, b.x, c.x}), std::max({a.x, b.x, c.x}), std::max({a.y, b.y, c.y}));
     bool dither = s.dither && (s.shaded || (s.textured && !s.raw));
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
@@ -514,6 +547,7 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
             batch_sources.push_back(source_for(src[i++]));
         }
     });
+    hud.active = false;
 }
 
 void line(const DrawState &s, const Vertex &a, const Vertex &b) {
@@ -529,6 +563,7 @@ void line(const DrawState &s, const Vertex &a, const Vertex &b) {
     const Vertex *vs[2] = {&a, &b};
     vertex_sources(vs, 2, src);
     finish_sources(2);
+    begin_hud(src, 2, std::min(a.x, b.x), std::max(a.x, b.x), std::max(a.y, b.y));
     bool dither = s.dither && s.shaded;
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass;
@@ -539,6 +574,7 @@ void line(const DrawState &s, const Vertex &a, const Vertex &b) {
         GLVertex p3 = make_vertex(s, bx + ex + nx, by + ey + ny, 0, 0, b.r, b.g, b.b, f);
         for (const GLVertex *v : {&p0, &p1, &p2, &p1, &p3, &p2}) batch.push_back(*v);
     });
+    hud.active = false;
 }
 
 void rect(const DrawState &s, const Vertex &base, int w, int h) {
@@ -550,6 +586,7 @@ void rect(const DrawState &s, const Vertex &base, int w, int h) {
     const Vertex *vs[1] = {&base};
     vertex_sources(vs, 1, &src);
     finish_sources(1);
+    begin_hud(&src, 1, base.x, base.x + w, base.y + h);
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, false) | pass;
         for (int i = 0; i < 6; i++) batch_sources.push_back(source_for(src));
@@ -558,6 +595,7 @@ void rect(const DrawState &s, const Vertex &base, int w, int h) {
                  p3 = vx(x1, y1, u0 + w, v0 + h);
         for (const GLVertex *v : {&p0, &p1, &p2, &p1, &p3, &p2}) batch.push_back(*v);
     });
+    hud.active = false;
 }
 
 void fill(int x, int y, int w, int h, uint32_t color) {
@@ -761,7 +799,7 @@ std::vector<uint32_t> gl_renderer_read(int x, int y, int w, int h) {
 // Frame interpolation: redraw the displayed tick's list with the camera `vblank_time` along
 // toward the next tick's (vblank_time: emulated vblanks, fractional).
 void gl_renderer_interpolate(double vblank_time) {
-    if (!enabled || !interp_enabled()) return;
+    if (!enabled || !interp_presenting()) return;
     if (recording && (recording->tick != interp_drawing_tick() || recording->last_frame < gpu.frames)) {
         // A new tick's projections started (or a vblank passed): the list is complete.
         flush();

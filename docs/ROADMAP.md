@@ -14,7 +14,9 @@ and full playthroughs of two missions.
 - [x] **FOV / widescreen**: `--aspect`, `--fov`; GTE projection scaling, 2D screens stay 4:3
 - [ ] **Lamp pop-in in widescreen** (reported at the start of mission 2 level 2): an object culled
       with a 4:3 assumption; level geometry, enemies and the reticle are fine. Needs the exact spot.
-- [ ] **Widescreen HUD**: the 2D HUD stretches in widescreen; reposition it in the game's HUD code
+- [x] **Widescreen HUD**: in 3D frames, 2D primitives that nobody projected (and aren't
+      full-width) keep their 4:3 proportions. The compass and ammo count move to the screen's
+      corners; menus and messages stay centered (Interface tab).
 - [x] **Strafing**: the movement code adds forward and strafe as vectors. The loss of speed came from
       the game's per-axis stick curve meeting round-gated modern sticks. Round input is now mapped
       to the DualShock's square range (Controls → "Square stick range", see RECON.md).

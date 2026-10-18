@@ -95,7 +95,8 @@ bool partial_rotation(const Mat q, double alpha, Mat out) {
 }  // namespace
 
 // Only the OpenGL renderer can redraw frames.
-bool interp_enabled() { return config.interpolate && hw::hwgl::active(); }
+bool interp_enabled() { return (config.interpolate || config.widescreen_hud) && hw::hwgl::active(); }
+bool interp_presenting() { return config.interpolate && hw::hwgl::active(); }
 
 void interp_note_draw() { drawn_since_projection = true; }
 
@@ -105,6 +106,7 @@ void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, dou
         drawn_since_projection = false;
         auto t = std::make_shared<InterpTick>();
         t->seq = next_seq++;
+        t->frame = hw::gpu.frames;
         t->vertices.reserve(4096);
         ticks.push_back(t);
         while (ticks.size() > 4) ticks.pop_front();

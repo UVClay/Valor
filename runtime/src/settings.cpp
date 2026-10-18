@@ -58,6 +58,8 @@ void settings_load() {
         else if (key == "square_sticks") config.square_sticks = value == "true";
         else if (key == "interpolate") config.interpolate = value == "true";
         else if (key == "frame_rate") config.frame_rate = std::clamp(atoi(value.c_str()), 0, 1000);
+        else if (key == "widescreen_hud") config.widescreen_hud = value == "true";
+        else if (key == "hud_edges") config.hud_edges = value == "true";
         else if (key == "crosshair") config.crosshair = value == "true";
         else if (key == "crosshair_size") config.crosshair_size = std::clamp(atoi(value.c_str()), 1, 20);
         else if (key == "overlay") config.overlay = std::clamp(atoi(value.c_str()), 0, 2);
@@ -79,6 +81,8 @@ void settings_save() {
     f << "square_sticks = " << (config.square_sticks ? "true" : "false") << "\n";
     f << "interpolate = " << (config.interpolate ? "true" : "false") << "  # frames between the game's 30 Hz ticks\n";
     f << "frame_rate = " << config.frame_rate << "  # with interpolation; 0 = display refresh rate\n";
+    f << "widescreen_hud = " << (config.widescreen_hud ? "true" : "false") << "  # keep HUD proportions in widescreen\n";
+    f << "hud_edges = " << (config.hud_edges ? "true" : "false") << "  # widescreen HUD at the screen's edges\n";
     f << "crosshair = " << (config.crosshair ? "true" : "false") << "\n";
     f << "crosshair_size = " << config.crosshair_size << "\n";
     f << "overlay = " << config.overlay << "\n";

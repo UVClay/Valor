@@ -380,7 +380,7 @@ void gpu_present() {
     pump_events();
     double vblank = double(gpu.frames);
     // With frame interpolation, frames are presented on their own clock (below).
-    bool own_clock = interp_enabled() && use_gl_renderer && !fast_forward && present_rate() > 0;
+    bool own_clock = interp_presenting() && use_gl_renderer && !fast_forward && present_rate() > 0;
     if (!own_clock || shot) {
         present_frame(vblank);
         overlay_render();
@@ -389,7 +389,7 @@ void gpu_present() {
         char name[40];
         snprintf(name, sizeof name, "window%06llu.png", (unsigned long long)gpu.frames);
         save_window(name);
-        if (interp_enabled()) {
+        if (interp_presenting()) {
             // Testing: an in-between frame halfway to the next vblank as well.
             present_frame(vblank + 0.5);
             overlay_render();
