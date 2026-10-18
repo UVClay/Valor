@@ -20,6 +20,7 @@
 #include "interp.h"
 #include "game.h"
 #include "kbm.h"
+#include "memcard.h"
 #include "overlay.h"
 #include "pad.h"
 #include "settings.h"
@@ -351,6 +352,7 @@ static void log_chain() {
 
 void gpu_present() {
     overlay_frame_emulated();
+    memcard_flush();
     log_chain();
     gte_trace_frame();
     if (config.dump_ram_frame && gpu.frames == config.dump_ram_frame) {

@@ -35,7 +35,7 @@ static bool parse_press(const char *arg) {
 }
 
 static void usage(const char *argv0) {
-    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--subpixel] [--stick-aim] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--window WxH] [--headless] [--hidden]\n"
+    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--subpixel] [--stick-aim] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd|FOLDER] [--memcard-import FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--window WxH] [--headless] [--hidden]\n"
             "       [--screenshots DIR] [--screenshot-every N] [--screenshot-from FRAME] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--kbm FRAME:CONTROL[:DURATION]]... [--mouse FRAME:DX,DY]...\n"
@@ -75,6 +75,7 @@ int main(int argc, char **argv) {
             if (!parse_aspect(argv[++i], config.aspect)) { usage(argv[0]); return 2; }
         }        else if (!strcmp(argv[i], "--wav") && i + 1 < argc) config.wav = argv[++i];
         else if (!strcmp(argv[i], "--memcard") && i + 1 < argc) { config.memcard = argv[++i]; memcard_given = true; }
+        else if (!strcmp(argv[i], "--memcard-import") && i + 1 < argc) config.memcard_import = argv[++i];
         else if (!strcmp(argv[i], "--volume") && i + 1 < argc) config.volume = std::clamp(atoi(argv[++i]), 0, 200);
         else if (!strcmp(argv[i], "--monkey") && i + 1 < argc) {
             unsigned long long seed, from;
@@ -142,6 +143,7 @@ int main(int argc, char **argv) {
         psx_call(&cpu, bios_project.entry);
         log("BIOS reset handler returned");
     } catch (const Halt &h) {
+        hw::memcard_flush(true);
         log("halt: %s", h.what());
         log("  frames=%llu primitives=%llu", (unsigned long long)hw::gpu.frames, (unsigned long long)hw::gpu.primitives);
         log("  cycles=%lld sr=%08X cause=%08X epc=%08X", (long long)cpu.cycles, cop0.sr, cop0.cause, cop0.epc);

@@ -54,6 +54,13 @@ Rebind them in F1 → Controls.
 | Fast-forward (hold) | Tab |
 | Volume down / up | - / = (or `./play --volume 60`) |
 
+## Saves
+
+Saves are kept as single-save files (`.mcs`, readable by other PlayStation tools) in
+`saves/card1/`. The game sees an ordinary memory card made of them. A save the game deletes is
+moved to `saves/card1/deleted/`. A previous `saves/memcard1.mcd` is imported the first time and
+left as it was. `--memcard FILE.mcd` uses a card image instead.
+
 ## Settings
 
 F1 opens the settings menu (the game pauses). Changes are saved to `saves/settings.ini` and can

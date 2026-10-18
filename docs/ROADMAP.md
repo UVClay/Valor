@@ -32,7 +32,9 @@ and full playthroughs of two missions.
       The mouse turns the view at the display's frame rate instead of the game's 30 Hz.
 - [x] Controller options: modern stick aiming (small deadzone, smooth curve, set turn speeds) and
       gyro aiming, both off by default
-- [ ] Saves decoupled from memory cards
+- [x] **Saves decoupled from memory cards**: saves are single-save files (`.mcs`) in `saves/card1/`.
+      The game sees a card assembled from them; after it writes, the card is split back into them,
+      and deleted saves go to `deleted/`. The old `memcard1.mcd` is imported once and left untouched
 - [x] Optional sub-pixel vertex precision (PGXP-style, Video tab, off by default): projected vertices are
       drawn where they really project, from the camera-space positions recorded for interpolation
 

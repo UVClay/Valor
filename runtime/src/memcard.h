@@ -7,5 +7,7 @@ namespace psx::hw {
 void memcard_init();
 bool memcard_present();
 uint8_t memcard_exchange(int step, uint8_t tx, bool &ack);
+// Folder-backed card: write the saves out once the game has stopped writing (now: at exit).
+void memcard_flush(bool now = false);
 
 }  // namespace psx::hw

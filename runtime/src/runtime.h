@@ -79,7 +79,10 @@ struct Config {
     double gyro_sensitivity = 1.0;  // 1: the view turns as much as the controller
     bool crosshair = false;  // draw a + at the center of the 3D view
     int crosshair_size = 4;  // arm length in original (240-line) pixels
-    std::filesystem::path memcard = "saves/memcard1.mcd";  // slot 1 (empty path: no card)
+    // Slot 1: a folder of single saves, or a .mcd image (empty path: no card). A new save folder
+    // starts with the saves of memcard_import, if that exists.
+    std::filesystem::path memcard = "saves/card1";
+    std::filesystem::path memcard_import = "saves/memcard1.mcd";
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> presses;  // scripted input (--press FRAME:BUTTON[:DURATION])
     struct Stick { uint64_t frame, duration; int axis; uint8_t value; };  // axis: 0 lx 1 ly 2 rx 3 ry

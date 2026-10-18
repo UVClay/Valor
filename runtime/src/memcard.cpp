@@ -1,7 +1,14 @@
-// Memory card: 128 KB backed by a standard raw .mcd file, speaking the SIO0 card protocol.
+// Memory card in slot 1, speaking the SIO0 card protocol. Backed either by a raw 128 KB .mcd
+// image, or by a folder of single saves (.mcs: the save's directory frame, then its 8 KB blocks):
+// the card is assembled from them at start and split back into them after the game writes, so
+// saves are files of their own and the card never fills up with other games' saves.
+#include <algorithm>
+#include <cstdlib>
 #include <fstream>
+#include <map>
 #include <vector>
 
+#include "gpu.h"
 #include "memcard.h"
 #include "runtime.h"
 
@@ -9,11 +16,18 @@ namespace psx::hw {
 
 namespace {
 
+uint64_t gpu_frames_now() { return gpu.frames; }
+
 constexpr size_t SIZE = 128 * 1024, FRAME = 128, FRAMES = SIZE / FRAME;
 
+constexpr size_t BLOCK = 8192, BLOCKS = 16;
+
 std::vector<uint8_t> data;
-std::filesystem::path file;
+std::filesystem::path file;  // .mcd image, or the save folder
+bool folder;
 bool inserted;
+bool dirty;           // folder mode: written since the last export
+uint64_t last_write;  // vblank of the latest write
 uint8_t flag = 0x08;  // bit 3: no write since power on
 
 // Exchange state
@@ -52,7 +66,102 @@ std::vector<uint8_t> formatted_card() {
     return c;
 }
 
+uint8_t *dir(size_t block) { return data.data() + block * FRAME; }
+
+// The saves on the card: first block -> its blocks in order.
+std::map<size_t, std::vector<size_t>> card_saves() {
+    std::map<size_t, std::vector<size_t>> saves;
+    for (size_t b = 1; b < BLOCKS; b++) {
+        if (dir(b)[0] != 0x51) continue;  // first block of a save in use
+        std::vector<size_t> chain;
+        for (size_t n = b; n >= 1 && n < BLOCKS && chain.size() < BLOCKS;) {
+            chain.push_back(n);
+            uint16_t next = uint16_t(dir(n)[8] | dir(n)[9] << 8);
+            if (next == 0xFFFF) break;
+            n = size_t(next) + 1;
+        }
+        saves[b] = chain;
+    }
+    return saves;
+}
+
+std::string save_name(size_t first) {
+    std::string name;
+    for (size_t i = 0x0A; i < 0x1E && dir(first)[i]; i++) {
+        char ch = char(dir(first)[i]);
+        name += (isalnum(uint8_t(ch)) || ch == '-' || ch == '_') ? ch : '_';
+    }
+    return name.empty() ? "save" : name;
+}
+
+// Folder mode: one .mcs per save on the card; files of saves no longer on it go to deleted/.
+void export_saves() {
+    std::filesystem::create_directories(file);
+    std::vector<std::string> written;
+    for (const auto &[first, chain] : card_saves()) {
+        std::vector<uint8_t> out(dir(first), dir(first) + FRAME);
+        out[8] = out[9] = 0xFF;  // no next block in a single save
+        out[127] = xor_frame(out.data());
+        for (size_t b : chain) out.insert(out.end(), data.begin() + b * BLOCK, data.begin() + (b + 1) * BLOCK);
+        std::string name = save_name(first) + ".mcs";
+        auto tmp = file / (name + ".tmp");
+        std::ofstream(tmp, std::ios::binary).write(reinterpret_cast<const char *>(out.data()), std::streamsize(out.size()));
+        std::filesystem::rename(tmp, file / name);
+        written.push_back(name);
+    }
+    for (const auto &e : std::filesystem::directory_iterator(file)) {
+        std::string name = e.path().filename().string();
+        if (e.path().extension() != ".mcs" || std::find(written.begin(), written.end(), name) != written.end()) continue;
+        std::filesystem::create_directories(file / "deleted");
+        std::filesystem::rename(e.path(), file / "deleted" / name);
+        log("memcard: %s deleted from the card (moved to %s)", name.c_str(), (file / "deleted").c_str());
+    }
+    dirty = false;
+}
+
+// Folder mode: a card holding the folder's saves.
+void import_saves() {
+    data = formatted_card();
+    std::vector<std::filesystem::path> files;
+    for (const auto &e : std::filesystem::directory_iterator(file))
+        if (e.path().extension() == ".mcs") files.push_back(e.path());
+    std::sort(files.begin(), files.end());
+    size_t next_free = 1;
+    for (const auto &path : files) {
+        std::ifstream f(path, std::ios::binary);
+        std::vector<uint8_t> s(std::istreambuf_iterator<char>(f), {});
+        if (s.size() < FRAME + BLOCK || (s.size() - FRAME) % BLOCK) {
+            log("memcard: %s isn't a single save (.mcs), skipped", path.c_str());
+            continue;
+        }
+        size_t n = (s.size() - FRAME) / BLOCK;
+        if (next_free + n > BLOCKS) {
+            log("memcard: no room for %s on the card, skipped", path.c_str());
+            continue;
+        }
+        for (size_t k = 0; k < n; k++) {
+            size_t b = next_free + k;
+            uint8_t *d = dir(b);
+            if (k == 0) std::copy(s.begin(), s.begin() + FRAME, d);
+            else std::fill(d, d + FRAME, 0);
+            d[0] = k == 0 ? 0x51 : k + 1 < n ? 0x52 : 0x53;
+            uint16_t next = k + 1 < n ? uint16_t(b) : 0xFFFF;  // next block's index (blocks count from 0 after the directory)
+            d[8] = uint8_t(next);
+            d[9] = uint8_t(next >> 8);
+            d[127] = xor_frame(d);
+            std::copy(s.begin() + FRAME + k * BLOCK, s.begin() + FRAME + (k + 1) * BLOCK, data.begin() + b * BLOCK);
+        }
+        next_free += n;
+    }
+    log("memcard: %zu saves from %s", files.size(), file.c_str());
+}
+
 void save_frame(uint16_t n) {
+    if (folder) {
+        dirty = true;
+        last_write = gpu_frames_now();
+        return;
+    }
     std::fstream f(file, std::ios::in | std::ios::out | std::ios::binary);
     if (!f) {
         log("memcard: cannot write %s", file.c_str());
@@ -68,6 +177,25 @@ void memcard_init() {
     inserted = false;
     if (config.memcard.empty()) return;
     file = config.memcard;
+    folder = file.extension() != ".mcd";
+    if (folder) {
+        if (!std::filesystem::exists(file) && std::filesystem::exists(config.memcard_import)) {
+            // First run with a save folder: take the saves from the old card image (left as is).
+            std::ifstream old(config.memcard_import, std::ios::binary);
+            data.assign(std::istreambuf_iterator<char>(old), {});
+            if (data.size() == SIZE) {
+                export_saves();
+                log("memcard: saves imported from %s into %s (the image is left untouched)",
+                    config.memcard_import.c_str(), file.c_str());
+            }
+        }
+        std::filesystem::create_directories(file);
+        import_saves();
+        if (const char *dump = getenv("VALOR_MEMCARD_DUMP"))  // testing: the assembled card
+            std::ofstream(dump, std::ios::binary).write(reinterpret_cast<const char *>(data.data()), SIZE);
+        inserted = true;
+        return;
+    }
     std::ifstream f(file, std::ios::binary);
     if (f) {
         data.assign(std::istreambuf_iterator<char>(f), {});
@@ -84,6 +212,10 @@ void memcard_init() {
 }
 
 bool memcard_present() { return inserted; }
+
+void memcard_flush(bool now) {
+    if (folder && dirty && (now || gpu_frames_now() > last_write + 60)) export_saves();
+}
 
 // Byte `step` of an exchange (step 0 is the 0x81 select byte). Returns the card's reply and
 // whether it acknowledges (asks for another byte).
