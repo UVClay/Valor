@@ -61,6 +61,9 @@ struct InterpTick {
 // q = objects[i].m * v + objects[i].t.
 struct InterpMotion {
     double a[3][3], b[3];
+    // The camera's further turn (mouse look), after the above: q' = look * q.
+    double look[3][3];
+    bool turned;
     struct Object { double m[3][3], t[3]; };
     std::vector<Object> objects;
     std::vector<int32_t> group_object;  // per group of the tick: index into objects, or -1
@@ -79,9 +82,9 @@ std::shared_ptr<const InterpTick> interp_drawing_tick();
 std::shared_ptr<const InterpTick> interp_tick(uint64_t seq);
 // Called by the GPU for every primitive: a drawing phase starts after projections.
 void interp_note_draw();
-// Motion from tick `from` to `alpha` of the way to tick `to`, with the camera turned a further
-// `yaw` / `pitch` degrees (right / up). False when there is no sensible in-between (camera cut,
-// no camera found).
+// Motion from tick `from` to `alpha` of the way to tick `to`, and the camera's further turn by
+// `yaw` / `pitch` degrees (right / up) as `look`. False when there is no sensible in-between
+// (camera cut, no camera found).
 bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, double yaw, double pitch,
                    InterpMotion &out);
 

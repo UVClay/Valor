@@ -52,6 +52,7 @@ struct GLVertex {
     uint16_t tex_x, tex_y, clut_x, clut_y;
     uint16_t flags, pad;
     float depth;  // depth buffer (config.depth_buffer): 0 nearest .. 1
+    float w;      // camera depth, for perspective-correct texturing (near-clipped polygons), else 1
 };
 
 // Vertex flags
@@ -83,6 +84,7 @@ struct VertexSource {
     float depth_bias = -1;  // depth-tested (config.depth_buffer): its primitive's bias, else -1
     uint32_t key = 0;  // screen position as drawn (for vertices without a projection)
     bool hud = false;  // part of the 2D HUD: never moved
+    bool world = false;  // drawn with the world's camera: turns with mouse look
 };
 std::vector<VertexSource> batch_sources;  // parallel to `batch`
 
@@ -122,6 +124,7 @@ uint64_t source_stats[4];  // vertices: not projected, ambiguous, other projecti
 struct {
     bool is_hud;  // the primitive being submitted is part of the HUD
     bool active;  // ... and is squeezed
+    bool world;   // the primitive being submitted is part of the 3D world (not the HUD, weapon, backdrops)
     float center, factor;
 } hud;
 
@@ -150,6 +153,7 @@ std::array<int32_t, 4> prim_recs, prim_any;
 // Sub-pixel corrections of this list's points, by packet coordinates (see precise_positions).
 std::unordered_map<uint32_t, std::pair<float, float>> subpixel_points;
 int prim_group = -1;
+bool prim_other = false;  // the current primitive has vertices projected not with the world (the weapon)
 
 const char *VS = R"(#version 330 core
 layout(location = 0) in vec2 a_pos;
@@ -158,14 +162,15 @@ layout(location = 2) in vec4 a_color;
 layout(location = 3) in uvec4 a_tex;
 layout(location = 4) in uint a_flags;
 layout(location = 5) in float a_depth;
+layout(location = 6) in float a_w;
 uniform vec2 u_size;
 out vec3 v_color;
-noperspective out vec2 v_uv;
+noperspective out vec3 v_uvq;  // (u, v, 1) / w: linear on screen
 flat out uvec4 v_tex;
 flat out uint v_flags;
 void main() {
     v_color = a_color.rgb * 255.0;
-    v_uv = a_uv;
+    v_uvq = vec3(a_uv, 1.0) / a_w;
     v_tex = a_tex;
     v_flags = a_flags;
     gl_Position = vec4(a_pos / u_size * 2.0 - 1.0, a_depth * 2.0 - 1.0, 1.0);
@@ -180,7 +185,7 @@ uniform int u_mask_set;
 uniform int u_quantize;
 uniform int u_filter;  // bilinear texture filtering (for 3D: flag 256)
 in vec3 v_color;
-noperspective in vec2 v_uv;
+noperspective in vec3 v_uvq;
 flat in uvec4 v_tex;
 flat in uint v_flags;
 out vec4 o_color;
@@ -210,6 +215,7 @@ uint texel(ivec2 uv) {
 }
 
 void main() {
+    vec2 v_uv = v_uvq.xy / v_uvq.z;
     if ((v_flags & 128u) != 0u) {  // upload copy
         uint t = fetch(int(floor(v_uv.x)), int(floor(v_uv.y)));
         o_color = color15(t);
@@ -516,6 +522,8 @@ void vertex_sources(const Vertex *const *v, int n, int32_t *out) {
 // After a primitive's vertices are looked up: a group for vertices without a projection.
 void finish_sources(int n) {
     prim_group = -1;
+    prim_other = false;
+    for (int i = 0; i < n; i++) prim_other |= prim_any[i] >= 0 && prim_recs[i] < 0;
     if (!recording) return;
     bool any = false;
     for (int i = 0; i < n; i++) any |= prim_recs[i] >= 0;
@@ -623,7 +631,7 @@ void layout_hud(const FrameList &list) {
 }
 
 void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int max_y, bool polygon) {
-    hud.active = hud.is_hud = false;
+    hud.active = hud.is_hud = hud.world = false;
     if (!recording || !recording->tick || !recording->has_area) return;
     bool projected = false, world = false;
     for (int i = 0; i < n; i++) {
@@ -633,11 +641,15 @@ void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int m
     if (world) {
         world_packets.push_back(gpu_packet_addr);
         recording->world_prims++;
+        hud.world = !prim_other;
     }
     if (projected || world) return;
     if (recording->tick->frame + 3 < gpu.frames || recording->tick->vertices.size() < 64) return;  // 2D screen
     uint32_t p = gpu_packet_addr;
-    if (polygon && p >= pool_min && p <= pool_max) return;  // world
+    if (polygon && p >= pool_min && p <= pool_max) {
+        hud.world = true;
+        return;
+    }
     int width = recording->area_x2 - recording->area_x1 + 1;
     if (max_x - min_x >= width * 9 / 10) return;
     hud.is_hud = true;
@@ -673,6 +685,7 @@ VertexSource source_for(int32_t rec, uint32_t key) {
     else if (rec == -1) s.group = prim_group;
     s.key = key;
     s.hud = hud.is_hud;
+    s.world = hud.world;
     return s;
 }
 
@@ -722,6 +735,7 @@ GLVertex make_vertex(const DrawState &s, float x, float y, float u, float v, int
     gv.tex_x = uint16_t(s.tex_x); gv.tex_y = uint16_t(s.tex_y);
     gv.clut_x = uint16_t(s.clut_x); gv.clut_y = uint16_t(s.clut_y);
     gv.flags = flags;
+    gv.w = 1;
     return gv;
 }
 
@@ -849,40 +863,15 @@ bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t 
         }
     }
     if (n < 3) return true;  // entirely behind the near plane
-    // The PS1 maps textures affinely: split the pieces in camera space until their depth varies
-    // little, so the mapping stays close to perspective (the game subdivides near polygons too).
+    // Drawn as one or two triangles, textured perspective-correct (the PS1's affine mapping
+    // smears badly this close). Splitting them instead would leave T-junctions along edges
+    // shared with polygons drawn normally, which crack.
     static std::vector<Point> pts;
     static std::vector<std::array<int, 3>> tris;
     pts.assign(out, out + n);
     tris.clear();
-    auto midpoint = [](const Point &a, const Point &b) {
-        Point m = a;
-        m.corner = -1;
-        m.p.x = (a.p.x + b.p.x) * 0.5f; m.p.y = (a.p.y + b.p.y) * 0.5f; m.p.z = (a.p.z + b.p.z) * 0.5f;
-        for (int k = 0; k < 3; k++) m.p.v[k] = int16_t((a.p.v[k] + b.p.v[k]) / 2);
-        m.u = (a.u + b.u) * 0.5f; m.v = (a.v + b.v) * 0.5f;
-        m.r = (a.r + b.r) * 0.5f; m.g = (a.g + b.g) * 0.5f; m.b = (a.b + b.b) * 0.5f;
-        return m;
-    };
-    static std::vector<int> owner;  // the piece (0 or 1) a split point belongs to
-    owner.assign(pts.size(), -1);
-    std::function<void(int, int, int, int, int)> split = [&](int a, int b, int c, int piece, int depth) {
-        float z0 = std::min({pts[a].p.z, pts[b].p.z, pts[c].p.z}), z1 = std::max({pts[a].p.z, pts[b].p.z, pts[c].p.z});
-        if (depth == 0 || z1 < z0 * 1.25f) {
-            tris.push_back({a, b, c});
-            return;
-        }
-        int ab = int(pts.size()); pts.push_back(midpoint(pts[a], pts[b]));
-        int bc = int(pts.size()); pts.push_back(midpoint(pts[b], pts[c]));
-        int ca = int(pts.size()); pts.push_back(midpoint(pts[c], pts[a]));
-        owner.resize(pts.size(), piece);
-        split(a, ab, ca, piece, depth - 1);
-        split(ab, b, bc, piece, depth - 1);
-        split(ca, bc, c, piece, depth - 1);
-        split(ab, bc, ca, piece, depth - 1);
-    };
-    split(0, 1, 2, 0, 4);
-    if (n == 4) split(0, 2, 3, 1, 4);
+    tris.push_back({0, 1, 2});
+    if (n == 4) tris.push_back({0, 2, 3});
     // The drawing offset: submitted coordinates are the packet's plus the offset.
     float ox = float(vs[0]->x - int16_t(vs[0]->key & 0xFFFF)), oy = float(vs[0]->y - int16_t(vs[0]->key >> 16));
     int32_t first = int32_t(recording->near.size());
@@ -894,8 +883,8 @@ bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t 
     ex = sx;
     ey = sy;
     // Without sub-pixel precision, input vertices the GTE projected properly keep its (integer)
-    // position, so edges shared with triangles drawn normally line up; the difference is spread over the rest by screen-space
-    // barycentric weights (along an edge, by the position on it).
+    // position, so edges shared with triangles drawn normally line up. (Points on the near plane
+    // are on edges reaching behind the camera, which only other near-clipped triangles share.)
     float cx[4] = {}, cy[4] = {};
     for (int i = 0; i < n; i++)
         if (!config.subpixel && pts[i].corner >= 0 && pts[i].p.z >= pts[i].p.h * 0.5f) {
@@ -903,18 +892,6 @@ bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t 
             cx[i] = float(int16_t(v->key & 0xFFFF)) - sx[i];
             cy[i] = float(int16_t(v->key >> 16)) - sy[i];
         }
-    for (size_t i = n; i < pts.size(); i++) {
-        static const int pieces[2][3] = {{0, 1, 2}, {0, 2, 3}};
-        const int *k = pieces[owner[i]];
-        float x0 = sx[k[0]], y0 = sy[k[0]], x1 = sx[k[1]], y1 = sy[k[1]], x2 = sx[k[2]], y2 = sy[k[2]];
-        float d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
-        if (std::abs(d) < 1e-6f) continue;
-        float w0 = ((y1 - y2) * (sx[i] - x2) + (x2 - x1) * (sy[i] - y2)) / d;
-        float w1 = ((y2 - y0) * (sx[i] - x2) + (x0 - x2) * (sy[i] - y2)) / d;
-        float w2 = 1 - w0 - w1;
-        sx[i] += w0 * cx[k[0]] + w1 * cx[k[1]] + w2 * cx[k[2]];
-        sy[i] += w0 * cy[k[0]] + w1 * cy[k[1]] + w2 * cy[k[2]];
-    }
     for (int i = 0; i < n; i++) {
         sx[i] += cx[i];
         sy[i] += cy[i];
@@ -934,6 +911,7 @@ bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t 
                 const Point &q = pts[i];
                 batch.push_back(make_vertex(s, sx[i] + ox, sy[i] + oy, q.u, q.v, int(std::lround(q.r)),
                                             int(std::lround(q.g)), int(std::lround(q.b)), f));
+                batch.back().w = q.p.z;
                 VertexSource vs_;
                 vs_.near = first + i;
                 if (depth) {
@@ -964,7 +942,7 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
               std::max({a.y, b.y, c.y}), true);
     bool dither = s.dither && (s.shaded || (s.textured && !s.raw));
     if (!hud.is_hud && near_triangle(s, vs, src, dither)) {
-        hud.active = hud.is_hud = false;
+        hud.active = hud.is_hud = hud.world = false;
         return;
     }
     float px[3], py[3];
@@ -990,7 +968,7 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
         }
     });
     prim_depth_mode = 0;
-    hud.active = hud.is_hud = false;
+    hud.active = hud.is_hud = hud.world = false;
 }
 
 void line(const DrawState &s, const Vertex &a, const Vertex &b) {
@@ -1017,7 +995,7 @@ void line(const DrawState &s, const Vertex &a, const Vertex &b) {
         GLVertex p3 = make_vertex(s, bx + ex + nx, by + ey + ny, 0, 0, b.r, b.g, b.b, f);
         for (const GLVertex *v : {&p0, &p1, &p2, &p1, &p3, &p2}) batch.push_back(*v);
     });
-    hud.active = hud.is_hud = false;
+    hud.active = hud.is_hud = hud.world = false;
 }
 
 void rect(const DrawState &s, const Vertex &base, int w, int h) {
@@ -1038,7 +1016,7 @@ void rect(const DrawState &s, const Vertex &base, int w, int h) {
                  p3 = vx(x1, y1, u0 + w, v0 + h);
         for (const GLVertex *v : {&p0, &p1, &p2, &p1, &p3, &p2}) batch.push_back(*v);
     });
-    hud.active = hud.is_hud = false;
+    hud.active = hud.is_hud = hud.world = false;
 }
 
 void fill(int x, int y, int w, int h, uint32_t color) {
@@ -1222,6 +1200,8 @@ bool gl_renderer_init(int scale) {
     glVertexAttribIPointer(4, 1, GL_UNSIGNED_SHORT, sizeof(GLVertex), off(offsetof(GLVertex, flags)));
     glEnableVertexAttribArray(5);
     glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(GLVertex), off(offsetof(GLVertex, depth)));
+    glEnableVertexAttribArray(6);
+    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(GLVertex), off(offsetof(GLVertex, w)));
 
     // Everything currently in VRAM must be uploaded before the first textured draw.
     for (auto &row : dirty) std::fill(std::begin(row), std::end(row), true);
@@ -1289,9 +1269,9 @@ void gl_renderer_interpolate(double vblank_time) {
         log("interp: sources none %llu ambiguous %llu other %llu matched %llu", (unsigned long long)source_stats[0],
             (unsigned long long)source_stats[1], (unsigned long long)source_stats[2], (unsigned long long)source_stats[3]);
         memset(source_stats, 0, sizeof source_stats);
-        log("interp: t=%.2f tick %llu alpha %.2f ok %d: %zu vertices, %zu matched, %zu by group, %zu projections, "
-            "%zu transforms, %zu moving",
-            vblank_time, (unsigned long long)list->tick->seq, alpha, ok, list->sources.size(), rec, group,
+        log("interp: t=%.2f tick %llu alpha %.2f look %.2f,%.2f ok %d: %zu vertices, %zu matched, %zu by group, "
+            "%zu projections, %zu transforms, %zu moving",
+            vblank_time, (unsigned long long)list->tick->seq, alpha, yaw, pitch, ok, list->sources.size(), rec, group,
             list->tick->vertices.size(), list->tick->groups.size(), ok ? motion.objects.size() : 0);
     }
 
@@ -1314,19 +1294,100 @@ void gl_renderer_interpolate(double vblank_time) {
                 q[r] = motion.a[r][0] * p.x + motion.a[r][1] * p.y + motion.a[r][2] * p.z + (p.translated ? motion.b[r] : 0);
         }
     };
+    auto turn = [&](double q[3]) {
+        if (!motion.turned) return;
+        double t[3];
+        for (int r = 0; r < 3; r++) t[r] = motion.look[r][0] * q[0] + motion.look[r][1] * q[1] + motion.look[r][2] * q[2];
+        memcpy(q, t, sizeof t);
+    };
+    // A world vertex's projection parameters, for points without a projection of their own.
+    const InterpVertex *view = nullptr;
+    for (const InterpVertex &p : pv)
+        if (p.h == float(config.world_h)) { view = &p; break; }
     for (size_t i = 0; i < pv.size(); i++) {
         const InterpVertex &p = pv[i];
         if (!ok || p.h != float(config.world_h)) continue;
         double q[3];
         move(p, q);
+        turn(q);
+        // Projected as near-clipped triangles project (so points they share stay together),
+        // unless the GTE's divide saturated where it was drawn.
+        auto project = p.z >= p.h * 0.5f ? project_exact : interp_project;
         float x0, y0, x1, y1;
-        interp_project(p, p.x, p.y, p.z, x0, y0);
-        interp_project(p, q[0], q[1], q[2], x1, y1);
+        project(p, p.x, p.y, p.z, x0, y0);
+        project(p, q[0], q[1], q[2], x1, y1);
         dx[i] = x1 - x0;
         dy[i] = y1 - y0;
         qz[i] = float(q[2]);
         valid[i] = 1;
     }
+    // A point without a projection: where it is in camera space, from its primitive's projected
+    // vertices (depth interpolated as 1/z across the polygon, which is linear on screen), moved
+    // like them. Without any, as a direction: turning the camera moves it the same at any depth.
+    // Points on a moving object, or next to points the GTE couldn't project properly, move with
+    // the primitive's vertices on average.
+    auto unprojected_motion = [&](const VertexSource &s, float &mx, float &my) {
+        mx = my = 0;
+        if (!ok) return;
+        int32_t r[4];
+        int n = 0;
+        bool object = false;
+        if (s.group >= 0)
+            for (int32_t k : list->groups[s.group])
+                if (k >= 0 && valid[k]) {
+                    r[n++] = k;
+                    const InterpVertex &p = pv[k];
+                    object |= p.group < int32_t(motion.group_object.size()) && motion.group_object[p.group] >= 0;
+                    object |= p.z < p.h * 0.5f;  // its drawn position isn't where it projects
+                }
+        if (object || !view) {
+            for (int i = 0; i < n; i++) { mx += dx[r[i]]; my += dy[r[i]]; }
+            if (n) { mx /= float(n); my /= float(n); }
+            return;
+        }
+        const InterpVertex &v = n ? pv[r[0]] : *view;
+        double gx = int16_t(s.key & 0xFFFF), gy = int16_t(s.key >> 16);
+        auto screen = [&](int32_t k, double &x, double &y) {
+            x = v.ofx + v.h * v.kx * pv[k].x / pv[k].z;
+            y = v.ofy + v.h * v.ky * pv[k].y / pv[k].z;
+        };
+        double inv_z = 0;
+        bool translated = n > 0 && pv[r[0]].translated;  // false: only the camera's turn
+        if (n >= 3) {
+            double x[3], y[3];
+            for (int i = 0; i < 3; i++) screen(r[i], x[i], y[i]);
+            double d = (y[1] - y[2]) * (x[0] - x[2]) + (x[2] - x[1]) * (y[0] - y[2]);
+            if (std::abs(d) > 1e-3) {
+                double w0 = ((y[1] - y[2]) * (gx - x[2]) + (x[2] - x[1]) * (gy - y[2])) / d;
+                double w1 = ((y[2] - y[0]) * (gx - x[2]) + (x[0] - x[2]) * (gy - y[2])) / d;
+                inv_z = w0 / pv[r[0]].z + w1 / pv[r[1]].z + (1 - w0 - w1) / pv[r[2]].z;
+            } else {
+                n = 2;
+            }
+        }
+        if (n == 2) {
+            double x[2], y[2];
+            for (int i = 0; i < 2; i++) screen(r[i], x[i], y[i]);
+            double ex = x[1] - x[0], ey = y[1] - y[0], len = ex * ex + ey * ey;
+            double t = len > 1e-6 ? std::clamp(((gx - x[0]) * ex + (gy - y[0]) * ey) / len, 0.0, 1.0) : 0.5;
+            inv_z = (1 - t) / pv[r[0]].z + t / pv[r[1]].z;
+        } else if (n == 1) {
+            inv_z = 1 / pv[r[0]].z;
+        }
+        double z = inv_z > 1e-6 ? 1 / inv_z : 0;
+        if (z <= 0 || z > 1e6) { z = 1; translated = false; }
+        double p[3] = {(gx - v.ofx) * z / (v.kx * v.h), (gy - v.ofy) * z / (v.ky * v.h), z}, q[3];
+        for (int i = 0; i < 3; i++)
+            q[i] = motion.a[i][0] * p[0] + motion.a[i][1] * p[1] + motion.a[i][2] * p[2] + (translated ? motion.b[i] : 0);
+        turn(q);
+        if (q[2] < 1) {
+            for (int i = 0; i < n; i++) { mx += dx[r[i]]; my += dy[r[i]]; }
+            if (n) { mx /= float(n); my /= float(n); }
+            return;
+        }
+        mx = float(v.ofx + v.h * v.kx * q[0] / q[2] - gx);
+        my = float(v.ofy + v.h * v.ky * q[1] / q[2] - gy);
+    };
     // A screen point resolved to a projection in one primitive moves the same way in all of them
     // (with several candidates, a primitive may not have been able to pick one).
     static std::unordered_map<uint32_t, int32_t> point_rec;
@@ -1345,10 +1406,12 @@ void gl_renderer_interpolate(double vblank_time) {
             const FrameList::Near &nv = list->near[s.near];
             double q[3];
             move(nv.p, q);
+            turn(q);
             float x, y;
             project_exact(nv.p, q[0], q[1], q[2], x, y);
             moved[i].x = x + nv.ox;
             moved[i].y = y + nv.oy;
+            moved[i].w = float(std::max(q[2], 1.0));
             if (s.depth_bias >= 0) moved[i].depth = depth_of(float(q[2])) - s.depth_bias;
             continue;
         }
@@ -1362,16 +1425,13 @@ void gl_renderer_interpolate(double vblank_time) {
             mx = dx[rec];
             my = dy[rec];
             if (s.depth_bias >= 0) moved[i].depth = depth_of(qz[rec]) - s.depth_bias;
-        } else if (s.group >= 0) {
-            // No projection (a point the CPU computed, like a clipped edge): move with the
-            // primitive's other vertices, the same way wherever this point is used so neighbours
-            // don't crack apart.
+        } else if (s.group >= 0 || (s.world && ok)) {
+            // No projection (a point the CPU computed, like a clipped edge or a subdivided
+            // polygon's): moved the same way wherever this point is used, so neighbours don't
+            // crack apart.
             auto [it, added] = unprojected.try_emplace(s.key);
             if (added) {
-                int n = 0;
-                for (int32_t r : list->groups[s.group])
-                    if (r >= 0 && valid[r]) { mx += dx[r]; my += dy[r]; n++; }
-                if (n) { mx /= float(n); my /= float(n); }
+                unprojected_motion(s, mx, my);
                 it->second = {mx, my};
             }
             mx = it->second.first;

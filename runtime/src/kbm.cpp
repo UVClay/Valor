@@ -178,6 +178,16 @@ bool kbm_event(const SDL_Event &e) {
     return captured;
 }
 
+// Scripted mouse motion arrives like a real mouse's (checked whenever the mouse is read).
+static void take_scripted_mouse() {
+    for (auto &m : config.mouse_moves)
+        if (!m.taken[0] && gpu.frames >= m.frame) {
+            mouse_dx += m.dx;
+            mouse_dy += m.dy;
+            m.taken[0] = true;
+        }
+}
+
 void kbm_update(SDL_Window *window) {
     bool want = config.mouse_look && playing() && !config.hidden &&
                 (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS);
@@ -191,13 +201,7 @@ void kbm_update(SDL_Window *window) {
 
 uint16_t kbm_buttons() {
     update_taps();
-    // Scripted mouse motion arrives like a real mouse's.
-    for (auto &m : config.mouse_moves)
-        if (!m.taken[0] && gpu.frames >= m.frame) {
-            mouse_dx += m.dx;
-            mouse_dy += m.dy;
-            m.taken[0] = true;
-        }
+    take_scripted_mouse();
     uint16_t pressed = 0;
     if (playing()) {
         for (int c = 0; c < KC_COUNT; c++) {
@@ -274,13 +278,23 @@ double kbm_take_pitch() {
     return d;
 }
 
+static double peak_yaw;  // recent turn per tick (degrees), decaying
+
 void kbm_tick_look(double &yaw, double &pitch) {
     yaw = tick_yaw;
     pitch = tick_pitch;
     tick_yaw = tick_pitch = 0;
+    peak_yaw = std::max(std::abs(yaw), peak_yaw * 0.85);
+}
+
+double kbm_look_reach() {
+    // A frame shows the rest of this tick's turn, the next tick's and what the game hasn't
+    // taken yet: up to about three ticks' worth.
+    return std::min(peak_yaw * 3, 60.0);
 }
 
 void kbm_pending_look(double &yaw, double &pitch) {
+    hw::take_scripted_mouse();
     bool on = playing();
     yaw = on ? (config.mouse_look ? turn_degrees(mouse_dx) : 0) + gyro_yaw : 0;
     pitch = on ? (config.mouse_look ? pitch_degrees(mouse_dy) : 0) + gyro_pitch : 0;

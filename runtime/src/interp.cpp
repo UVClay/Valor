@@ -355,7 +355,15 @@ bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, d
         axis_rotation(ra[0][1] / n, ra[1][1] / n, ra[2][1] / n, -yaw * M_PI / 180, ey);
         axis_rotation(1, 0, 0, -pitch * M_PI / 180, ep);
         mul(ep, ey, e);
-        mul(e, ra, ra);
+        // Applied after Ma = S * Ra: S * E * Ra = (S * E * S^-1) * Ma.
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+                out.look[i][j] = e[i][j] * (s0[i] + (s1[i] - s0[i]) * alpha) / (s0[j] + (s1[j] - s0[j]) * alpha);
+        out.turned = true;
+    } else {
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++) out.look[i][j] = i == j;
+        out.turned = false;
     }
     for (int i = 0; i < 3; i++)
         for (int j = 0; j < 3; j++) ma[i][j] = (s0[i] + (s1[i] - s0[i]) * alpha) * ra[i][j];

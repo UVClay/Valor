@@ -100,6 +100,15 @@ extern "C" void hook_view_frustum(Cpu *c, RecompFn body) {
     constexpr double MARGIN = 1.1;
     uint32_t w = r32(cam + 0x30), h = r32(cam + 0x34);
     double sw = MARGIN / kx, sh = MARGIN / ky;
+    // Mouse look turns the view ahead of the game (gpu_gl.cpp): draw what that can show at the
+    // sides too. (Not up and down: a taller rectangle loses nearby walls, and pitch turns slowly.)
+    double reach = kbm_look_reach();
+    int32_t dist = int32_t(r32(cam + 0x3C));
+    if (reach > 0 && dist > 0 && int32_t(w) > 0) {
+        double t = double(int32_t(w)) * sw / (2 * 65536.0 * dist);  // tan of the half angle
+        double angle = std::min(std::atan(t) + reach * M_PI / 180, 70 * M_PI / 180);
+        sw *= std::tan(angle) / t;
+    }
     psx_w32(c, cam + 0x30, uint32_t(int32_t(std::min(double(int32_t(w)) * sw, 2.0e9))));
     psx_w32(c, cam + 0x34, uint32_t(int32_t(std::min(double(int32_t(h)) * sh, 2.0e9))));
     body(c);
@@ -145,8 +154,18 @@ extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
                  v[0][2] * (v[1][0] * v[2][1] - v[1][1] * v[2][0]);
     if (det <= 0) return;
     uint32_t hi = std::max({sz[0], sz[1], sz[2]}), lo = std::min({sz[0], sz[1], sz[2]});
+    uint32_t otz = (hi * 3 + lo) >> 4;
     psx_w16(c, c->r[19] + 0x2A, sz[2]);
     psx_w32(c, c->r[19] + 0x34, gte_mfc2(c, 14));
-    psx_w32(c, c->r[19] + 0x3A8, (hi * 3 + lo) >> 4);
-    c->r[2] = 1;
+    psx_w32(c, c->r[19] + 0x3A8, otz);
+    // Subdivided like the test does for near polygons (a mask of the vertices closer than
+    // [0x3A4] * 4, doubled), so edges shared with subdivided neighbours split at the same points
+    // (a whole edge against split ones cracks open at high resolution).
+    uint32_t limit = r32(c->r[19] + 0x3A4) << 2, mask = 0;
+    if (limit) {
+        psx_w16(c, c->r[19] + 0x42, otz);
+        for (int k = 0; k < 3; k++)
+            if (sz[k] < limit) mask |= 1u << k;
+    }
+    c->r[2] = mask ? mask << 1 : 1;
 }

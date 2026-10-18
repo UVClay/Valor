@@ -82,19 +82,24 @@ widescreen and FOV). Two things it relies on break with a wider view:
 
 - **Frustum.** `0x8008D0CC` builds the frustum planes used to cull rooms and objects from the
   camera's screen extents. A hook widens those extents to the actual projection, with 10% extra
-  for interpolated frames turning toward the next tick.
+  for interpolated frames turning toward the next tick. While the mouse turns the view, the sides
+  widen further by up to three ticks of the recent turn speed, the most mouse look can show
+  ahead of the game (capped at 70° each side). Widening the top and bottom further makes nearby
+  walls disappear, so they stay as they are.
 - **Near clipping.** The GTE can't project points behind the camera, and its divide saturates
   for points nearer than H/2. The world renderer (`0x80010B60`) only subdivides near polygons
   once and drops the ones reaching behind the camera. On the PS1 that gap was always outside the
   narrow view. A wider one shows it at the edges as holes in nearby walls, through which enemies
   could be seen.
   - The game side: a hook on the polygon test (`0x80011214`) lets such polygons through when they
-    face the camera, checked in camera space.
+    face the camera, checked in camera space. They are subdivided the way the test subdivides
+    near polygons, so their edges split at the same points as their neighbours' (a whole edge
+    against split ones leaves T-junctions, which crack at high resolution).
   - The OpenGL renderer side: it redraws every world triangle with a vertex that near from the
-    recorded camera-space vertices. It clips the triangle at a near plane, splits it until each
-    piece's depth range is small (texture mapping stays affine, so this keeps it close to
-    perspective) and projects it exactly. Vertices the GTE projected properly keep its integer
-    position, so shared edges line up.
+    recorded camera-space vertices. It clips the triangle at a near plane, projects it exactly
+    and textures it perspective-correct (u/w, v/w and 1/w interpolated on screen; everything
+    else keeps w = 1 and the PS1's affine mapping). Splitting it instead would add T-junctions.
+    Vertices the GTE projected properly keep its integer position, so shared edges line up.
 
 ### Frame interpolation
 
@@ -118,12 +123,16 @@ The game logic runs at a fixed 30 Hz (RECON.md, Frame timing). For higher frame 
 - **What stays put.** The weapon (projected with another H), the HUD (never projected) and the
   compass (a HUD projection) are left in place. Camera cuts larger than 90° or 1500 units are not
   interpolated.
-- **Re-projection model.** Re-projection models the GTE exactly: the divide saturates for
-  z < h/2, IR saturates, and SXY is clamped. Points near the camera therefore move the way the
-  hardware would draw them.
-- **Unprojected points.** Points the CPU computed itself (clipped edges) move with their
-  primitive's projected vertices, the same way in every primitive that shares them, so neighbours
-  don't crack apart.
+- **Re-projection model.** A point moves by the difference between its exact projection now and
+  where it was, the same way a near-clipped triangle's vertex moves, so points they share stay
+  together. Where the GTE's divide saturated (z < h/2), the difference is taken with the GTE's
+  own projection (saturation and clamping) instead.
+- **Unprojected points.** Points the CPU computed itself (clipped edges, subdivided polygons)
+  are placed in camera space from their primitive's projected vertices: depth is interpolated
+  as 1/z, which is linear on screen. They then move like a projected point. Without any projected
+  vertex, a point in the world moves as a direction, which the camera's turns move exactly. Each
+  screen point moves the same way in every primitive that uses it, so neighbours don't crack
+  apart.
 - **Widescreen HUD.** The same matching also finds the HUD. In a 3D frame, a primitive with no
   projected vertex that isn't full-width is HUD if it is a sprite or line, or a polygon from
   outside the game's primitive pool (where the frame's world packets are). It is drawn squeezed
@@ -135,7 +144,10 @@ The game logic runs at a fixed 30 Hz (RECON.md, Frame timing). For higher frame 
   lag behind the mouse by up to two ticks. Instead, each tick records the turn the game took
   (`kbm.cpp`), and the displayed camera is rotated further by three parts: the rest of the current
   tick's turn, all of the next tick's turn, and motion the game hasn't read yet. When the game
-  catches up, the view doesn't move, so nothing jumps. Pitch stays inside the game's limit.
+  catches up, the view doesn't move, so nothing jumps. Pitch stays inside the game's limit. The
+  turn is applied to every point in camera space after the interpolated motion, the same way for
+  projected, near-clipped and unprojected points; anything else would let shared points drift
+  apart as the mouse moves.
   Each tick also checks that the camera really turned by the look the game took. In aim mode the
   mouse moves the game's reticle, and cutscenes ignore it, so there the early look is off.
 - **Presentation.** Frames are presented on their own clock at the display's refresh rate (or
