@@ -114,7 +114,7 @@ void settings_save() {
     f << "stick_pitch_speed = " << config.stick_pitch_speed << "\n";
     f << "gyro = " << config.gyro << "  # gyro aiming: 0 off, 1 always, 2 in aim mode\n";
     f << "gyro_sensitivity = " << config.gyro_sensitivity << "\n";
-    f << "# Key bindings: SDL key names, Mouse 1-7, Wheel Up/Down, None\n";
+    f << "# Key bindings: SDL key names, Left/Right/Middle Mouse, Mouse 4-7, Wheel Up/Down, None\n";
     for (int c = 0; c < hw::KC_COUNT; c++)
         f << hw::kbm_control_key(c) << " = " << hw::kbm_input_name(hw::kbm_bindings[c]) << "\n";
 }

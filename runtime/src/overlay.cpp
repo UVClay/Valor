@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #include "audio.h"
@@ -84,15 +86,22 @@ void menu_toggle() {
 namespace {
 
 // The settings window. Changes apply immediately.
+// Testing (--menu-screenshot): VALOR_MENU_TAB picks the tab shown.
+ImGuiTabItemFlags tab_flags(const char *name) {
+    static const char *tab = getenv("VALOR_MENU_TAB");
+    return tab && !strcmp(tab, name) ? ImGuiTabItemFlags_SetSelected : 0;
+}
+
 void draw_menu() {
     ImGuiIO &io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing,
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always,
                             ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(io.DisplaySize.x * 0.95f, io.DisplaySize.y * 0.9f));
     ImGui::SetNextWindowBgAlpha(0.92f);
     bool open = true;
     ImGui::Begin("Settings", &open, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
     if (ImGui::BeginTabBar("tabs")) {
-        if (ImGui::BeginTabItem("Video")) {
+        if (ImGui::BeginTabItem("Video", nullptr, tab_flags("Video"))) {
             static const char *scales[] = {"Fit display", "1x (original, software)", "2x", "3x", "4x", "5x", "6x", "7x", "8x"};
             int scale = std::clamp(config.scale, 0, 8);
             if (ImGui::Combo("Resolution", &scale, scales, IM_ARRAYSIZE(scales))) {
@@ -141,12 +150,12 @@ void draw_menu() {
             ImGui::Checkbox("Pause in the background", &config.pause_unfocused);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Audio")) {
+        if (ImGui::BeginTabItem("Audio", nullptr, tab_flags("Audio"))) {
             int volume = config.volume;
             if (ImGui::SliderInt("Volume", &volume, 0, 200, "%d%%")) audio_adjust_volume(volume - config.volume);
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Controls")) {
+        if (ImGui::BeginTabItem("Controls", nullptr, tab_flags("Controls"))) {
             ImGui::Checkbox("Square stick range (DualShock-like)", &config.square_sticks);
             ImGui::TextDisabled("Full deflection reaches both axes on diagonals, as on a DualShock.\n"
                                 "Without it, angling a round-gated stick off-axis loses most of the speed.");
@@ -176,22 +185,22 @@ void draw_menu() {
                 config.mouse_sensitivity = sens;
             ImGui::Checkbox("Invert mouse", &config.invert_mouse);
             ImGui::TextUnformatted("Keys (missions; menus use arrows/WASD, Enter, Backspace)");
-            if (ImGui::BeginTable("binds", 2, ImGuiTableFlags_SizingStretchProp)) {
+            if (ImGui::BeginTable("binds", 4, ImGuiTableFlags_SizingFixedFit)) {
                 for (int c = 0; c < KC_COUNT; c++) {
-                    ImGui::TableNextRow();
+                    if (c % 2 == 0) ImGui::TableNextRow();
                     ImGui::TableNextColumn();
                     ImGui::TextUnformatted(kbm_control_label(c));
                     ImGui::TableNextColumn();
                     std::string label = kbm_rebinding() == c ? "Press a key... (Esc cancels)" : kbm_input_name(kbm_bindings[c]);
                     label += "##bind" + std::to_string(c);
-                    if (ImGui::Button(label.c_str(), ImVec2(-1, 0))) kbm_begin_rebind(c);
+                    if (ImGui::Button(label.c_str(), ImVec2(ImGui::GetFontSize() * 14, 0))) kbm_begin_rebind(c);
                 }
                 ImGui::EndTable();
             }
             if (ImGui::Button("Default keys")) kbm_reset_bindings();
             ImGui::EndTabItem();
         }
-        if (ImGui::BeginTabItem("Interface")) {
+        if (ImGui::BeginTabItem("Interface", nullptr, tab_flags("Interface"))) {
             ImGui::Checkbox("Widescreen HUD (keep its proportions)", &config.widescreen_hud);
             if (config.widescreen_hud) ImGui::Checkbox("HUD at the screen's edges", &config.hud_edges);
             ImGui::Checkbox("Crosshair", &config.crosshair);

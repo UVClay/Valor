@@ -108,6 +108,9 @@ const char *kbm_control_key(int control) { return controls[control].key; }
 std::string kbm_input_name(int input) {
     if (input == KBM_WHEEL_UP) return "Wheel Up";
     if (input == KBM_WHEEL_DOWN) return "Wheel Down";
+    if (input == KBM_MOUSE + SDL_BUTTON_LEFT) return "Left Mouse";
+    if (input == KBM_MOUSE + SDL_BUTTON_RIGHT) return "Right Mouse";
+    if (input == KBM_MOUSE + SDL_BUTTON_MIDDLE) return "Middle Mouse";
     if (input > KBM_MOUSE && input < KBM_MOUSE + 8) return "Mouse " + std::to_string(input - KBM_MOUSE);
     if (input > 0 && input < SDL_SCANCODE_COUNT) {
         const char *n = SDL_GetScancodeName(SDL_Scancode(input));
@@ -120,6 +123,9 @@ int kbm_parse_input(const std::string &name) {
     if (name == "None") return 0;
     if (name == "Wheel Up") return KBM_WHEEL_UP;
     if (name == "Wheel Down") return KBM_WHEEL_DOWN;
+    if (name == "Left Mouse") return KBM_MOUSE + SDL_BUTTON_LEFT;
+    if (name == "Right Mouse") return KBM_MOUSE + SDL_BUTTON_RIGHT;
+    if (name == "Middle Mouse") return KBM_MOUSE + SDL_BUTTON_MIDDLE;
     if (name.rfind("Mouse ", 0) == 0) {
         int b = atoi(name.c_str() + 6);
         return b >= 1 && b < 8 ? KBM_MOUSE + b : -1;

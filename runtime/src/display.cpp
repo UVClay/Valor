@@ -428,8 +428,7 @@ void gpu_present() {
         // Testing: draw the menu once over this frame and save the window.
         menu_toggle();
         present_frame();
-        overlay_render();
-        overlay_render();  // ImGui lays windows out on the first frame they appear
+        for (int i = 0; i < 4; i++) overlay_render();  // ImGui lays windows out over a few frames
         int ww, wh;
         SDL_GetWindowSizeInPixels(window, &ww, &wh);
         std::vector<uint32_t> px(size_t(ww) * wh), flipped(px.size());
