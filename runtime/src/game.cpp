@@ -235,16 +235,10 @@ extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
     psx_w16(c, c->r[19] + 0x2A, sz[2]);
     psx_w32(c, c->r[19] + 0x34, gte_mfc2(c, 14));
     psx_w32(c, c->r[19] + 0x3A8, otz);
-    // Subdivided like the test does for near polygons (a mask of the vertices closer than
-    // [0x3A4] * 4, doubled), so edges shared with subdivided neighbours split at the same points
-    // (a whole edge against split ones cracks open at high resolution).
-    uint32_t limit = r32(c->r[19] + 0x3A4) << 2, mask = 0;
-    if (limit) {
-        psx_w16(c, c->r[19] + 0x42, otz);
-        for (int k = 0; k < 3; k++)
-            if (sz[k] < limit) mask |= 1u << k;
-    }
-    c->r[2] = mask ? mask << 1 : 1;
+    // Drawn whole, not subdivided as the test does near polygons: the subdivision can't place the
+    // pieces behind the camera (the floor under the player went missing), and floods the
+    // primitive buffer with them (the weapon, drawn last, went missing too).
+    c->r[2] = 1;
 }
 
 void psx::game_drawn_reach(double &yaw, double &pitch) {

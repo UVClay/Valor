@@ -96,9 +96,9 @@ widescreen and FOV). Two things it relies on break with a wider view:
   narrow view. A wider one shows it at the edges as holes in nearby walls, through which enemies
   could be seen.
   - The game side: a hook on the polygon test (`0x80011214`) lets such polygons through when they
-    face the camera, checked in camera space. They are subdivided the way the test subdivides
-    near polygons, so their edges split at the same points as their neighbours' (a whole edge
-    against split ones leaves T-junctions, which crack at high resolution).
+    face the camera, checked in camera space. They are drawn whole: the game's subdivision can't
+    place pieces behind the camera (the floor under the player went missing) and fills the
+    primitive buffer with them (the weapon, drawn last, disappeared).
   - The OpenGL renderer side: it redraws every world triangle with a vertex that near from the
     recorded camera-space vertices. It clips the triangle at a near plane, projects it exactly
     and textures it perspective-correct (u/w, v/w and 1/w interpolated on screen; everything

@@ -1294,6 +1294,8 @@ void gl_renderer_interpolate(double vblank_time) {
         yaw += list->tick->look_yaw * (1 - alpha) + next->look_yaw;
         pitch += list->tick->look_pitch * (1 - alpha) + next->look_pitch;
     }
+    // Debugging: VALOR_INTERP_STILL shows every list as the game drew it (replays stay the same).
+    if (static bool still = getenv("VALOR_INTERP_STILL"); still) alpha = yaw = pitch = 0;
     bool ok = next && (alpha > 0 || yaw != 0 || pitch != 0) && interp_motion(*list->tick, *next, alpha, yaw, pitch, motion);
     if (!ok && !list->moved) return;  // the target already shows the list as drawn
     list->moved = ok;

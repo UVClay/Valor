@@ -57,21 +57,20 @@ Track *track(char kind) {
 void report(const char *what, uint64_t frame) {
     if (diverged) return;
     diverged = true;
-    log("replay: no longer the recorded game at vblank %llu (%s); frames after this may differ",
-        (unsigned long long)frame, what);
+    log("replay: the game differs from the recording from vblank %llu (%s): the controls follow in "
+        "the order it reads them, the frames shown at the recorded moments", (unsigned long long)frame, what);
 }
 
-// The next recorded event of a kind for this vblank, or null (the game read it more often than
-// recorded: it isn't the same game any more).
+// The next recorded event of a kind, in the order the game read them: a game changed since the
+// recording (its timing shifts with the work it does) still gets the same controls in the same
+// sequence, so a fix can be compared on the same play. Null once they run out.
 const Event *take(Track &t, const char *what) {
-    uint64_t now = hw::gpu.frames;
-    while (t.next < t.events.size() && t.events[t.next].frame < now) {
-        report(what, t.events[t.next].frame);  // recorded, never read
-        t.next++;
+    if (t.next >= t.events.size()) {
+        if (hw::gpu.frames < last_frame) report(what, hw::gpu.frames);
+        return nullptr;
     }
-    if (t.next < t.events.size() && t.events[t.next].frame == now) return &t.events[t.next++];
-    report(what, now);
-    return nullptr;
+    if (t.events[t.next].frame != hw::gpu.frames) report(what, hw::gpu.frames);
+    return &t.events[t.next++];
 }
 
 void write(char kind, int n, const double *v) {

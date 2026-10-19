@@ -47,6 +47,11 @@ and full playthroughs of two missions.
 - [x] Optional sub-pixel vertex precision (PGXP-style, Video tab, off by default): projected vertices are
       drawn where they really project, from the camera-space positions recorded for interpolation
 
+## Known issues (testing tools)
+
+- `--warp 1:3` starts the sewer level with only a Garand and no ammunition: the warp skips
+  whatever sets up the loadout when the level is reached normally. Only matters for testing.
+
 ## Later
 
 - Local split-screen multiplayer (second controller in port 2)
