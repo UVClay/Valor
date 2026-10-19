@@ -17,6 +17,7 @@
 #include "hw.h"
 #include "input.h"
 #include "overlay.h"
+#include "tape.h"
 
 namespace psx::hw {
 
@@ -231,9 +232,11 @@ using namespace hw;
 
 void kbm_movement(double &forward, double &strafe) {
     forward = strafe = 0;
-    if (!playing()) return;
-    forward = double(control_down(KC_FORWARD)) - double(control_down(KC_BACK));
-    strafe = double(control_down(KC_RIGHT)) - double(control_down(KC_LEFT));
+    if (playing()) {
+        forward = double(control_down(KC_FORWARD)) - double(control_down(KC_BACK));
+        strafe = double(control_down(KC_RIGHT)) - double(control_down(KC_LEFT));
+    }
+    tape_movement(forward, strafe);
 }
 
 static double tick_yaw, tick_pitch;
@@ -263,7 +266,7 @@ void kbm_gyro(const float rate[3], uint64_t timestamp_ns) {
 double kbm_take_turn() {
     double counts = mouse_dx;
     mouse_dx = 0;
-    double d = playing() ? turn_degrees(counts) + gyro_yaw : 0;
+    double d = tape_turn(playing() ? turn_degrees(counts) + gyro_yaw : 0);
     gyro_yaw = 0;
     tick_yaw += d;
     return d;
@@ -272,7 +275,7 @@ double kbm_take_turn() {
 double kbm_take_pitch() {
     double counts = mouse_dy;
     mouse_dy = 0;
-    double d = playing() ? pitch_degrees(counts) + gyro_pitch : 0;
+    double d = tape_pitch(playing() ? pitch_degrees(counts) + gyro_pitch : 0);
     gyro_pitch = 0;
     tick_pitch += d;
     return d;
@@ -300,6 +303,7 @@ void kbm_pending_look(double &yaw, double &pitch) {
     bool on = playing();
     yaw = on ? (config.mouse_look ? turn_degrees(mouse_dx) : 0) + gyro_yaw : 0;
     pitch = on ? (config.mouse_look ? pitch_degrees(mouse_dy) : 0) + gyro_pitch : 0;
+    tape_pending_look(yaw, pitch);
 }
 
 }  // namespace psx

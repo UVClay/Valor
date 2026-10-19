@@ -24,6 +24,7 @@
 #include "overlay.h"
 #include "pad.h"
 #include "settings.h"
+#include "tape.h"
 
 using namespace psx::gl;
 
@@ -131,7 +132,12 @@ void write_png(const std::filesystem::path &path, const std::vector<uint32_t> &p
 bool handle_key(SDL_Keycode key, bool down) {
     switch (key) {
     case SDLK_TAB: fast_forward = down; return true;
-    case SDLK_F7: if (down) pad_toggle_analog(); return true;
+    case SDLK_F7:
+        if (down) {
+            pad_toggle_analog();
+            tape_analog_toggled();
+        }
+        return true;
     case SDLK_F3: if (down) overlay_cycle(); return true;
     case SDLK_F1: if (down) menu_toggle(); return true;
     case SDLK_ESCAPE:
@@ -225,6 +231,12 @@ void present_frame(double vblank_time = -1) {
 
     int ww, wh;
     SDL_GetWindowSizeInPixels(window, &ww, &wh);
+    if (vblank_time >= 0) {
+        static bool sized;
+        if (!sized) tape_window(ww, wh);
+        sized = true;
+        tape_presented(vblank_time);
+    }
     // 2D screens (FMVs, title cards) stay 4:3; 3D ones (the GTE is projecting) use the output
     // aspect. Switch back to 4:3 only after a moment without 3D to avoid flicker.
     static uint64_t last_projections, frames_without_3d = 1000;
@@ -258,6 +270,42 @@ void present_frame(double vblank_time = -1) {
 }
 
 }  // namespace
+
+// Replays: the window's image as a frame of the video stream (YUV4MPEG2, 4:4:4, BT.601).
+void video_frame() {
+    if (config.video.empty() || gpu.frames < config.video_from || gpu.frames > config.video_to) return;
+    static FILE *f;
+    static int vw, vh;
+    int ww, wh;
+    SDL_GetWindowSizeInPixels(window, &ww, &wh);
+    if (!f) {
+        f = fopen(config.video.c_str(), "wb");
+        if (!f) fatal("can't write %s", config.video.c_str());
+        vw = ww & ~1;
+        vh = wh & ~1;
+        fprintf(f, "YUV4MPEG2 W%d H%d F%d:1 Ip A1:1 C444\n", vw, vh, std::max(present_rate() > 0 ? int(present_rate()) : 60, 1));
+    }
+    if (ww < vw || wh < vh) return;
+    static std::vector<uint8_t> px, plane;
+    px.resize(size_t(ww) * wh * 4);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glReadPixels(0, 0, ww, wh, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    plane.resize(size_t(vw) * vh * 3);
+    uint8_t *y = plane.data(), *u = y + size_t(vw) * vh, *v = u + size_t(vw) * vh;
+    for (int r = 0; r < vh; r++) {
+        const uint8_t *s = px.data() + size_t(wh - 1 - r) * ww * 4;  // OpenGL rows are bottom-up
+        for (int c = 0; c < vw; c++, s += 4) {
+            int R = s[0], G = s[1], B = s[2];
+            size_t i = size_t(r) * vw + c;
+            y[i] = uint8_t((66 * R + 129 * G + 25 * B + 128) / 256 + 16);
+            u[i] = uint8_t((-38 * R - 74 * G + 112 * B + 128) / 256 + 128);
+            v[i] = uint8_t((112 * R - 94 * G - 18 * B + 128) / 256 + 128);
+        }
+    }
+    fputs("FRAME\n", f);
+    fwrite(plane.data(), 1, plane.size(), f);
+}
 
 // Frames per second to present with interpolation: the setting, or the display's refresh rate.
 double present_rate() {
@@ -374,6 +422,7 @@ void gpu_present() {
             write_png(config.screenshots / name, frame, frame_w, frame_h);
         }
     }
+    tape_vblank();
     if (headless) return;
 
     auto save_window = [](const char *name) {
@@ -389,6 +438,17 @@ void gpu_present() {
     };
 
     pump_events();
+    if (tape_replaying()) {
+        // The recorded frames, at their moments, as fast as they can be drawn.
+        if (!tape_replay_presents([](double t) {
+                present_frame(t);
+                overlay_render();
+                video_frame();
+            }))
+            throw Halt("replay finished");
+        overlay_frame_begin();
+        return;
+    }
     double vblank = double(gpu.frames);
     // With frame interpolation, frames are presented on their own clock (below).
     bool own_clock = interp_presenting() && use_gl_renderer && !fast_forward && present_rate() > 0;
@@ -555,7 +615,7 @@ uint16_t pad_buttons(int port) {
         if (SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 8000) pressed |= BTN_L2;
         if (SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000) pressed |= BTN_R2;
     }
-    return uint16_t(~pressed);
+    return tape_pad_buttons(uint16_t(~pressed));
 }
 
 PadSticks pad_sticks(int port) {
@@ -569,7 +629,8 @@ PadSticks pad_sticks(int port) {
                 *axes[st.axis] = st.value;
                 scripted = true;
             }
-    if (port != 0 || !gamepad || scripted) return s;
+    if (port != 0) return s;
+    if (!gamepad || scripted) return tape_pad_sticks(s);
     auto stick = [](SDL_GamepadAxis ax, SDL_GamepadAxis ay, uint8_t &out_x, uint8_t &out_y) {
         double x = std::max(-1.0, SDL_GetGamepadAxis(gamepad, ax) / 32767.0);
         double y = std::max(-1.0, SDL_GetGamepadAxis(gamepad, ay) / 32767.0);
@@ -584,7 +645,7 @@ PadSticks pad_sticks(int port) {
     };
     stick(SDL_GAMEPAD_AXIS_LEFTX, SDL_GAMEPAD_AXIS_LEFTY, s.lx, s.ly);
     stick(SDL_GAMEPAD_AXIS_RIGHTX, SDL_GAMEPAD_AXIS_RIGHTY, s.rx, s.ry);
-    return s;
+    return tape_pad_sticks(s);
 }
 
 void pad_rumble(int port, uint8_t small, uint8_t large) {

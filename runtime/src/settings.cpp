@@ -42,8 +42,10 @@ bool parse_aspect(const std::string &s, double &aspect) {
     return true;
 }
 
-void settings_load() {
-    std::ifstream f(FILE_PATH);
+void settings_load() { settings_load(FILE_PATH); }
+
+void settings_load(const std::filesystem::path &path) {
+    std::ifstream f(path);
     std::string line;
     while (std::getline(f, line)) {
         auto eq = line.find('=');
@@ -88,7 +90,11 @@ void settings_load() {
 void settings_save() {
     if (config.test_run) return;
     std::filesystem::create_directories(FILE_PATH.parent_path());
-    std::ofstream f(FILE_PATH);
+    settings_write(FILE_PATH);
+}
+
+void settings_write(const std::filesystem::path &path) {
+    std::ofstream f(path);
     f << "# Valor settings (also editable in game: F1)\n";
     f << "scale = " << config.scale << "  # 0 = fit the display, 1 = original software renderer\n";
     f << "aspect = " << aspect_name(config.aspect) << "\n";

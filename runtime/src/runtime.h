@@ -101,6 +101,10 @@ struct Config {
     // (--poke-on-call CALL:ADDR=VALUE), e.g. to pick the level the game loads.
     struct Poke { uint32_t call, addr, value; bool done; };
     std::vector<Poke> pokes;
+    // Replays (--replay DIR, tape.cpp): every presented frame is written to `video` as a
+    // YUV4MPEG2 stream (the play script pipes it into ffmpeg), for vblanks video_from..video_to.
+    std::filesystem::path video;
+    uint64_t video_from = 0, video_to = UINT64_MAX;
 };
 extern Config config;
 

@@ -98,6 +98,16 @@ also be given on the command line:
 - `./dev tools/monkey.sh [SEEDS] [MINUTES]` runs several random-input sessions from New Game.
 - `tools/warp.sh MISSION LEVEL [args]` starts a level directly (headless runs, scripting).
 
+## Recording a play session
+
+`./play --record recordings/NAME` (with `--warp` too, if you like) records what you play: the
+controls as the game read them, the moment of every frame shown, and the settings and memory card
+you started with. `./play --replay recordings/NAME --video build/NAME.mkv` plays it back
+(hidden, much faster than real time) into a video of every frame: `.mkv` is lossless,
+`.mp4` or `.webm` smaller (AV1). `--video-range FROM:TO` keeps only those vblanks. The video
+needs ffmpeg on the host. Don't change settings (F1) while recording: the replay uses the ones
+it started with. The replay checks it is still running the same game and says so if not.
+
 ## How it works
 
 The game's MIPS code (exe and its three overlays) and [OpenBIOS](third_party/nugget/openbios)

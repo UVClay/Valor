@@ -12,6 +12,7 @@
 #include "memcard.h"
 #include "settings.h"
 #include "runtime.h"
+#include "tape.h"
 
 using namespace psx;
 
@@ -41,12 +42,18 @@ static void usage(const char *argv0) {
             "       [--kbm FRAME:CONTROL[:DURATION]]... [--mouse FRAME:DX,DY]...\n"
             "       [--stick FRAME:lx|ly|rx|ry=VALUE[:DURATION]]... [--dump-ram FRAME[:FILE]]\n"
             "       [--poke-on-call CALLHEX:ADDRHEX=VALUE]...\n"
+            "       [--record DIR] [--replay DIR [--video FILE.y4m] [--video-range FROM:TO]]\n"
             "       [--trace-io] [--trace-calls] [--trace-cd] [--trace-audio] [--max-cycles N]\n", argv0);
 }
 
 int main(int argc, char **argv) {
-    settings_load();  // command-line flags below override saved settings
-    bool memcard_given = false;
+    // A replay runs with the recording's settings and card (tape.cpp); flags below still apply.
+    std::filesystem::path record, replay;
+    for (int i = 1; i + 1 < argc; i++)
+        if (!strcmp(argv[i], "--replay")) replay = argv[i + 1];
+    if (replay.empty()) settings_load();  // command-line flags below override saved settings
+    else tape_replay(replay);
+    bool memcard_given = !replay.empty();
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--bios") && i + 1 < argc) config.bios = argv[++i];
         else if (!strcmp(argv[i], "--disc") && i + 1 < argc) config.disc = argv[++i];
@@ -121,12 +128,23 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--screenshots") && i + 1 < argc) config.screenshots = argv[++i];
         else if (!strcmp(argv[i], "--screenshot-every") && i + 1 < argc) config.screenshot_every = strtoull(argv[++i], nullptr, 0);
         else if (!strcmp(argv[i], "--max-cycles") && i + 1 < argc) config.max_cycles = strtoll(argv[++i], nullptr, 0);
+        else if (!strcmp(argv[i], "--record") && i + 1 < argc) record = argv[++i];
+        else if (!strcmp(argv[i], "--replay") && i + 1 < argc) ++i;  // above
+        else if (!strcmp(argv[i], "--video") && i + 1 < argc) config.video = argv[++i];
+        else if (!strcmp(argv[i], "--video-range") && i + 1 < argc) {
+            unsigned long long from, to;
+            if (sscanf(argv[++i], "%llu:%llu", &from, &to) != 2) { usage(argv[0]); return 2; }
+            config.video_from = from;
+            config.video_to = to;
+        }
         else { usage(argv[0]); return 2; }
     }
-    if (config.bios.empty()) { usage(argv[0]); return 2; }
+    if (config.bios.empty() || (!record.empty() && !replay.empty())) { usage(argv[0]); return 2; }
+    if (!replay.empty()) config.hidden = true;
     // Test runs (headless/hidden) never touch the player's memory card or settings.
     config.test_run = config.headless || config.hidden;
     if (config.test_run && !memcard_given) config.memcard = "build/test-memcard.mcd";
+    if (!record.empty()) tape_record(record);
 
     static Cpu cpu;
     cpu.tail_link = 1;
@@ -146,6 +164,7 @@ int main(int argc, char **argv) {
         psx_call(&cpu, bios_project.entry);
         log("BIOS reset handler returned");
     } catch (const Halt &h) {
+        tape_close();
         hw::memcard_flush(true);
         log("halt: %s", h.what());
         log("  frames=%llu primitives=%llu", (unsigned long long)hw::gpu.frames, (unsigned long long)hw::gpu.primitives);

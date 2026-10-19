@@ -4,6 +4,10 @@
 #   ./play                    uses disc/Medal of Honor (USA)/*.cue
 #   ./play --disc other.cue
 #   ./play --warp 3:2          New Game starts in mission 3, level 2 (testing)
+#   ./play --record recordings/NAME   records your inputs (and settings and memory card)
+#   ./play --replay recordings/NAME --video build/NAME.mkv   replays them (hidden) into a video:
+#                              .mkv lossless (FFV1), .mp4/.webm AV1; --video-range FROM:TO limits
+#                              it to those vblanks
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,6 +23,9 @@ while [ $# -gt 0 ]; do
     if [ "$1" = --warp ] && [ $# -ge 2 ]; then
         m=${2%:*} l=${2#*:}
         args+=(--poke-on-call "80064374:80038660=$((m - 1))" --poke-on-call "80064374:80038664=$((l - 1))")
+        shift 2
+    elif [ "$1" = --video ] && [ $# -ge 2 ]; then
+        video=$2
         shift 2
     else
         passthrough+=("$1")
@@ -48,6 +55,32 @@ for var in $(compgen -e | grep '^VALOR_' || true); do gui+=(-e "$var"); done
 
 tty_flags=()
 [ -t 0 ] && tty_flags=(-it)
+
+# --video FILE: the runtime streams the replay's frames (YUV4MPEG2) through a pipe into the host's
+# ffmpeg (the container has none).
+if [ -n "${video:-}" ]; then
+    command -v ffmpeg >/dev/null || { echo "--video needs ffmpeg on the host" >&2; exit 1; }
+    case "$video" in
+        *.mkv) codec=(-c:v ffv1 -level 3 -slices 16) ;;
+        *) codec=(-c:v libsvtav1 -preset 8 -crf 18 -pix_fmt yuv420p) ;;
+    esac
+    fifo=build/video.fifo
+    rm -f "$fifo"
+    mkfifo "$fifo"
+    ffmpeg -y -hide_banner -loglevel error -f yuv4mpegpipe -i "$fifo" "${codec[@]}" "$video" &
+    encoder=$!
+    image="moh-recomp-dev:$(cat Containerfile requirements.txt | sha256sum | cut -c1-12)"
+    status=0
+    podman run --rm --userns=keep-id --security-opt label=disable \
+        -v "$root:/work" -w /work -e HOME=/work/build/home "${gui[@]}" "$image" ./build/cmake/valor "${args[@]}" \
+        --video "$fifo" "$@" || status=$?
+    exec 3<>"$fifo"  # if the runtime never opened it, ffmpeg still sees the end (doesn't block)
+    exec 3>&-
+    wait "$encoder" || true
+    rm -f "$fifo"
+    echo "video: $video"
+    exit $status
+fi
 
 image="moh-recomp-dev:$(cat Containerfile requirements.txt | sha256sum | cut -c1-12)"
 exec podman run --rm "${tty_flags[@]}" --userns=keep-id --security-opt label=disable \
