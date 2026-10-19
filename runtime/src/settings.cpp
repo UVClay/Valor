@@ -112,7 +112,7 @@ void settings_write(const std::filesystem::path &path) {
     f << "square_sticks = " << (config.square_sticks ? "true" : "false") << "\n";
     f << "interpolate = " << (config.interpolate ? "true" : "false") << "  # frames between the game's 30 Hz ticks\n";
     f << "frame_rate = " << config.frame_rate << "  # with interpolation; 0 = display refresh rate\n";
-    f << "decoupled_rendering = " << (config.decoupled ? "true" : "false") << "  # experimental: redraw each frame\n";
+    f << "decoupled_rendering = " << (config.decoupled ? "true" : "false") << "  # redraw each frame with the game's own drawing (false: move the tick's frame)\n";
     f << "widescreen_hud = " << (config.widescreen_hud ? "true" : "false") << "  # keep HUD proportions in widescreen\n";
     f << "hud_edges = " << (config.hud_edges ? "true" : "false") << "  # widescreen HUD at the screen's edges\n";
     f << "crosshair = " << (config.crosshair ? "true" : "false") << "\n";

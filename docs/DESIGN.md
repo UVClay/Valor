@@ -110,6 +110,27 @@ widescreen and FOV). Two things it relies on break with a wider view:
     (closer than H, or more than 55° off the view's axis) are drawn the same way, with their
     affine texturing kept.
 
+### Decoupled rendering
+
+On by default (`--coupled` or `decoupled_rendering = false` falls back to frame interpolation,
+below). Frame interpolation can only move what the game drew for its tick's camera, so a fast turn
+or a wide view shows what it culled, clipped or never drew. Instead (`shadow.cpp`), every presented
+frame runs the game's own drawing pass again:
+
+- **The copy.** When a tick's drawing pass begins (0x800503D4), RAM, the scratchpad, the GTE and
+  the CPU are saved. Each presented frame restores that copy, places the camera where it should be
+  at that moment (the player's position lerped between the last two ticks, the view turned by the
+  mouse look the game hasn't read yet) and rebuilds the view with the game's camera setup, then
+  runs the pass. The game itself never sees the copy.
+- **Devices.** The pass's ordering table is walked natively at its flip, and its GPU commands go
+  to the OpenGL renderer only: GPU registers are stashed, VRAM is never written, and no events or
+  interrupts are delivered while it runs. The game's own drawing of the tick is not shown.
+- **Primitive pool.** The game stops drawing a frame once its 80000-byte primitive buffer is full.
+  A wider or taller view than the original fills it (the near floor and the weapon are drawn
+  last, and were cut off), so the copy gets both buffers' space.
+- **Menus** are not in a level: they are drawn at 4:3, unwidened.
+- Moving objects (enemies, doors) still move at the tick rate.
+
 ### Frame interpolation
 
 The game logic runs at a fixed 30 Hz (RECON.md, Frame timing). For higher frame rates

@@ -67,8 +67,8 @@ struct Config {
     bool interpolate = true;
     int frame_rate = 0;
     // Decoupled rendering (shadow.cpp): every presented frame runs the game's drawing pass again
-    // on a copy of the machine, instead of moving the tick's frame (experimental).
-    bool decoupled = false;
+    // on a copy of the machine, instead of moving the tick's frame (--coupled turns it off).
+    bool decoupled = true;
     // Keep the 2D HUD's proportions in widescreen (it would otherwise stretch with the image).
     bool widescreen_hud = true;
     bool hud_edges = true;  // ... and move the corner elements to the screen's edges

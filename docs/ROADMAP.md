@@ -26,9 +26,12 @@ and full playthroughs of two missions.
 - [x] **Strafing**: the movement code adds forward and strafe as vectors. The loss of speed came from
       the game's per-axis stick curve meeting round-gated modern sticks. Round input is now mapped
       to the DualShock's square range (Controls → "Square stick range", see RECON.md).
-- [x] **High frame rate**: the game logic is a fixed 30 Hz tick, so the last frame is redrawn with
-      the camera and moving objects (enemy limbs, doors) interpolated toward the next tick, at the
-      display's refresh rate (DESIGN.md, Frame interpolation). No added latency.
+- [x] **High frame rate**: the game logic is a fixed 30 Hz tick; every presented frame runs the
+      game's drawing pass again on a copy of the machine, with the camera placed for that moment
+      (DESIGN.md, Decoupled rendering). No added latency.
+- [ ] Moving objects (enemies, doors) in decoupled frames still move at 30 Hz: blend their
+      transforms between ticks in the copy's projections.
+- [ ] Pickup messages ("ATTACHE CASE ACQUIRED") garble for a few frames in decoupled rendering.
 - [x] Crosshair (Interface tab; size slider). Hidden in aim mode and on the pause screen
 - [x] **Mouse and keyboard controls**: mouse look and movement go straight into the game's
       control roles (a recompiler hook on the role axis function), and keys press the game's

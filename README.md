@@ -71,9 +71,10 @@ also be given on the command line:
 - **Aspect ratio:** `--aspect 16:9`.
 - **Horizontal FOV:** `--fov DEG`. Wide views are fully supported: the game's culling is widened
   and polygons reaching behind the camera are clipped, so nearby walls don't vanish at the edges.
-- **Frame interpolation:** on by default; `--no-interpolate` turns it off. The game runs at 30 Hz,
-  and in-between frames move the camera smoothly. It presents at the display's refresh rate or at
-  `--frame-rate N`.
+- **High frame rate:** on by default; `--no-interpolate` turns it off. The game runs at 30 Hz, and
+  every frame in between is drawn again by the game's own drawing code with the camera where it
+  should be at that moment (`--coupled` moves the tick's frame instead). It presents at the
+  display's refresh rate or at `--frame-rate N`.
 - **Square stick range:** maps modern round-gated sticks to the DualShock's range.
 - **Sub-pixel precision:** `--subpixel` (off by default) removes the PS1's vertex wobble.
 - **Fast loading:** `--fast-loading` (off by default) reads game data 8x faster; a level loads in

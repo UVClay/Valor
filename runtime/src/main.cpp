@@ -36,7 +36,7 @@ static bool parse_press(const char *arg) {
 }
 
 static void usage(const char *argv0) {
-    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--subpixel] [--depth-buffer] [--fast-loading] [--texture-filter] [--stick-aim] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd|FOLDER] [--memcard-import FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--window WxH] [--headless] [--hidden]\n"
+    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--subpixel] [--depth-buffer] [--fast-loading] [--texture-filter] [--stick-aim] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd|FOLDER] [--memcard-import FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--coupled] [--window WxH] [--headless] [--hidden]\n"
             "       [--screenshots DIR] [--screenshot-every N] [--screenshot-from FRAME] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--kbm FRAME:CONTROL[:DURATION]]... [--mouse FRAME:DX,DY]...\n"
@@ -70,6 +70,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--frame-rate") && i + 1 < argc) config.frame_rate = std::clamp(atoi(argv[++i]), 0, 1000);
         else if (!strcmp(argv[i], "--no-interpolate")) config.interpolate = false;
         else if (!strcmp(argv[i], "--decoupled")) config.decoupled = true;
+        else if (!strcmp(argv[i], "--coupled")) config.decoupled = false;
         else if (!strcmp(argv[i], "--window") && i + 1 < argc) {
             if (sscanf(argv[++i], "%dx%d", &config.window_w, &config.window_h) != 2) { usage(argv[0]); return 2; }
         }
