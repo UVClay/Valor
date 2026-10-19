@@ -28,9 +28,12 @@ double kbm_take_pitch();
 // mouse motion it hasn't taken yet.
 void kbm_tick_look(double &yaw, double &pitch);
 void kbm_pending_look(double &yaw, double &pitch);
-// How far mouse look may turn the view sideways ahead of what the game drew (degrees, from its
-// recent speed): the game draws that much more around its view (game.cpp).
-double kbm_look_reach();
+// How far mouse look may turn the view ahead of what the game drew (degrees, from its recent
+// speed), sideways and up or down.
+void kbm_look_reach(double &yaw, double &pitch);
+// How far beyond its view the game drew this tick (degrees; game.cpp): in-between frames turn
+// the view at most that far from the tick's camera (interp.cpp).
+void game_drawn_reach(double &yaw, double &pitch);
 // display.cpp: a gamepad gyroscope reading (radians per second about x, y, z; SDL's axes).
 void kbm_gyro(const float rate[3], uint64_t timestamp_ns);
 

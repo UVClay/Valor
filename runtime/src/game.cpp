@@ -86,34 +86,111 @@ extern "C" void hook_role_axis(Cpu *c, RecompFn body) {
     c->r[2] = uint32_t(int32_t(std::clamp(v, -2.0e9, 2.0e9)));
 }
 
+// Drawn beyond the view this tick (degrees, sideways and up or down): the frustum and the world's
+// polygon test reach that much farther while mouse look turns the view ahead of the game
+// (gpu_gl.cpp). `drawn_*` is what in-between frames can show of it: less where the frustum or the
+// screen margin can't reach that far.
+static double reach_yaw, reach_pitch;
+static double frustum_yaw, frustum_pitch, drawn_yaw, drawn_pitch;
+// A frustum much wider than this loses the world at some angles (the room in front of the camera
+// is culled), so the reach stops there (degrees from the view's center).
+constexpr double FRUSTUM_LIMIT_H = 75, FRUSTUM_LIMIT_V = 70;
+
 // 0x8008D0CC(camera): the view frustum's side planes, through the camera and the corners of a
 // rectangle `camera+0x3C` (the projection distance, 400) ahead: `camera+0x30` / 2 to the sides
-// and `camera+0x34` / 2 up and down (16.16; 512 and 384 for the 512x240 screen with some margin
-// vertically). Rooms and objects outside are culled, so with a wider view they'd vanish near
-// the edges: widen the rectangle to the projection while the planes are built. A little more
-// covers in-between frames, which turn the camera toward the next tick's view.
+// and `camera+0x34` / 2 up and down (all 16.16; 512 and 384 for the 512x240 screen with some
+// margin vertically). Rooms and objects outside are culled, so with a wider view they'd vanish
+// near the edges: widen the rectangle to the projection while the planes are built. A little more
+// covers in-between frames, which turn the camera toward the next tick's view, and the reach
+// covers mouse look.
 extern "C" void hook_view_frustum(Cpu *c, RecompFn body) {
     uint32_t cam = c->r[4];
-    double kx, ky;
+    double kx, ky, tan_h, tan_v;
     gte_world_scale(kx, ky);
-    if ((kx == 1 && ky == 1) || !in_ram(cam)) return body(c);
+    gte_world_view(tan_h, tan_v);
+    reach_yaw = reach_pitch = 0;
+    if (interp_presenting() && tan_h > 0) {
+        kbm_look_reach(reach_yaw, reach_pitch);
+        // Some always, for turning with a stick.
+        reach_yaw = std::clamp(reach_yaw, 6.0, 30.0);
+        reach_pitch = std::clamp(reach_pitch, 4.0, 20.0);
+    }
+    frustum_yaw = frustum_pitch = drawn_yaw = drawn_pitch = 0;
+    if (!in_ram(cam) || (kx == 1 && ky == 1 && reach_yaw == 0)) return body(c);
     constexpr double MARGIN = 1.1;
     uint32_t w = r32(cam + 0x30), h = r32(cam + 0x34);
-    double sw = MARGIN / kx, sh = MARGIN / ky;
-    // Mouse look turns the view ahead of the game (gpu_gl.cpp): draw what that can show at the
-    // sides too. (Not up and down: a taller rectangle loses nearby walls, and pitch turns slowly.)
-    double reach = kbm_look_reach();
     int32_t dist = int32_t(r32(cam + 0x3C));
-    if (reach > 0 && dist > 0 && int32_t(w) > 0) {
-        double t = double(int32_t(w)) * sw / (2 * 65536.0 * dist);  // tan of the half angle
-        double angle = std::min(std::atan(t) + reach * M_PI / 180, 70 * M_PI / 180);
-        sw *= std::tan(angle) / t;
-    }
+    double sw = MARGIN / kx, sh = MARGIN / ky;
+    // The rectangle's edge out to `reach` degrees past the view's (`view`: its half-FOV tangent),
+    // within `limit`; how far past the view it then is.
+    auto widen = [&](uint32_t extent, double &scale, double view, double reach, double limit) {
+        if (dist <= 0 || int32_t(extent) <= 0 || view <= 0) return 0.0;
+        double t = double(int32_t(extent)) * scale / (2.0 * dist);  // tan of the half angle
+        double edge = std::max(std::atan(t), std::min(std::atan(view) + reach * M_PI / 180, limit * M_PI / 180));
+        scale *= std::tan(edge) / t;
+        return std::max((edge - std::atan(view)) * 180 / M_PI, 0.0);
+    };
+    drawn_yaw = frustum_yaw = std::min(reach_yaw, widen(w, sw, tan_h, reach_yaw, FRUSTUM_LIMIT_H));
+    drawn_pitch = frustum_pitch = std::min(reach_pitch, widen(h, sh, tan_v, reach_pitch, FRUSTUM_LIMIT_V));
     psx_w32(c, cam + 0x30, uint32_t(int32_t(std::min(double(int32_t(w)) * sw, 2.0e9))));
     psx_w32(c, cam + 0x34, uint32_t(int32_t(std::min(double(int32_t(h)) * sh, 2.0e9))));
     body(c);
     psx_w32(c, cam + 0x30, w);
     psx_w32(c, cam + 0x34, h);
+}
+
+// For hook_world_polygon: a polygon in front of the camera that the test skipped. Off the screen
+// sideways or up or down within the reach, it is drawn anyway: in-between frames turn the view
+// toward it. Otherwise as the test decided: facing away, too near or too far, or bad projection.
+static void offscreen_polygon(Cpu *c, const uint32_t sz[3]) {
+    if (frustum_yaw == 0 && frustum_pitch == 0) return;
+    uint32_t flag = gte_mfc2(c, 31);
+    if ((flag & 0x80000000) && (flag & 0x7FF98000)) return;
+    // A vertex too far off screen for the GTE (clamped): where it was drawn isn't where it is.
+    if (flag & 0x6000) return;
+    if (int32_t(gte_mfc2(c, 24)) <= 0) return;  // NCLIP: facing away
+    uint32_t hi = std::max({sz[0], sz[1], sz[2]}), lo = std::min({sz[0], sz[1], sz[2]});
+    uint32_t otz = (hi * 3 + lo) >> 4;
+    if ((lo < 10 && otz < 16) || (otz >> 2) >= 0x200) return;
+    // The screen's bounds for what was drawn: where a point drawn_* degrees past the view's edge
+    // projects, within where the GTE can put one (it clamps to -1024..1023).
+    int32_t width = int16_t(psx_r16(c, c->r[19] + 0x3CC)), height = int16_t(psx_r16(c, c->r[19] + 0x3CE));
+    double ofx = double(int32_t(gte_cfc2(c, 24))) / 65536, ofy = double(int32_t(gte_cfc2(c, 25))) / 65536;
+    double tan_h, tan_v;
+    gte_world_view(tan_h, tan_v);
+    if (width <= 0 || height <= 0 || ofx <= 0 || ofy <= 0 || tan_h <= 0) return;
+    static struct { int32_t width, height; double ofx, ofy, th, tv, yaw, pitch, x0, x1, y0, y1, drawn_yaw, drawn_pitch; } m;
+    if (m.width != width || m.height != height || m.ofx != ofx || m.ofy != ofy || m.th != tan_h || m.tv != tan_v ||
+        m.yaw != frustum_yaw || m.pitch != frustum_pitch) {
+        // The screen's half extent `half` around `center` shows a half-FOV tangent `view`.
+        auto bounds = [](double center, double half, double view, double reach, double size, double &lo, double &hi) {
+            double ratio = std::tan(std::atan(view) + reach * M_PI / 180) / view;
+            ratio = std::min({ratio, (center + 1024) / half, (1023 - center) / half});
+            lo = std::min(0.0, center - half * ratio);
+            hi = std::max(size, center + half * ratio);
+            return (std::atan(view * std::max(ratio, 1.0)) - std::atan(view)) * 180 / M_PI;
+        };
+        m = {width, height, ofx, ofy, tan_h, tan_v, frustum_yaw, frustum_pitch, 0, 0, 0, 0, 0, 0};
+        m.drawn_yaw = bounds(ofx, ofx, tan_h, frustum_yaw, width, m.x0, m.x1);
+        m.drawn_pitch = bounds(ofy, ofy, tan_v, frustum_pitch, height, m.y0, m.y1);
+    }
+    drawn_yaw = m.drawn_yaw;
+    drawn_pitch = m.drawn_pitch;
+    // The test's outcodes (left, right, up, down; skipped when all vertices share one), with the
+    // bounds. A vertex inside draws it.
+    uint32_t all = 0xF;
+    for (int k = 0; k < 3; k++) {
+        uint32_t xy = gte_mfc2(c, 12 + k);
+        double x = int16_t(xy), y = int16_t(xy >> 16);
+        all &= (x < m.x0 ? 1 : x >= m.x1 ? 2 : 0) | (y < m.y0 ? 4 : y >= m.y1 ? 8 : 0);
+    }
+    if (all) return;
+    // What the test stores for drawing it is already there; subdivided as it would be.
+    uint32_t limit = r32(c->r[19] + 0x3A4) << 2, mask = 0;
+    if (limit)
+        for (int k = 0; k < 3; k++)
+            if (sz[k] < limit) mask |= 1u << k;
+    c->r[2] = mask ? mask << 1 : 1;
 }
 
 // 0x80011214: whether to draw a world polygon, after its vertices are projected (RTPT). Registers:
@@ -127,7 +204,7 @@ extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
     body(c);
     if (c->r[2] != 0 || !interp_enabled()) return;
     uint32_t sz[3] = {gte_mfc2(c, 17), gte_mfc2(c, 18), gte_mfc2(c, 19)};
-    if (sz[0] && sz[1] && sz[2]) return;  // in front: really skipped
+    if (sz[0] && sz[1] && sz[2]) return offscreen_polygon(c, sz);
     // Camera-space vertices from the GTE's rotation and translation.
     int16_t rt[9];
     for (int i = 0; i < 5; i++) {
@@ -168,4 +245,9 @@ extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
             if (sz[k] < limit) mask |= 1u << k;
     }
     c->r[2] = mask ? mask << 1 : 1;
+}
+
+void psx::game_drawn_reach(double &yaw, double &pitch) {
+    yaw = drawn_yaw;
+    pitch = drawn_pitch;
 }

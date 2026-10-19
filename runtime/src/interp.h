@@ -54,6 +54,7 @@ struct InterpTick {
     std::unordered_map<uint64_t, uint32_t> group_index;
     int32_t last_group = -1;
     double look_yaw = 0, look_pitch = 0;  // mouse look the game took for this tick (degrees)
+    double reach_yaw = 0, reach_pitch = 0;  // how far beyond the view the game drew (degrees)
 };
 
 // Where a tick's vertices go at some point between it and the next tick: q = a * p + b (b only

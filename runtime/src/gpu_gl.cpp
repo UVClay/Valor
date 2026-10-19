@@ -80,13 +80,29 @@ bool warned_mask_check;
 // without one, the primitive's other vertices to borrow movement from (group).
 struct VertexSource {
     int32_t rec = -1, group = -1;
-    int32_t near = -1;  // a vertex of a near-clipped triangle: FrameList::near
+    int32_t near = -1;  // a vertex of a near-clipped triangle: FrameList::near, and which one
+    int8_t near_slot = 0;
     float depth_bias = -1;  // depth-tested (config.depth_buffer): its primitive's bias, else -1
     uint32_t key = 0;  // screen position as drawn (for vertices without a projection)
     bool hud = false;  // part of the 2D HUD: never moved
     bool world = false;  // drawn with the world's camera: turns with mouse look
 };
 std::vector<VertexSource> batch_sources;  // parallel to `batch`
+
+// A triangle with a corner closer than the GTE projects properly (near_triangle): its corners in
+// camera space with their texture coordinates and colors, the drawing offset, and corrections
+// keeping corners the GTE projected properly at its (integer) position.
+struct NearTri {
+    InterpVertex p[3];
+    bool perspective;  // textured perspective-correct (a corner was too close for the GTE)
+    float u[3], v[3], r[3], g[3], b[3];
+    float cx[3], cy[3];
+    float ox, oy;
+};
+// It clipped at the near plane and projected: up to two triangles (unused corners collapse onto
+// the first). `z` is the camera depth.
+struct NearCorner { float x, y, u, v, r, g, b, z; };
+constexpr int NEAR_CORNERS = 6;
 
 struct FrameList {
     std::shared_ptr<const InterpTick> tick;
@@ -109,10 +125,8 @@ struct FrameList {
     bool shown = false;
     uint64_t last_frame = 0;       // vblank of the latest draw
     uint32_t world_prims = 0;      // primitives with world vertices
-    // Vertices of triangles clipped at the near plane (see near_triangle): camera-space points
-    // projected exactly, and what to add to that (the drawing offset and a seam correction).
-    struct Near { InterpVertex p; float ox, oy; };
-    std::vector<Near> near;
+    // Triangles clipped at the near plane (see near_triangle), from their camera-space corners.
+    std::vector<struct NearTri> near;
 };
 std::unique_ptr<FrameList> recording;            // the list being drawn now
 std::deque<std::unique_ptr<FrameList>> finished;  // complete lists, newest last
@@ -829,97 +843,117 @@ void precise_positions(const Vertex *const *v, int n, float *x, float *y) {
 // A world triangle with a vertex that close is drawn from its camera-space vertices instead,
 // clipped at a near plane and projected exactly (texture coordinates and colors interpolated
 // along the cut edges). game.cpp lets the game submit the ones reaching behind the camera.
+// Clip a near triangle with its corners at `q` (camera space) at the near plane and project it.
+// Drawn as one or two triangles, textured perspective-correct (the PS1's affine mapping smears
+// badly this close). Splitting them instead would leave T-junctions along edges shared with
+// polygons drawn normally, which crack. False when it is entirely behind the near plane.
+bool clip_near(const NearTri &t, const double q[3][3], NearCorner out[NEAR_CORNERS]) {
+    constexpr double NEAR_Z = 16;
+    struct Point { double x, y, z; float u, v, r, g, b, cx, cy; };
+    Point in[3], pts[4];
+    for (int i = 0; i < 3; i++)
+        in[i] = {q[i][0], q[i][1], q[i][2], t.u[i], t.v[i], t.r[i], t.g[i], t.b[i], t.cx[i], t.cy[i]};
+    int n = 0;
+    for (int i = 0; i < 3; i++) {
+        const Point &a = in[i], &b = in[(i + 1) % 3];
+        bool a_in = a.z >= NEAR_Z, b_in = b.z >= NEAR_Z;
+        if (a_in) pts[n++] = a;
+        if (a_in != b_in) {
+            double d = (NEAR_Z - a.z) / (b.z - a.z);
+            auto mix = [d](double x, double y) { return x + (y - x) * d; };
+            pts[n++] = {mix(a.x, b.x), mix(a.y, b.y), NEAR_Z, float(mix(a.u, b.u)), float(mix(a.v, b.v)),
+                        float(mix(a.r, b.r)), float(mix(a.g, b.g)), float(mix(a.b, b.b)), 0, 0};
+        }
+    }
+    if (n < 3) return false;
+    static constexpr int order[2][3] = {{0, 1, 2}, {0, 2, 3}};
+    for (int k = 0; k < NEAR_CORNERS; k++) {
+        const Point &p = pts[k / 3 < n - 2 ? order[k / 3][k % 3] : 0];
+        NearCorner &o = out[k];
+        project_exact(t.p[0], p.x, p.y, p.z, o.x, o.y);
+        o.x += p.cx + t.ox;
+        o.y += p.cy + t.oy;
+        o.u = p.u; o.v = p.v; o.r = p.r; o.g = p.g; o.b = p.b;
+        o.z = float(p.z);
+    }
+    return true;
+}
+
 bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t src[3], bool dither) {
     if (!recording || !recording->tick) return false;
     const auto &tv = recording->tick->vertices;
-    bool near = false;
+    bool near = false, risky = false;
     for (int i = 0; i < 3; i++) {
         if (src[i] < 0 || tv[src[i]].h != float(config.world_h)) return false;
         near |= tv[src[i]].z < tv[src[i]].h * 0.5f;
     }
-    if (!near) return false;
-    struct Point { InterpVertex p; float u, v, r, g, b; int corner; };  // corner: input vertex, or -1
-    Point in[3], out[4];
-    for (int i = 0; i < 3; i++)
-        in[i] = {tv[src[i]], float(vs[i]->u), float(vs[i]->v), float(vs[i]->r), float(vs[i]->g), float(vs[i]->b), i};
-    constexpr float NEAR_Z = 16;
-    int n = 0;
+    if (!near && interp_presenting()) {
+        // In-between frames turn the view up to 30 degrees ahead and move it: a corner close by, or
+        // far enough to the side to end up beside the camera, can cross the near plane then.
+        double tan_h, tan_v;
+        gte_world_view(tan_h, tan_v);
+        const double side = std::tan(55 * M_PI / 180);
+        for (int i = 0; i < 3 && tan_h > 0; i++) {
+            const InterpVertex &p = tv[src[i]];
+            double sx = std::abs(p.x) * p.h * p.kx / (p.z * p.ofx) * tan_h;  // real tangents off the axis
+            double sy = std::abs(p.y) * p.h * p.ky / (p.z * p.ofy) * tan_v;
+            risky |= p.z < p.h || std::hypot(sx, sy) > side;
+        }
+    }
+    if (!near && !risky) return false;
+    NearTri t;
+    t.perspective = near;
     for (int i = 0; i < 3; i++) {
-        const Point &a = in[i], &b = in[(i + 1) % 3];
-        bool a_in = a.p.z >= NEAR_Z, b_in = b.p.z >= NEAR_Z;
-        if (a_in) out[n++] = a;
-        if (a_in != b_in) {
-            float t = (NEAR_Z - a.p.z) / (b.p.z - a.p.z);
-            auto mix = [t](float x, float y) { return x + (y - x) * t; };
-            Point m = a;
-            m.corner = -1;
-            m.p.x = mix(a.p.x, b.p.x);
-            m.p.y = mix(a.p.y, b.p.y);
-            m.p.z = NEAR_Z;
-            for (int k = 0; k < 3; k++) m.p.v[k] = int16_t(std::lround(mix(a.p.v[k], b.p.v[k])));
-            m.u = mix(a.u, b.u); m.v = mix(a.v, b.v);
-            m.r = mix(a.r, b.r); m.g = mix(a.g, b.g); m.b = mix(a.b, b.b);
-            out[n++] = m;
+        t.p[i] = tv[src[i]];
+        t.u[i] = float(vs[i]->u); t.v[i] = float(vs[i]->v);
+        t.r[i] = float(vs[i]->r); t.g[i] = float(vs[i]->g); t.b[i] = float(vs[i]->b);
+        // Without sub-pixel precision, corners the GTE projected properly keep its (integer)
+        // position, so edges shared with triangles drawn normally line up. (Cut points are on edges
+        // reaching behind the camera, which only other near-clipped triangles share.)
+        t.cx[i] = t.cy[i] = 0;
+        if (!config.subpixel && t.p[i].z >= t.p[i].h * 0.5f) {
+            float sx, sy;
+            project_exact(t.p[i], t.p[i].x, t.p[i].y, t.p[i].z, sx, sy);
+            t.cx[i] = float(int16_t(vs[i]->key & 0xFFFF)) - sx;
+            t.cy[i] = float(int16_t(vs[i]->key >> 16)) - sy;
+            if (std::abs(t.cx[i]) > 1.5f || std::abs(t.cy[i]) > 1.5f) t.cx[i] = t.cy[i] = 0;  // clamped by the GTE
         }
     }
-    if (n < 3) return true;  // entirely behind the near plane
-    // Drawn as one or two triangles, textured perspective-correct (the PS1's affine mapping
-    // smears badly this close). Splitting them instead would leave T-junctions along edges
-    // shared with polygons drawn normally, which crack.
-    static std::vector<Point> pts;
-    static std::vector<std::array<int, 3>> tris;
-    pts.assign(out, out + n);
-    tris.clear();
-    tris.push_back({0, 1, 2});
-    if (n == 4) tris.push_back({0, 2, 3});
     // The drawing offset: submitted coordinates are the packet's plus the offset.
-    float ox = float(vs[0]->x - int16_t(vs[0]->key & 0xFFFF)), oy = float(vs[0]->y - int16_t(vs[0]->key >> 16));
-    int32_t first = int32_t(recording->near.size());
-    static std::vector<float> sx, sy;
-    sx.resize(pts.size());
-    sy.resize(pts.size());
-    for (size_t i = 0; i < pts.size(); i++) project_exact(pts[i].p, pts[i].p.x, pts[i].p.y, pts[i].p.z, sx[i], sy[i]);
-    static std::vector<float> ex, ey;  // exact positions, before the corrections below
-    ex = sx;
-    ey = sy;
-    // Without sub-pixel precision, input vertices the GTE projected properly keep its (integer)
-    // position, so edges shared with triangles drawn normally line up. (Points on the near plane
-    // are on edges reaching behind the camera, which only other near-clipped triangles share.)
-    float cx[4] = {}, cy[4] = {};
-    for (int i = 0; i < n; i++)
-        if (!config.subpixel && pts[i].corner >= 0 && pts[i].p.z >= pts[i].p.h * 0.5f) {
-            const Vertex *v = vs[pts[i].corner];
-            cx[i] = float(int16_t(v->key & 0xFFFF)) - sx[i];
-            cy[i] = float(int16_t(v->key >> 16)) - sy[i];
-        }
-    for (int i = 0; i < n; i++) {
-        sx[i] += cx[i];
-        sy[i] += cy[i];
+    t.ox = float(vs[0]->x - int16_t(vs[0]->key & 0xFFFF));
+    t.oy = float(vs[0]->y - int16_t(vs[0]->key >> 16));
+    double q[3][3];
+    for (int i = 0; i < 3; i++) {
+        q[i][0] = t.p[i].x; q[i][1] = t.p[i].y; q[i][2] = t.p[i].z;
     }
-    for (size_t i = 0; i < pts.size(); i++) recording->near.push_back({pts[i].p, ox + sx[i] - ex[i], oy + sy[i] - ey[i]});
-    bool depth = config.depth_buffer && pts[0].p.translated;
+    NearCorner out[NEAR_CORNERS];
+    if (!clip_near(t, q, out)) return true;  // entirely behind the near plane
+    int32_t index = int32_t(recording->near.size());
+    recording->near.push_back(t);
+    bool depth = config.depth_buffer && t.p[0].translated;
     float bias = 0;
     if (depth) {
-        float z = pts[0].p.z;
+        float z = out[0].z;
         begin_depth(&z, 1, s.semi);  // for the mode and bias
         bias = prim_bias;
     }
+    // Always two triangles' worth, so in-between frames can clip it differently.
     submit(s, [&](uint16_t pass) {
         uint16_t f = base_flags(s, dither) | pass | F_FILTER;
-        for (const auto &t : tris)
-            for (int i : t) {
-                const Point &q = pts[i];
-                batch.push_back(make_vertex(s, sx[i] + ox, sy[i] + oy, q.u, q.v, int(std::lround(q.r)),
-                                            int(std::lround(q.g)), int(std::lround(q.b)), f));
-                batch.back().w = q.p.z;
-                VertexSource vs_;
-                vs_.near = first + i;
-                if (depth) {
-                    batch.back().depth = depth_of(q.p.z) - bias;
-                    vs_.depth_bias = bias;
-                }
-                batch_sources.push_back(vs_);
+        for (int i = 0; i < NEAR_CORNERS; i++) {
+            const NearCorner &o = out[i];
+            batch.push_back(make_vertex(s, o.x, o.y, o.u, o.v, int(std::lround(o.r)), int(std::lround(o.g)),
+                                        int(std::lround(o.b)), f));
+            batch.back().w = t.perspective ? std::max(o.z, 1.0f) : 1.0f;
+            VertexSource vs_;
+            vs_.near = index;
+            vs_.near_slot = int8_t(i);
+            if (depth) {
+                batch.back().depth = depth_of(o.z) - bias;
+                vs_.depth_bias = bias;
             }
+            batch_sources.push_back(vs_);
+        }
     });
     prim_depth_mode = 0;
     return true;
@@ -1316,6 +1350,9 @@ void gl_renderer_interpolate(double vblank_time) {
         float x0, y0, x1, y1;
         project(p, p.x, p.y, p.z, x0, y0);
         project(p, q[0], q[1], q[2], x1, y1);
+        // From where it was drawn: the GTE clamps the screen position (points far off screen).
+        x0 = std::clamp(x0, -1024.0f, 1023.0f);
+        y0 = std::clamp(y0, -1024.0f, 1023.0f);
         dx[i] = x1 - x0;
         dy[i] = y1 - y0;
         qz[i] = float(q[2]);
@@ -1333,13 +1370,15 @@ void gl_renderer_interpolate(double vblank_time) {
         int n = 0;
         bool object = false;
         if (s.group >= 0)
-            for (int32_t k : list->groups[s.group])
+            for (int32_t k : list->groups[s.group]) {
+                if (k >= 0 && pv[k].h != float(config.world_h)) return;  // the weapon: stays put
                 if (k >= 0 && valid[k]) {
                     r[n++] = k;
                     const InterpVertex &p = pv[k];
                     object |= p.group < int32_t(motion.group_object.size()) && motion.group_object[p.group] >= 0;
                     object |= p.z < p.h * 0.5f;  // its drawn position isn't where it projects
                 }
+            }
         if (object || !view) {
             for (int i = 0; i < n; i++) { mx += dx[r[i]]; my += dy[r[i]]; }
             if (n) { mx /= float(n); my /= float(n); }
@@ -1375,6 +1414,20 @@ void gl_renderer_interpolate(double vblank_time) {
             inv_z = 1 / pv[r[0]].z;
         }
         double z = inv_z > 1e-6 ? 1 / inv_z : 0;
+        if (n > 0) {
+            // Far outside its vertices (extrapolated): not where they put it.
+            double lo = 1e9, hi = 0;
+            for (int i = 0; i < n; i++) {
+                lo = std::min(lo, double(pv[r[i]].z));
+                hi = std::max(hi, double(pv[r[i]].z));
+            }
+            if (z < lo * 0.5 || z > hi * 2) {
+                for (int i = 0; i < n; i++) { mx += dx[r[i]]; my += dy[r[i]]; }
+                mx /= float(n);
+                my /= float(n);
+                return;
+            }
+        }
         if (z <= 0 || z > 1e6) { z = 1; translated = false; }
         double p[3] = {(gx - v.ofx) * z / (v.kx * v.h), (gy - v.ofy) * z / (v.ky * v.h), z}, q[3];
         for (int i = 0; i < 3; i++)
@@ -1398,26 +1451,45 @@ void gl_renderer_interpolate(double vblank_time) {
     static std::unordered_map<uint32_t, std::pair<float, float>> unprojected;
     unprojected.clear();
     moved = list->vertices;
+    static std::vector<NearCorner> near_out;
+    static std::vector<uint64_t> near_done;
+    static uint64_t near_stamp;
+    near_stamp++;
+    near_out.resize(list->near.size() * NEAR_CORNERS);
+    near_done.resize(std::max(near_done.size(), list->near.size()));
     for (size_t i = 0; i < moved.size(); i++) {
         const VertexSource &s = list->sources[i];
         if (s.near >= 0) {
-            // Near-clipped: projected exactly from where the point is now.
+            // Near-clipped: clipped again where its corners are now (a turn can take a cut point
+            // behind the camera), the same way in each pass.
             if (!ok) continue;
-            const FrameList::Near &nv = list->near[s.near];
-            double q[3];
-            move(nv.p, q);
-            turn(q);
-            float x, y;
-            project_exact(nv.p, q[0], q[1], q[2], x, y);
-            moved[i].x = x + nv.ox;
-            moved[i].y = y + nv.oy;
-            moved[i].w = float(std::max(q[2], 1.0));
-            if (s.depth_bias >= 0) moved[i].depth = depth_of(float(q[2])) - s.depth_bias;
+            if (near_done[s.near] != near_stamp) {
+                near_done[s.near] = near_stamp;
+                const NearTri &t = list->near[s.near];
+                double q[3][3];
+                for (int k = 0; k < 3; k++) {
+                    move(t.p[k], q[k]);
+                    turn(q[k]);
+                }
+                NearCorner *out = &near_out[size_t(s.near) * NEAR_CORNERS];
+                if (!clip_near(t, q, out))
+                    for (int k = 0; k < NEAR_CORNERS; k++) out[k] = {-4096, -4096, 0, 0, 0, 0, 0, 1};
+            }
+            const NearCorner &o = near_out[size_t(s.near) * NEAR_CORNERS + s.near_slot];
+            moved[i].x = o.x;
+            moved[i].y = o.y;
+            moved[i].u = o.u;
+            moved[i].v = o.v;
+            moved[i].r = uint8_t(std::lround(o.r));
+            moved[i].g = uint8_t(std::lround(o.g));
+            moved[i].b = uint8_t(std::lround(o.b));
+            moved[i].w = list->near[s.near].perspective ? std::max(o.z, 1.0f) : 1.0f;
+            if (s.depth_bias >= 0) moved[i].depth = depth_of(o.z) - s.depth_bias;
             continue;
         }
         float mx = 0, my = 0;
         int32_t rec = s.rec;
-        if (rec < 0 && !s.hud) {
+        if (rec < 0 && s.world) {
             auto it = point_rec.find(s.key);
             if (it != point_rec.end()) rec = it->second;
         }

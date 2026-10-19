@@ -124,6 +124,8 @@ extern double gte_squeeze;  // horizontal squeeze applied to 3D for the output a
 void gte_trace_frame();  // VALOR_TRACE_GTE_MAT
 // The scale applied to the world's projected x and y (widescreen, FOV); 1 for the original.
 void gte_world_scale(double &kx, double &ky);
+// The world view's half-FOV tangents, horizontal and vertical (real angles).
+void gte_world_view(double &tan_h, double &tan_v);
 
 // cpu.cpp
 RecompFn find_function(uint32_t addr);

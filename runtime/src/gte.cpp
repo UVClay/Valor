@@ -59,6 +59,7 @@ struct {
     bool active;
     uint16_t world_h;
     struct { double x, y; } world{1, 1}, other{1, 1};
+    double tan_h = 0, tan_v = 0;  // the world view's half-FOV tangents (0: not set yet)
 } projection;
 bool lm;        // saturate IR to 0..7FFF instead of -8000..7FFF
 
@@ -615,8 +616,15 @@ void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double
     projection.world = {k * squeeze, k};
     projection.other = {k * squeeze, k};
     projection.active = squeeze != 1.0 || k != 1.0;
+    projection.tan_v = base_tan / k;
+    projection.tan_h = base_tan / k * aspect;
     log("gte: projection aspect %.3f, world FOV %.1f deg horizontal", aspect,
         2.0 * std::atan(base_tan / k * aspect) * 180.0 / M_PI);
+}
+
+void gte_world_view(double &tan_h, double &tan_v) {
+    tan_v = projection.tan_v;
+    tan_h = projection.tan_h;
 }
 
 void gte_world_scale(double &kx, double &ky) {

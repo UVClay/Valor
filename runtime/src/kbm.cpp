@@ -278,19 +278,21 @@ double kbm_take_pitch() {
     return d;
 }
 
-static double peak_yaw;  // recent turn per tick (degrees), decaying
+static double peak_yaw, peak_pitch;  // recent turn per tick (degrees), decaying
 
 void kbm_tick_look(double &yaw, double &pitch) {
     yaw = tick_yaw;
     pitch = tick_pitch;
     tick_yaw = tick_pitch = 0;
     peak_yaw = std::max(std::abs(yaw), peak_yaw * 0.85);
+    peak_pitch = std::max(std::abs(pitch), peak_pitch * 0.85);
 }
 
-double kbm_look_reach() {
+void kbm_look_reach(double &yaw, double &pitch) {
     // A frame shows the rest of this tick's turn, the next tick's and what the game hasn't
     // taken yet: up to about three ticks' worth.
-    return std::min(peak_yaw * 3, 60.0);
+    yaw = peak_yaw * 3;
+    pitch = peak_pitch * 3;
 }
 
 void kbm_pending_look(double &yaw, double &pitch) {

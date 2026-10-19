@@ -116,6 +116,7 @@ void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, dou
         while (ticks.size() > 4) ticks.pop_front();
     }
     InterpTick &t = *ticks.back();
+    game_drawn_reach(t.reach_yaw, t.reach_pitch);
 
     // The transform group.
     int32_t gi = t.last_group;
@@ -220,6 +221,7 @@ struct Pairing {
     uint64_t from = 0, to = 0;
     bool ok = false;
     Transform cam0, cam1;
+    double yaw = 0, pitch = 0;  // the camera's turn from one to the other (degrees)
     struct Match { int32_t group; Mat w0, w1; double p0[3], p1[3]; };
     std::vector<Match> matches;
     std::vector<int32_t> group_match;  // per group of `from`: index into matches, or -1
@@ -253,17 +255,26 @@ void pair_ticks(const InterpTick &from, const InterpTick &to, Pairing &p) {
         }
     }
     if (!p.ok) return;
-    // Does the game turn the camera by the mouse look it takes? Not in aim mode (it moves the
-    // reticle) or cutscenes: showing the look early would then turn the view and snap it back.
-    if (std::abs(from.look_yaw) > 0.3 || std::abs(from.look_pitch) > 0.3) {
+    {
         double s0[3], s1[3];
         Mat r0, r1;
         split(p.cam0.m, s0, r0);
         split(p.cam1.m, s1, r1);
-        double yaw = std::remainder((std::atan2(r1[2][0], r1[2][2]) - std::atan2(r0[2][0], r0[2][2])) * 180 / M_PI, 360.0);
-        double pitch = (std::asin(std::clamp(r0[2][1], -1.0, 1.0)) - std::asin(std::clamp(r1[2][1], -1.0, 1.0))) * 180 / M_PI;
-        auto close = [](double got, double want) { return std::abs(got - want) < std::abs(want) * 0.35 + 0.2; };
-        look_applies = close(yaw, from.look_yaw) && close(pitch, from.look_pitch);
+        p.yaw = std::remainder((std::atan2(r1[2][0], r1[2][2]) - std::atan2(r0[2][0], r0[2][2])) * 180 / M_PI, 360.0);
+        p.pitch = (std::asin(std::clamp(r0[2][1], -1.0, 1.0)) - std::asin(std::clamp(r1[2][1], -1.0, 1.0))) * 180 / M_PI;
+    }
+    // Does the game turn the camera by the mouse look it takes? Not in aim mode (it moves the
+    // reticle) or cutscenes: showing the look early would then turn the view and snap it back.
+    if (std::abs(from.look_yaw) > 0.3 || std::abs(from.look_pitch) > 0.3) {
+        // The game turns pitch in steps of about 0.3 degrees. A mismatch must repeat to count: one
+        // switching it off wrongly would snap the view back by all the look shown ahead.
+        auto close = [](double got, double want) { return std::abs(got - want) < std::abs(want) * 0.35 + 0.5; };
+        static int misses;
+        misses = close(p.yaw, from.look_yaw) && close(p.pitch, from.look_pitch) ? 0 : misses + 1;
+        look_applies = misses < 2;
+        if (static bool trace = getenv("VALOR_TRACE_LOOK"); trace)
+            log("look: tick %llu turned %.2f,%.2f took %.2f,%.2f next %.2f applies %d", (unsigned long long)from.seq,
+                p.yaw, p.pitch, from.look_yaw, from.look_pitch, to.look_yaw, look_applies);
     }
 
     // Objects: their transform relative to the camera, W = Mcam^-1 * M and w = Mcam^-1 * (T - Tcam)
@@ -332,6 +343,24 @@ bool interp_motion(const InterpTick &from, const InterpTick &to, double alpha, d
     if (p.from != from.seq || p.to != to.seq) pair_ticks(from, to, p);
     if (!p.ok) return false;
     if (!look_applies) yaw = pitch = 0;
+    // Not past what the game drew around the tick's view (`reach`), the turn so far and the look
+    // ahead together. The limit also leaves room for the rest of the tick's turn (`turn`), so a
+    // steady turn arrives at the next tick's view where it left this one's: the look ahead gives
+    // way smoothly instead of the view stopping at the limit and jumping. Only a turn faster than
+    // the reach per tick still steps, by what it exceeds it.
+    auto limit = [alpha](double ahead, double turn, double reach) {
+        double hi = std::min(reach, reach - (1 - alpha) * std::min(turn, reach));
+        double lo = std::max(-reach, -reach - (1 - alpha) * std::max(turn, -reach));
+        return std::clamp(turn * alpha + ahead, lo, hi) - turn * alpha;
+    };
+    if (from.reach_yaw > 0) {
+        yaw = limit(yaw, p.yaw, from.reach_yaw);
+        pitch = limit(pitch, p.pitch, from.reach_pitch);
+    }
+    if (static bool trace = getenv("VALOR_TRACE_LOOK"); trace)
+        log("look: alpha %.2f turn %.2f,%.2f reach %.1f,%.1f ahead %.2f,%.2f applies %d shown %.2f", alpha, p.yaw, p.pitch,
+            from.reach_yaw, from.reach_pitch, yaw, pitch, look_applies,
+            std::atan2(p.cam0.m[2][0], p.cam0.m[2][2]) * 180 / M_PI + p.yaw * alpha + yaw);
 
     // The camera between the two: rotation slerped (scale per axis lerped), position lerped.
     double s0[3], s1[3];
