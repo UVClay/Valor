@@ -12,7 +12,10 @@ if ! podman image exists "$image:$stamp"; then
     podman build -t "$image:$stamp" -t "$image:latest" -f "$root/Containerfile" "$root"
 fi
 
-mkdir -p "$root/build/home"  # container $HOME: caches (e.g. Mesa shaders) stay out of the repo
+# The working folders, so a fresh clone works from the first command: the disc image goes in
+# disc/, extracted/ and build/syms/ are written by the setup tools, saves/ and screenshots/ by the
+# game, and build/home is the container's $HOME (caches like Mesa's shaders stay out of the repo).
+mkdir -p "$root"/{disc,extracted,saves/card1,screenshots,build/home,build/syms}
 
 tty_flags=()
 [ -t 0 ] && tty_flags=(-it)
