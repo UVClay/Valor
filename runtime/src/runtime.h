@@ -66,6 +66,9 @@ struct Config {
     // at `frame_rate` per second (0 = the display's refresh rate).
     bool interpolate = true;
     int frame_rate = 0;
+    // Decoupled rendering (shadow.cpp): every presented frame runs the game's drawing pass again
+    // on a copy of the machine, instead of moving the tick's frame (experimental).
+    bool decoupled = false;
     // Keep the 2D HUD's proportions in widescreen (it would otherwise stretch with the image).
     bool widescreen_hud = true;
     bool hud_edges = true;  // ... and move the corner elements to the screen's edges
@@ -130,6 +133,9 @@ void gte_trace_frame();  // VALOR_TRACE_GTE_MAT
 void gte_world_scale(double &kx, double &ky);
 // The world view's half-FOV tangents, horizontal and vertical (real angles).
 void gte_world_view(double &tan_h, double &tan_v);
+// The GTE's registers, for running code on a copy of the machine (shadow.cpp).
+void gte_save(std::vector<uint8_t> &out);
+void gte_restore(const std::vector<uint8_t> &in);
 
 // cpu.cpp
 RecompFn find_function(uint32_t addr);

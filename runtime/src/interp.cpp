@@ -33,6 +33,7 @@ std::deque<std::shared_ptr<InterpTick>> ticks;  // oldest first; the last one is
 bool look_applies = true;  // the camera turns by the mouse look the game takes (see pair_ticks)
 uint64_t next_seq = 1;
 bool drawn_since_projection = true;
+bool in_shadow;  // a decoupled rendering pass is projecting (interp_shadow)
 
 using Mat = double[3][3];
 
@@ -103,6 +104,41 @@ bool interp_presenting() { return config.interpolate && hw::hwgl::active(); }
 
 void interp_note_draw() { drawn_since_projection = true; }
 
+uint64_t interp_near_key(const uint32_t sxy[3]) {
+    uint32_t k[3] = {sxy[0], sxy[1], sxy[2]};
+    std::sort(k, k + 3);
+    return (uint64_t(k[0]) * 0x9E3779B97F4A7C15ull ^ k[1]) * 0x100000001B3ull ^ uint64_t(k[2]) << 1;
+}
+
+void interp_note_near_polygon(const uint32_t sxy[3]) {
+    if (ticks.empty() || drawn_since_projection) return;
+    InterpTick &t = *ticks.back();
+    uint32_t n = uint32_t(t.vertices.size());
+    if (n < 3) return;
+    std::array<std::pair<uint32_t, uint32_t>, 3> v;
+    for (int i = 0; i < 3; i++) v[i] = {sxy[i], n - 3 + i};
+    t.near_polys[interp_near_key(sxy)] = v;
+}
+
+void interp_shadow(bool begin) {
+    static std::deque<std::shared_ptr<InterpTick>> saved;
+    static bool saved_drawn;
+    static uint64_t saved_seq;
+    in_shadow = begin;
+    if (begin) {
+        saved.swap(ticks);
+        ticks.clear();
+        saved_drawn = drawn_since_projection;
+        saved_seq = next_seq;
+        drawn_since_projection = true;
+    } else {
+        ticks.swap(saved);
+        saved.clear();
+        drawn_since_projection = saved_drawn;
+        next_seq = saved_seq;
+    }
+}
+
 void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, double kx, double ky, int32_t ofx,
                    int32_t ofy, const int16_t rt[3][3], const int32_t tr[3], const int16_t mv[3], uint32_t pc) {
     if (drawn_since_projection) {  // a new tick's projection phase
@@ -110,7 +146,7 @@ void interp_record(int16_t sx, int16_t sy, const int64_t acc[3], uint16_t h, dou
         auto t = std::make_shared<InterpTick>();
         t->seq = next_seq++;
         t->frame = hw::gpu.frames;
-        kbm_tick_look(t->look_yaw, t->look_pitch);
+        if (!in_shadow) kbm_tick_look(t->look_yaw, t->look_pitch);
         t->vertices.reserve(4096);
         ticks.push_back(t);
         while (ticks.size() > 4) ticks.pop_front();

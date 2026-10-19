@@ -24,6 +24,7 @@
 #include "overlay.h"
 #include "pad.h"
 #include "settings.h"
+#include "shadow.h"
 #include "tape.h"
 
 using namespace psx::gl;
@@ -243,11 +244,12 @@ void present_frame(double vblank_time = -1) {
     frames_without_3d = gte_projections != last_projections ? 0 : frames_without_3d + 1;
     last_projections = gte_projections;
     double aspect = output_aspect();
-    if (rgb24 || frames_without_3d > 30) aspect = 4.0 / 3.0;
+    // Widescreen only in a mission: the menus are 2D pictures with a few 3D pieces, made for 4:3.
+    if (rgb24 || frames_without_3d > 30 || !game_in_level()) aspect = 4.0 / 3.0;
     int dw = ww, dh = int(ww / aspect);
     if (dh > wh) { dh = wh; dw = int(wh * aspect); }
     int dx = (ww - dw) / 2, dy = (wh - dh) / 2;
-    overlay_set_view(dx, dy, dw, dh, !rgb24 && frames_without_3d <= 30 && !gpu.display_disabled);
+    overlay_set_view(dx, dy, dw, dh, !rgb24 && frames_without_3d <= 30 && !gpu.display_disabled && game_in_level());
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, ww, wh);
@@ -255,6 +257,11 @@ void present_frame(double vblank_time = -1) {
     glClear(GL_COLOR_BUFFER_BIT);
     if (gpu.display_disabled) return;
     if (use_gl_renderer && !rgb24) {
+        int sx, sy;
+        if (config.decoupled && vblank_time >= 0 && shadow_render(vblank_time, sx, sy)) {
+            gl_renderer_present(dx, dy, dw, dh, sx, sy, w, h);
+            return;
+        }
         if (vblank_time >= 0) gl_renderer_interpolate(vblank_time);
         gl_renderer_present(dx, dy, dw, dh, gpu.display_x, gpu.display_y, w, h);
         return;

@@ -10,6 +10,7 @@
 #include "input.h"
 #include "interp.h"
 
+
 namespace psx {
 
 namespace {
@@ -109,7 +110,8 @@ extern "C" void hook_view_frustum(Cpu *c, RecompFn body) {
     gte_world_scale(kx, ky);
     gte_world_view(tan_h, tan_v);
     reach_yaw = reach_pitch = 0;
-    if (interp_presenting() && tan_h > 0) {
+    // (Decoupled rendering draws every frame for its own camera: nothing to reach for.)
+    if (interp_presenting() && !config.decoupled && tan_h > 0) {
         kbm_look_reach(reach_yaw, reach_pitch);
         // Some always, for turning with a stick.
         reach_yaw = std::clamp(reach_yaw, 6.0, 30.0);
@@ -204,7 +206,10 @@ extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
     body(c);
     if (c->r[2] != 0 || !interp_enabled()) return;
     uint32_t sz[3] = {gte_mfc2(c, 17), gte_mfc2(c, 18), gte_mfc2(c, 19)};
-    if (sz[0] && sz[1] && sz[2]) return offscreen_polygon(c, sz);
+    // Closer than H/2 the GTE's divide saturates: the screen positions are wrong, so the test's
+    // backface and nearness checks are too. Such polygons are checked in camera space below.
+    uint32_t near = (gte_cfc2(c, 26) & 0xFFFF) / 2;
+    if (sz[0] >= near && sz[1] >= near && sz[2] >= near) return offscreen_polygon(c, sz);
     // Camera-space vertices from the GTE's rotation and translation.
     int16_t rt[9];
     for (int i = 0; i < 5; i++) {
@@ -239,6 +244,17 @@ extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
     // pieces behind the camera (the floor under the player went missing), and floods the
     // primitive buffer with them (the weapon, drawn last, went missing too).
     c->r[2] = 1;
+    uint32_t sxy[3] = {gte_mfc2(c, 12), gte_mfc2(c, 13), gte_mfc2(c, 14)};
+    interp_note_near_polygon(sxy);
+}
+
+// 0x8008019C: draws the HUD (messages, ammo, compass) with packets from the primitive pool, whose
+// next free byte is [0x80098958]: those packets are the HUD whatever their coordinates.
+extern "C" void hook_draw_hud(Cpu *c, RecompFn body) {
+    uint32_t before = r32(0x80098958);
+    body(c);
+    hw::game_hud_packets[0] = before & 0x1FFFFC;
+    hw::game_hud_packets[1] = r32(0x80098958) & 0x1FFFFC;
 }
 
 void psx::game_drawn_reach(double &yaw, double &pitch) {

@@ -145,7 +145,11 @@ void gte_cmd(Cpu *c, uint32_t op, uint32_t pc);  /* pc: address of the cop2 inst
 #define PSX_TRACE_SIZE 64
 extern uint32_t psx_trace_ring[PSX_TRACE_SIZE];
 extern uint32_t psx_trace_pos;
-#define ENTER(addr) (psx_trace_ring[psx_trace_pos++ & (PSX_TRACE_SIZE - 1)] = (addr))
+// Debugging (VALOR_TRACE_ENTRIES): every function entry is logged with its return address.
+extern int psx_trace_entries;
+void psx_trace_entry(uint32_t addr, uint32_t ra);
+#define ENTER(addr) (psx_trace_ring[psx_trace_pos++ & (PSX_TRACE_SIZE - 1)] = (addr), \
+                     psx_trace_entries ? psx_trace_entry((addr), c->r[31]) : (void)0)
 
 #define TICK(c, n) ((c)->cycles += (n))
 #define CHECK_EVENTS(c, pc) do { if ((c)->cycles >= (c)->next_event) psx_events(c, pc); } while (0)

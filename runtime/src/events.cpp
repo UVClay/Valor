@@ -2,6 +2,7 @@
 #include <limits>
 
 #include "hw.h"
+#include "shadow.h"
 
 namespace psx::hw {
 
@@ -75,6 +76,10 @@ using namespace psx;
 using namespace psx::hw;
 
 extern "C" void psx_events(Cpu *c, uint32_t pc) {
+    if (shadow_active()) {  // a decoupled rendering pass runs on a copy: no devices or interrupts
+        c->next_event = INT64_MAX;
+        return;
+    }
     if (config.max_cycles && c->cycles >= config.max_cycles) fatal("cycle limit reached at %08X", pc);
     run_due_events(now());
 

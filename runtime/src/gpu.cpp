@@ -8,6 +8,7 @@
 namespace psx::hw {
 
 GpuState gpu;
+bool gpu_shadow;
 
 namespace {
 
@@ -59,10 +60,10 @@ void upload_halfword(uint16_t v) {
     Transfer &t = upload;
     int x = t.x + t.i % t.w, y = t.y + t.i / t.w;
     uint16_t &px = vram_at(x, y);
-    if (!(gpu.mask_check && (px & 0x8000))) px = v | (gpu.mask_set ? 0x8000 : 0);
+    if (!gpu_shadow && !(gpu.mask_check && (px & 0x8000))) px = v | (gpu.mask_set ? 0x8000 : 0);
     if (++t.i >= t.n) {
         uploading = false;
-        hwgl::upload(t.x, t.y, t.w, t.h);
+        if (!gpu_shadow) hwgl::upload(t.x, t.y, t.w, t.h);
     }
 }
 
@@ -73,6 +74,7 @@ void execute(const std::vector<uint32_t> &w) {
         int ww = ((w[2] & 0x3FF) + 15) & ~15, hh = (w[2] >> 16) & 0x1FF;
         uint32_t c = w[0];
         uint16_t px = uint16_t(((c >> 3) & 31) | (((c >> 11) & 31) << 5) | (((c >> 19) & 31) << 10));
+        if (gpu_shadow) return hwgl::fill(x0, y0, ww, hh, c);
         for (int y = 0; y < hh; y++)
             for (int x = 0; x < ww; x++) vram_at(x0 + x, y0 + y) = px;
         hwgl::fill(x0, y0, ww, hh, c);
@@ -81,6 +83,7 @@ void execute(const std::vector<uint32_t> &w) {
     } else if (op >= 0x80 && op < 0xA0) {  // VRAM -> VRAM copy
         int sx = w[1] & 0x3FF, sy = (w[1] >> 16) & 0x1FF, dx = w[2] & 0x3FF, dy = (w[2] >> 16) & 0x1FF;
         int ww = ((w[3] & 0xFFFF) - 1) % 1024 + 1, hh = (((w[3] >> 16) & 0xFFFF) - 1) % 512 + 1;
+        if (gpu_shadow) return hwgl::copy(sx, sy, dx, dy, ww, hh);
         std::vector<uint16_t> tmp(size_t(ww) * hh);
         for (int y = 0; y < hh; y++)
             for (int x = 0; x < ww; x++) tmp[size_t(y) * ww + x] = vram_at(sx + x, sy + y);
@@ -121,6 +124,47 @@ void execute(const std::vector<uint32_t> &w) {
 }
 
 }  // namespace
+
+// The command state set aside while a shadow pass draws.
+struct Stash {
+    GpuState regs;
+    std::vector<uint32_t> fifo;
+    int expected;
+    Transfer upload, download;
+    bool uploading, downloading;
+} stash;
+
+void gpu_shadow_begin() {
+    std::vector<uint16_t> vram;
+    vram.swap(gpu.vram);
+    stash.regs = gpu;
+    gpu.vram.swap(vram);
+    stash.fifo.swap(fifo);
+    fifo.clear();
+    stash.expected = expected;
+    stash.upload = upload;
+    stash.download = download;
+    stash.uploading = uploading;
+    stash.downloading = downloading;
+    uploading = downloading = false;
+    gpu_shadow = true;
+}
+
+void gpu_shadow_end() {
+    gpu_shadow = false;
+    std::vector<uint16_t> vram;
+    vram.swap(gpu.vram);
+    uint64_t primitives = gpu.primitives;
+    gpu = stash.regs;
+    gpu.primitives = primitives;
+    gpu.vram.swap(vram);
+    fifo.swap(stash.fifo);
+    expected = stash.expected;
+    upload = stash.upload;
+    download = stash.download;
+    uploading = stash.uploading;
+    downloading = stash.downloading;
+}
 
 void gpu_init() {
     gpu = GpuState{};
@@ -218,6 +262,16 @@ void gpu_write(uint32_t phys, uint32_t v) {
 void gpu_vblank() {
     gpu.odd_field ^= 1;
     gpu.frames++;
+    // Debugging: VALOR_TRACE_ENTRIES=FRAME:COUNT logs every function entry for COUNT vblanks.
+    static unsigned long long trace_from = ~0ull, trace_count;
+    static bool parsed = [] {
+        if (const char *e = getenv("VALOR_TRACE_ENTRIES")) sscanf(e, "%llu:%llu", &trace_from, &trace_count);
+        return true;
+    }();
+    (void)parsed;
+    psx_trace_entries = gpu.frames >= trace_from && gpu.frames < trace_from + trace_count;
+    if (psx_trace_entries) log("vblank %llu primitives %llu", (unsigned long long)gpu.frames,
+                               (unsigned long long)gpu.primitives);
     gpu_present();
 }
 

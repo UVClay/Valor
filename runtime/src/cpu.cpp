@@ -11,6 +11,8 @@
 extern "C" {
 int psx_cache_isolated = 0;
 uint32_t psx_trace_ring[PSX_TRACE_SIZE];
+int psx_trace_entries;
+void psx_trace_entry(uint32_t addr, uint32_t ra) { psx::log("enter %08X ra %08X", addr, ra); }
 uint32_t psx_trace_pos;
 }
 

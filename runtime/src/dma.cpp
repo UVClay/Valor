@@ -4,6 +4,7 @@
 namespace psx::hw {
 
 uint32_t gpu_packet_addr;
+uint32_t game_hud_packets[2];
 
 namespace {
 

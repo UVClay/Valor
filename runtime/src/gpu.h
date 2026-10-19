@@ -22,7 +22,9 @@ struct GpuState {
 };
 
 extern GpuState gpu;
-extern uint32_t gpu_packet_addr;  // RAM address of the ordering-table packet being drawn (tracing)
+extern uint32_t gpu_packet_addr;
+// The packets the game's HUD routine wrote this frame (physical addresses, game.cpp).
+extern uint32_t game_hud_packets[2];  // RAM address of the ordering-table packet being drawn (tracing)
 
 // A decoded primitive vertex: position (drawing offset applied), color, texture coordinate.
 struct Vertex {
@@ -52,6 +54,12 @@ void copy(int sx, int sy, int dx, int dy, int w, int h);
 void upload(int x, int y, int w, int h);        // CPU wrote this VRAM rectangle
 void vram_changed(int x, int y, int w, int h);  // the software rasterizer drew here
 }  // namespace hwgl
+
+// Decoupled rendering (shadow.cpp): GP0 commands from a drawing pass run on a copy of the game
+// go to the OpenGL renderer only; the GPU's registers and VRAM are left as they were.
+extern bool gpu_shadow;
+void gpu_shadow_begin();
+void gpu_shadow_end();
 
 // Rasterizer (renderer.cpp): draw one polygon/line/rectangle command.
 void gpu_draw(const std::vector<uint32_t> &cmd);

@@ -22,6 +22,7 @@
 #include "gpu.h"
 #include "gpu_gl.h"
 #include "interp.h"
+#include "shadow.h"
 #include "overlay.h"
 #include "runtime.h"
 
@@ -648,10 +649,19 @@ void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int m
     hud.active = hud.is_hud = hud.world = false;
     if (!recording || !recording->tick || !recording->has_area) return;
     bool projected = false, world = false;
+    int matched = 0;
     for (int i = 0; i < n; i++) {
         projected |= src[i] != -1;
         world |= prim_recs[i] >= 0;
+        matched += src[i] != -1;
     }
+    // A single corner where something was projected, outside the primitive pool (where the world's
+    // packets are, glowing sprites included), is a coincidence: a glyph of a message on a world
+    // vertex's spot, not 3D.
+    uint32_t packet = gpu_packet_addr;
+    if (matched == 1 && !(packet >= pool_min && packet <= pool_max)) projected = world = false;
+    // The game's HUD routine made it (its text can land on a projected point's spot too).
+    if (packet >= game_hud_packets[0] && packet < game_hud_packets[1]) projected = world = false;
     if (world) {
         world_packets.push_back(gpu_packet_addr);
         recording->world_prims++;
@@ -667,7 +677,7 @@ void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int m
     int width = recording->area_x2 - recording->area_x1 + 1;
     if (max_x - min_x >= width * 9 / 10) return;
     hud.is_hud = true;
-    if (!config.widescreen_hud || gte_squeeze >= 1) return;
+    if (!config.widescreen_hud || gte_squeeze >= 1 || !game_in_level()) return;
     hud_prims.push_back({p, min_x, max_x, min_y, max_y});
     hud.active = true;
     float left = float(recording->area_x1), right = float(recording->area_x2 + 1);
@@ -695,6 +705,7 @@ void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int m
 
 VertexSource source_for(int32_t rec, uint32_t key) {
     VertexSource s;
+    if (hud.is_hud) rec = -3;  // never moved
     if (rec >= 0) s.rec = rec;
     else if (rec == -1) s.group = prim_group;
     s.key = key;
@@ -879,9 +890,29 @@ bool clip_near(const NearTri &t, const double q[3][3], NearCorner out[NEAR_CORNE
     return true;
 }
 
-bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t src[3], bool dither) {
+bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t *src, bool dither) {
     if (!recording || !recording->tick) return false;
     const auto &tv = recording->tick->vertices;
+    // A polygon reaching behind the camera: its vertices are known exactly (the GTE's positions
+    // for them can coincide, so matching by position could pick another point).
+    int32_t noted[3];
+    {
+        uint32_t keys[3] = {vs[0]->key, vs[1]->key, vs[2]->key};
+        auto it = recording->tick->near_polys.find(interp_near_key(keys));
+        if (it != recording->tick->near_polys.end()) {
+            bool used[3] = {};
+            for (int i = 0; i < 3; i++) {
+                noted[i] = -1;
+                for (int k = 0; k < 3; k++)
+                    if (!used[k] && it->second[k].first == keys[i]) {
+                        used[k] = true;
+                        noted[i] = int32_t(it->second[k].second);
+                        break;
+                    }
+            }
+            if (noted[0] >= 0 && noted[1] >= 0 && noted[2] >= 0) src = noted;
+        }
+    }
     bool near = false, risky = false;
     for (int i = 0; i < 3; i++) {
         if (src[i] < 0 || tv[src[i]].h != float(config.world_h)) return false;
@@ -961,11 +992,42 @@ bool near_triangle(const DrawState &s, const Vertex *const vs[3], const int32_t 
 
 }  // namespace
 
+// Decoupled rendering: while shadow passes draw what is shown, the game's own drawing isn't
+// (its lists would also disturb the widescreen HUD's layout). VRAM uploads and copies still go
+// through: they can be textures.
+bool unseen() { return config.decoupled && !gpu_shadow && shadow_fresh(); }
+
+// Decoupled rendering: a shadow pass draws into the target with lists of its own, which are
+// dropped afterwards; the game's own lists are set aside meanwhile.
+void gl_renderer_shadow(bool begin) {
+    static std::unique_ptr<FrameList> saved_recording;
+    static std::deque<std::unique_ptr<FrameList>> saved_finished;
+    static FrameList *saved_last_shown;
+    flush();
+    if (begin) {
+        saved_recording = std::move(recording);
+        saved_finished.swap(finished);
+        finished.clear();
+        saved_last_shown = last_shown;
+        last_shown = nullptr;
+        subpixel_points.clear();
+        clear_depth();
+    } else {
+        if (recording) layout_hud(*recording);  // keeps the widescreen HUD's anchors current
+        recording = std::move(saved_recording);
+        finished.clear();
+        finished.swap(saved_finished);
+        last_shown = saved_last_shown;
+        subpixel_points.clear();
+    }
+}
+
 namespace hwgl {
 
 bool active() { return enabled; }
 
 void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex &c) {
+    if (unseen()) return;
     begin_draw();
     note_area();
     int32_t src[3];
@@ -1006,6 +1068,7 @@ void triangle(const DrawState &s, const Vertex &a, const Vertex &b, const Vertex
 }
 
 void line(const DrawState &s, const Vertex &a, const Vertex &b) {
+    if (unseen()) return;
     // A PS1 line lights one pixel per step along its major axis: draw a quad one native pixel
     // thick, from half a pixel before the first pixel center to half a pixel past the last.
     float ax = a.x + 0.5f, ay = a.y + 0.5f, bx = b.x + 0.5f, by = b.y + 0.5f;
@@ -1033,6 +1096,7 @@ void line(const DrawState &s, const Vertex &a, const Vertex &b) {
 }
 
 void rect(const DrawState &s, const Vertex &base, int w, int h) {
+    if (unseen()) return;
     float x0 = float(base.x), y0 = float(base.y), x1 = x0 + w, y1 = y0 + h;
     float u0 = float(base.u), v0 = float(base.v);
     begin_draw();
@@ -1054,6 +1118,7 @@ void rect(const DrawState &s, const Vertex &base, int w, int h) {
 }
 
 void fill(int x, int y, int w, int h, uint32_t color) {
+    if (unseen()) return;
     vram_changed(x, y, w, h);
     if (!enabled) return;
     begin_draw();

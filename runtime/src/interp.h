@@ -1,6 +1,7 @@
 // Frame interpolation (see interp.cpp): the game simulates at 30 Hz; extra frames redraw the last
 // drawn frame with the camera and moving objects placed between this tick and the next one.
 #pragma once
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -55,6 +56,9 @@ struct InterpTick {
     int32_t last_group = -1;
     double look_yaw = 0, look_pitch = 0;  // mouse look the game took for this tick (degrees)
     double reach_yaw = 0, reach_pitch = 0;  // how far beyond the view the game drew (degrees)
+    // Polygons reaching behind the camera: their vertices' screen positions (which can coincide:
+    // the GTE clamps them) and projections, by the three positions (interp_near_key).
+    std::unordered_map<uint64_t, std::array<std::pair<uint32_t, uint32_t>, 3>> near_polys;
 };
 
 // Where a tick's vertices go at some point between it and the next tick: q = a * p + b (b only
@@ -83,6 +87,14 @@ std::shared_ptr<const InterpTick> interp_drawing_tick();
 std::shared_ptr<const InterpTick> interp_tick(uint64_t seq);
 // Called by the GPU for every primitive: a drawing phase starts after projections.
 void interp_note_draw();
+// The world polygon just projected (its RTPT recorded the last three vertices) reaches behind the
+// camera: keep which projections its vertices are (game.cpp).
+void interp_note_near_polygon(const uint32_t sxy[3]);
+uint64_t interp_near_key(const uint32_t sxy[3]);
+
+// Decoupled rendering: projections of a shadow pass go to ticks of their own (begin), which are
+// dropped afterwards (end).
+void interp_shadow(bool begin);
 // Motion from tick `from` to `alpha` of the way to tick `to`, and the camera's further turn by
 // `yaw` / `pitch` degrees (right / up) as `look`. False when there is no sensible in-between
 // (camera cut, no camera found).

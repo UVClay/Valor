@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--overlay") && i + 1 < argc) config.overlay = std::clamp(atoi(argv[++i]), 0, 2);
         else if (!strcmp(argv[i], "--frame-rate") && i + 1 < argc) config.frame_rate = std::clamp(atoi(argv[++i]), 0, 1000);
         else if (!strcmp(argv[i], "--no-interpolate")) config.interpolate = false;
+        else if (!strcmp(argv[i], "--decoupled")) config.decoupled = true;
         else if (!strcmp(argv[i], "--window") && i + 1 < argc) {
             if (sscanf(argv[++i], "%dx%d", &config.window_w, &config.window_h) != 2) { usage(argv[0]); return 2; }
         }

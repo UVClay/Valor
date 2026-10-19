@@ -49,7 +49,15 @@ seeds = []
 # Builds the view frustum's planes from the camera (culls rooms and objects): widened to the
 # widescreen/FOV projection.
 "0x8008D0CC" = "hook_view_frustum"
+# Decoupled rendering (runtime/src/shadow.cpp): the drawing pass, and its flip.
+"0x800503D4" = "hook_render_pass"
+"0x800504F8" = "hook_render_flip"
+"0x80053B8C" = "hook_prim_pool"
+# The HUD routine: its packets are the HUD (widescreen HUD).
+"0x8008019C" = "hook_draw_hud"
 
 [hooks.exe]
 # World polygon visibility: polygons reaching behind the camera are near-clipped instead.
 "0x80011214" = "hook_world_polygon"
+# ClearOTagR, done natively in a decoupled rendering pass.
+"0x8001722C" = "hook_clear_otag_r"

@@ -9,6 +9,9 @@
 #include <string>
 #include <vector>
 
+#include "game.h"
+#include "gpu.h"
+#include "hw.h"
 #include "interp.h"
 #include "runtime.h"
 
@@ -244,7 +247,8 @@ void rtp(int n, bool last) {
     bool hud = std::find(psx::config.hud_projections.begin(), psx::config.hud_projections.end(), current_pc) !=
                psx::config.hud_projections.end();
     double kx = 1, ky = 1;
-    if (projection.active) {
+    // Only in a mission: the menus (SHELL.BIN) are 2D pictures with a few 3D pieces, made for 4:3.
+    if (projection.active && psx::game_in_level()) {
         // Widescreen / FOV: scale the projected offset from the screen center. HUD elements that
         // are projected (config.hud_projections, by cop2 instruction address) keep their size.
         // VALOR_TRACE_GTE_PC=1 lists where projections come from (H, cop2 address, result).
@@ -620,6 +624,23 @@ void gte_set_projection(double aspect, double hfov_deg, uint16_t world_h, double
     projection.tan_h = base_tan / k * aspect;
     log("gte: projection aspect %.3f, world FOV %.1f deg horizontal", aspect,
         2.0 * std::atan(base_tan / k * aspect) * 180.0 / M_PI);
+}
+
+void gte_save(std::vector<uint8_t> &out) {
+    out.resize(sizeof g + sizeof sf_shift + sizeof lm + sizeof current_pc);
+    uint8_t *p = out.data();
+    memcpy(p, &g, sizeof g); p += sizeof g;
+    memcpy(p, &sf_shift, sizeof sf_shift); p += sizeof sf_shift;
+    memcpy(p, &lm, sizeof lm); p += sizeof lm;
+    memcpy(p, &current_pc, sizeof current_pc);
+}
+
+void gte_restore(const std::vector<uint8_t> &in) {
+    const uint8_t *p = in.data();
+    memcpy(&g, p, sizeof g); p += sizeof g;
+    memcpy(&sf_shift, p, sizeof sf_shift); p += sizeof sf_shift;
+    memcpy(&lm, p, sizeof lm); p += sizeof lm;
+    memcpy(&current_pc, p, sizeof current_pc);
 }
 
 void gte_world_view(double &tan_h, double &tan_v) {

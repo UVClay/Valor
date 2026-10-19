@@ -14,6 +14,8 @@ int gl_renderer_scale();
 std::vector<uint32_t> gl_renderer_read(int x, int y, int w, int h);
 // Frame interpolation: redraw the displayed frame for this point in emulated time (vblanks).
 void gl_renderer_interpolate(double vblank_time);
+// Decoupled rendering (shadow.cpp): before and after a shadow pass draws.
+void gl_renderer_shadow(bool begin);
 // Blit the displayed VRAM area (native coordinates) into the window's framebuffer rectangle.
 void gl_renderer_present(int dst_x, int dst_y, int dst_w, int dst_h, int src_x, int src_y, int src_w, int src_h);
 

@@ -138,6 +138,7 @@ void triangle(const DrawState &s, Vertex a, Vertex b, Vertex c) {
     grad(a.v, b.v, c.v, dvdx, dvdy);
 
     if (hwgl::active()) hwgl::triangle(s, a, b, c);
+    if (gpu_shadow) return;
 
     minx = std::max(minx, gpu.area_x1);
     maxx = std::min(maxx, gpu.area_x2);
@@ -180,6 +181,7 @@ void line(const DrawState &s, const Vertex &a, const Vertex &b) {
     int steps = std::max(std::abs(dx), std::abs(dy));
     bool dither = s.dither && s.shaded;
     if (hwgl::active()) hwgl::line(s, a, b);
+    if (gpu_shadow) return;
     hwgl::vram_changed(std::min(a.x, b.x), std::min(a.y, b.y), std::abs(dx) + 1, std::abs(dy) + 1);
     for (int i = 0; i <= steps; i++) {
         int x = steps ? a.x + (dx * i + (dx >= 0 ? steps / 2 : -steps / 2)) / steps : a.x;
@@ -285,6 +287,7 @@ void draw_rect(const std::vector<uint32_t> &w) {
         v.r = r; v.g = g; v.b = b; v.u = u0; v.v = v0;
         hwgl::rect(s, v, ww, hh);
     }
+    if (gpu_shadow) return;
     hwgl::vram_changed(base.x, base.y, ww, hh);
     for (int y = 0; y < hh; y++)
         for (int x = 0; x < ww; x++) {
