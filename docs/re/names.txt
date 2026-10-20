@@ -1,7 +1,6 @@
 # Names for tools/recon/fn.py: "ADDR name  # note". Functions and data, all binaries.
 # Keep sorted by address. Details live in the docs next to this file.
 
-
 # --- SLUS_009.74 (exe) ---
 8001552C rand
 80015B28 printf                     # debug output (strings like "MISSION:%d\n")
@@ -20,25 +19,48 @@
 800386A4 g_cheats                   # bits: 0x10 rapid fire, 0x20 big bullets, 0x40 free throws
 80038758 g_level_ammo               # g_game+0x18C: [mission][4 levels] x 13 halfwords, stride 152/36
 80038D4C g_level_end                # level-end summary written by level_end_carry
+80039CA8 g_stat_shots
+80039CAC g_stat_hits
 
 # --- LEVEL.BIN ---
 80039D90 overlay_base
 80043AD4 bullet_touch               # touch(bullet, other): exact hit test, effects, target's handler
+8004532C projectile_create          # +0xF8 damage
 80045A78 bullet_spawn               # bullets are entities at 600-669 units/tick
 80045CA0 rocket_spawn
 80045F14 pellet_spawn
 8004913C camera_setup               # builds the view matrix at obj+0xE4
 8004A634 level_read_parameters      # "PARAMETER DATA READ": ammo row -> weapon table, debug dump
+8004AC58 apply_damage               # (victim, damage, attacker, part): health -= damage, death
+8004C1B4 damage_from_hit            # (victim, part, attacker, attacker_part): part-kind multiplier
+8004C76C segment_parts              # bullet path vs hit-part spheres (+0x304)
+8004C968 segment_parts_from_prev
+8004C990 parts_touch
+8004CB18 spheres_touch
+8004CBC8 segment_sphere
+8004CD90 segment_sphere_from_prev
+8004CEE4 entity_parts_update
+8004D43C entity_bounds
 8004D974 controller_manager
-8004DE3C game_tick                  # one 30 Hz logic step (catch-up loop)
+8004DE3C input_poll                 # reads the controllers (was game_tick: it's run per tick, but only polls)
 800503D4 render_pass
 800504F8 render_flip
 80053C20 draw_level
-8005C97C soldier_anim               # (soldier, anim, ?): 0x10 = reload
+80055628 enemy_think                # type 0x1402
+80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
+8005C97C set_var                    # (entity, var, value): script variables, enemies.md
+8005CBA8 get_var                    # (var, entity): 0x60-0x7F sensors, else variables/flag bits
+800616E4 game_frame                 # input, then per tick: entities_update, entities_collide, 0x8005F69C; then draw
 8006210C level_end_carry            # inventory -> weapon table ammo -> g_level_end
 800625BC start_handler              # pause
 80064374 level_entry                # LEVEL.BIN entry point
+8006B854 entity_link                # appends to g_entities
+8006B89C entity_unlink
 8006B8F0 entity_remove
+8006BA20 entities_update_entry      # loads g_update_stamp, falls into entities_update
+8006BA28 entities_update
+8006C08C entities_collide
+8006C83C entity_move
 8007570C action_held                # (port, action)
 80075778 action_pressed             # (port, action)
 80075A30 role_button
@@ -58,9 +80,14 @@
 80097FCC g_last_vsync
 8009A5D0 g_ticks_dropped
 8009A5D4 g_catchup_ticks
+8009A5DC g_tick
 8009A5E0 g_paused
+8009D61C g_update_stamp
+8009D620 g_hit_list                 # 12-byte {entity, distance, part, done}, nearest-first bullet hits
 8009D638 g_player                   # camera entity; obj at +0x388
+8009D648 g_world                    # the level as an entity: its +0xC is the "world" collision bit
 8009D64C g_entities                 # entity list head, linked through +0x4
 8009D654 g_soldier                  # the player's soldier; inventory at +0x3CC, player.md
+8009D678 g_handles                  # handle (low 16 bits) -> entity
 8009E874 g_slot_count               # weapon slots this level
 8009E878 g_slot_weapon              # byte per slot: index into g_weapons

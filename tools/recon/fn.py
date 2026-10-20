@@ -7,6 +7,7 @@
   fn.py [--bin FILE] uses ADDR           instructions that build the address ADDR (lui pairs)
   fn.py [--bin FILE] offset OFF [OFF..]  functions using all of these load/store offsets
   fn.py [--bin FILE] grep REGEX           instructions matching REGEX, with their function
+  fn.py sortnames                         sort docs/re/names.txt (exe, then overlay addresses)
 
 --bin defaults to LEVEL.BIN; the exe (SLUS_009.74) is always loaded too, for calls into it.
 Function starts come from the recompiler's tables (build/cmake/gen/game/*_table.c); names and notes from
@@ -51,7 +52,10 @@ class Image:
 
     def function(self, a):
         """(start, end) of the function containing a."""
-        i = max(i for i, s in enumerate(self.starts) if s <= a)
+        before = [i for i, s in enumerate(self.starts) if s <= a]
+        if not before:
+            return self.base, self.starts[0] if self.starts else self.end
+        i = before[-1]
         end = self.starts[i + 1] if i + 1 < len(self.starts) else self.end
         return self.starts[i], end
 
@@ -147,8 +151,28 @@ def disasm(img, start, end):
     return out
 
 
+def sort_names():
+    path = ROOT / "docs/re/names.txt"
+    lines = path.read_text().splitlines()
+    head = []
+    for line in lines:
+        if not line.startswith("#"):
+            break
+        head.append(line)
+    entries = {}
+    for line in lines:
+        if line and not line.startswith("#"):
+            entries[int(line.split()[0], 16)] = line
+    exe = [entries[a] for a in sorted(entries) if a < OVERLAY_BASE]
+    ovl = [entries[a] for a in sorted(entries) if a >= OVERLAY_BASE]
+    out = head + ["", "# --- SLUS_009.74 (exe) ---"] + exe + ["", "# --- LEVEL.BIN ---"] + ovl
+    path.write_text("\n".join(out) + "\n")
+
+
 def main():
     args = sys.argv[1:]
+    if args == ["sortnames"]:
+        return sort_names()
     binname = "LEVEL.BIN"
     if args[:1] == ["--bin"]:
         binname, args = args[1], args[2:]

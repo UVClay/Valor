@@ -1,4 +1,6 @@
-// Reverse engineering: log what changes in chosen memory from one game tick to the next.
+// Reverse engineering traces.
+//
+// Memory: log what changes in chosen memory from one game tick to the next.
 // VALOR_WATCH="name=EXPR:LEN;..." where EXPR is a hex address, [EXPR] (the word there), or
 // EXPR+HEX / EXPR-HEX; e.g. "inv=[8009D654]+3CC:80". Each tick, every changed aligned word is
 // logged as "watch VBLANK name+OFF: OLD -> NEW" (VALOR_WATCH_HALF=1: halfwords, signed decimal).
@@ -108,3 +110,23 @@ void watch_tick(Cpu *c) {
 }
 
 }  // namespace psx
+
+using namespace psx;
+
+// 0x8004AC58 apply_damage(victim, damage, attacker, part) (docs/re/combat.md). VALOR_TRACE_DAMAGE
+// logs each call: who, how much, the victim's health before and after.
+extern "C" void hook_apply_damage(Cpu *c, RecompFn body) {
+    static bool trace = getenv("VALOR_TRACE_DAMAGE") != nullptr;
+    if (!trace) return body(c);
+    uint32_t victim = c->r[4], attacker = c->r[6];
+    int32_t damage = int32_t(c->r[5]), part = int32_t(c->r[7]);
+    int32_t before = int32_t(psx_r32(c, victim + 0xF4));
+    uint32_t vtype = psx_r32(c, victim + 0x8), atype = psx_r32(c, attacker + 0x8);
+    int16_t weapon = int16_t(psx_r16(c, attacker + 0x3CA));
+    body(c);
+    int32_t after = int32_t(psx_r32(c, victim + 0xF4));
+    log("damage %llu: victim %08X type %X part %d, attacker %08X type %X weapon %d, damage %.3f, "
+        "health %.3f -> %.3f%s", (unsigned long long)hw::gpu.frames, victim, vtype, part, attacker,
+        atype, weapon, damage / 65536.0, before / 65536.0, after / 65536.0,
+        (psx_r32(c, victim + 0xC) & 0x20000000) ? " dead" : "");
+}

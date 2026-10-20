@@ -50,8 +50,48 @@ Called by the entity physics as `touch(bullet, other)` when they overlap:
 4. The target's own touch handler (`other+0x37C`) is called with the bullet: damage is applied
    there (enemies.md, to come).
 
+## Damage
+
+`enemy_hit_part(enemy, part, other, other_part)` (`0x80055864`, the soldier's `hit_part`) and
+the player's (`0x8007C1D0`) handle a hit:
+
+1. `damage_from_hit(victim, part, attacker, attacker_part)` (`0x8004C1B4`): the damage is the
+   bullet's (`+0xF8`, the weapon's damage) or, for a contact between parts, the attacking
+   part's `+0x10` (part kinds 5, 6 and 9: an attack). It is scaled by the kind of the victim's
+   part (`0x8003A2E0`): kinds 1, 5-9 ×1; 2 ×0.75; 3 ×0.5; 4 ×0.25; 10 ×2; 11 ×4; 12 kills. The
+   direction it came from (front/back, `0x8004C108`) goes to the victim's `+0x38` flags for the
+   reaction.
+2. `apply_damage(victim, damage, attacker, part)` (`0x8004AC58`): nothing while the victim's
+   `+0x48` timer runs (invulnerable); ×4 when the player's weapon block word 0 has 0x20000000
+   (a cheat); health (`+0xF4`) -= damage; at 0 or below the victim dies (flags A 0x20000000,
+   `+0x38` 0x4000), credited to the attacker (`0x80080240`) for enemies with flags B 0x8000. Hits
+   on the player also run `0x80060FC4` and `0x80080304` (the damage feedback).
+3. The enemy reacts (variables 0x18: what hit it, 0xC: the part, 0xD: health left as a fraction
+   of +0xF0, for the scripts, enemies.md), and is marked as shot at by the attacker
+   (`0x8004AC58`'s caller passes it on).
+
+All 17 parts of a soldier are kind 1, so **every hit does the weapon's damage, wherever it
+lands**: there are no headshot multipliers in MoH. Measured with `VALOR_TRACE_DAMAGE` over a
+replay of 1:3 and 2:1:
+
+| Attacker | Damage | Notes |
+|---|---|---|
+| Garand (12) | 2.5 | 3 hits for a 1:3 soldier (6.0 health) |
+| Thompson (1) | 1.2 | 5 hits |
+| Shotgun (4) | 2.0 per pellet | 3 of 6 pellets kill |
+| Silenced pistol (9) | 1.5 | 2:1 soldiers have 4.0 health: 3 hits |
+| Enemy bullet (type 0x13F4) | 7.0 rifle, 2.0 SMG (1:3); 4.0 (2:1) | The player has 128.0 |
+| Type 0x1405 (a dog?) | 2.0 | Contact between parts (the player's parts 1 and 2) |
+
+Hit parts still matter:
+- **Part 0 is the helmet**: a hit there knocks it off half the time (a helmet entity flies,
+  `0x80051200`, with a sound by helmet model).
+- **Statistics** (in the exe's data, so the results screen can read them after the level):
+  shots fired `0x80039CA8` (`fire_gun`, `throw_weapon`), shots that hit `0x80039CAC` (once per
+  bullet), hits per part group `0x80039CC4`/`CC8`/`CCC` and per part `0x80039CD0`..`0x80039D0C`
+  (17 counters), helmet hits `0x80039CC0`.
+
 ## Open
 
-- The entity physics that finds the overlap (how far a bullet is swept per tick, the target's
-  collision shape): entities.md.
-- How a target's handler turns the bullet's damage into health loss (hit zones?).
+- What the results screen shows from those counters, and what the part groups are.
+- The player's `hit_part` (`0x8007C1D0`) and the damage feedback.
