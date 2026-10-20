@@ -300,7 +300,7 @@ Every tick, the player and the walkers (`zones_update`, `0x800845A8` → `0x8008
 |---|---|---|
 | The player (flags A 1) | send each message of the list at `+0x38` (a count, then the messages: `send_event(message, 0, record, entity)`) | the list at `+0x3C` |
 | Characters (flags A 0x50) | `+0x40` | `+0x44` |
-| Kind-0 records (the player) | by class: 0xD1BA7D1E ends the level (`0x8009C840` \|= 0x24), 0x4D078F23 `0x80054378` (`0x80099070` = the record), 0x3011B913 a **ladder** (an entity of type 0x4C, below) | 0x3011B913: `spawn_from_model(0x8877B646)` |
+| Kind-0 records (the player) | by class: 0xD1BA7D1E ends the level (`0x8009C840` \|= 0x24), 0x4D078F23 **streams the world** (`0x80054378` → `0x8005439C`: the record says which TSP chunk to load into which slot, replacing the one there), 0x3011B913 a **ladder** (an entity of type 0x4C, below) | 0x3011B913: `spawn_from_model(0x8877B646)` |
 
 **Ladders**: the ladder entity (type 0x4C, `0x80061244`; one at a time) holds the record's
 radius (`+0x2A`) and top (its y less `+0x2C`). While the player is within the radius and
@@ -363,7 +363,7 @@ walk goal is on, the same gathering also sorts the walls ahead/left/right for st
 ## Open
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
-- Kind 5; what 0x4D078F23 (`0x80054378`) does; types 0x1405, 0x1771,
+- Kind 5; the chunk streaming records' fields; types 0x1405, 0x1771,
   0x1774 in game.
 - Record kinds' property numbers (one reader per kind, `0x8006488C`..`0x80065B24`), the message
   numbers, the register filters and what a context's +0x8/+0xC/+0x10/+0x14 are per message.

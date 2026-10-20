@@ -186,6 +186,7 @@
 80044D18 angles_from_to
 80044E0C gun_points                 # two points on the gun from the model's bones +0xD4/+0xD6
 800451B0 projectile_aim             # start and angles: camera (scoped) or along the barrel; enemies: at the target
+8005439C chunk_stream               # trigger 0x4D078F23: load a TSP chunk into a slot
 8005FEA0 floor_pick                 # the leaf's triangles: nearest floor, steps of up to 32
 80060034 floor_leaf                 # k-d descent to the leaf; its zone id
 80060138 floor_in_chunk             # + the steep-slope flag
