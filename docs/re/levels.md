@@ -308,9 +308,17 @@ the ends (t = |d0| / (|d0| + |d1|), in 1/4096) and the crossing point is inside 
 (three edge cross products against the normal). The nearest hit wins: its point, normal and
 face (`-1`: nothing hit).
 
-Walkers (`walker_slide`, `0x80078F60`) use the same chunks through `0x80078E2C`/`0x80078D1C`
-(a cylinder: the probe radius, the height of the collision sphere); floors come from
-`0x80060474`.
+**The floor** (`floor_find`, `0x80060474` → `0x8006028C`, from `entity_move` and spawning):
+for each chunk whose rectangle holds the point, the tree is descended to the leaf holding (x, z)
+(a split's low side is child a). The leaf's fourth halfword is a **zone id**, kept in the
+entity's `+0x390`. Among the leaf's triangles that hold (x, z) (`0x8005FC00`), the height on
+each plane (`0x8005FDCC`) is a candidate if it's below the feet or at most 32 units above them
+(y points down); the floor is the candidate nearest the feet, or the highest of those below
+when none is above. A floor whose normal's vertical part is less than 1.75 times its largest
+horizontal part (steeper than about 30°) is flagged steep (`0x80060138`). No floor: -0x7FFF.
+
+Walkers (`walker_slide`, `0x80078F60`) collide with the same chunks through
+`0x80078E2C`/`0x80078D1C` (a cylinder: the probe radius, the collision sphere's height).
 
 ## Open
 
