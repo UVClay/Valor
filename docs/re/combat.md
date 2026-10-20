@@ -5,9 +5,8 @@
 `fire_gun(soldier, yaw, pitch, fire)`, called from the player update (`0x8007B350`); enemies
 fire through the same spawners. With an empty clip it does nothing.
 
-1. **Aim.** The view's angles, unless the soldier is in aim mode (`soldier+0x100 → +0x84`):
-   then the angles and origin come from the reticle (`→ +0x8`: +0xD4/+0xD6 angles, +0xD8/+0xE0
-   position).
+1. **Aim.** Where the shot starts and points (below, Aiming): along the gun's barrel, or from
+   the camera when scoped.
 2. **Stance.** `inv+0x1C8` (0..9) picks an accuracy flag through a jump table at `0x8003D218`.
 3. **The shot**, through a jump table on the weapon (`0x8003D240`):
    - Most guns: one bullet, `bullet_spawn` (`0x80045A78`), type `0x13F6` (weapon 11: `0x13F7`).
@@ -26,6 +25,42 @@ Thrown and launched weapons go through `throw_weapon` (`0x8007CF4C`): a wind-up
 (`inv+0x120/+0x124`), then a projectile entity (`0x80045808`, type 0x5A) at the hand, swept
 against the world (`0x8003EF5C`) and tested against every entity (`0x8004CD90`); a hit explodes
 at once (`0x8006A76C`, `0x8004D43C`).
+
+## Aiming (the player)
+
+Every tick the player's controls (`player_controls`, `0x8007F300`) end in `aim_update`
+(`0x8007E034`), which works out where the crosshair is and steers the gun to it:
+
+1. **The aim point.** A ray from the camera through the crosshair (its screen position
+   `inv+0x190`/`+0x192`, the aim distance `inv+0xA4`) is swept against the world in three
+   pieces (`world_sweep`); the first wall hit ends it. Every entity it passes (not dead, not
+   flagged 0x206 in flags B) is tested against its sphere, and for characters (flags A 0x10400,
+   with a box) more exactly (`0x8004B0F0`); the nearest one shortens the ray to it. The end is
+   the aim point (`inv+0x1A4..+0x1AC`).
+2. **Aim friction.** If the nearest entity on the ray is a character (flags A & 0x50) at least
+   1200 units away, `inv` flag 0x100000 is set, and past 2750 units also bit 31: the turning
+   and looking speeds are halved, or quartered, while the crosshair is on a distant enemy.
+3. **The gun follows the crosshair.** The barrel's far point is projected to the screen and
+   the soldier's angular velocity is set from its distance to the crosshair: yaw the full
+   difference (half under 9 pixels), pitch 1.25× (1× under 9, 0.5× under 5). The gun converges
+   on the crosshair over a few ticks rather than instantly; turning fast, it trails it.
+4. **Where shots start** (`inv+0x198`): the camera when the aim point is closer than the
+   muzzle (+20 units: flag 0x20000) or in mode 0x200000, else the muzzle.
+
+**Shots** (`projectile_create` → `0x800451B0`):
+- Scoped (`inv` flag 0x100; turning is cut to 1/8): from the camera's position along the
+  camera's angles, exactly where the crosshair is.
+- Otherwise: from the gun, along the line between two points on it (`0x80044E0C`: the model's
+  bones `+0xD4`, `+0xD6` with offsets `+0xD8`, `+0xE0`; `0x80044F10`, `0x80044D18` turn the
+  line into angles): **along the barrel**, so where the gun points, not where the crosshair is.
+- Enemies' shots: angles from the gun to the target point (enemies.md).
+- Weapons with flag 2: the start is pulled back toward the shooter by 3/4 of its horizontal
+  distance, so the first tick's sweep starts behind the muzzle (no shooting through a wall the
+  barrel pokes through).
+
+**Turning** (`player_controls`): the turn and look inputs are scaled by 0.5625 (0.375 with
+`inv` flag 0x80000), then by the aim friction (½ or ¼) or the scope (⅛), and pitch is clamped
+to ±0x2AA (±60°).
 
 ## Bullets (`bullet_spawn`, `0x80045A78`)
 
