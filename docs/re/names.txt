@@ -96,6 +96,8 @@
 8007D5C8 fire_gun
 8007F084 center_view
 8007F300 player_controls
+80082E90 health_pickup_touch        # +13 / +32 / +64, capped at 128
+800830BC ammo_pickup_touch
 80087080 model_relocate
 80087308 level_load                 # reads the TAF and BSD, relocates, builds spawners
 8008B3E8 tsp_walk

@@ -88,6 +88,21 @@ the "life" parameter (`g_params+0xC`).
 | 11 | SMG ROUNDS | 3 | 20 | 999 | 3.5 | BAR? (the only weapon with spread and recoil climb) |
 | 12 | RIFLE ROUNDS | 20 | 8 | 999 | 2.5 | M1 Garand |
 
+## Pickups (entity type 101)
+
+Pickups are touched (`touch`, `+0x37C`) by the player; not by dead or special entities (flags A
+0x20180000).
+
+- **Health** (`health_pickup_touch`, `0x80082E90`): ignored at full health (128.0); otherwise
+  health += the pack's amount, at most 128.0, with a message (`0x8005F3E8`; the texts at
+  `0x8009E864`..`0x8009E86C` by kind) and a sound (0x1F, 0x1E). The amounts, set when the pickup
+  is made (`0x80083058`): kind 0 → 13.0, kind 1 → 32.0, kind 2 → 64.0.
+- **Ammo** (`ammo_pickup_touch`, `0x800830BC`): the pickup's kind (object `+0x0`) indexes the
+  table at `0x8009E8E8` (20 bytes each; `+0xA` the weapon). If one of the level's slots holds that
+  weapon and its reserve is below the maximum: the ammo's name as a message (`g_weapons[w]+0x3C`,
+  e.g. "RIFLE ROUNDS"), sound 0x20, `0x8004301C(player, slot, amount)` with the amount from the
+  level record's byte `+0x5C`, and the pickup is removed. With a full reserve it stays.
+
 ## Carry-over between levels
 
 `g_game` (`0x800385CC`) lives in the exe's data, so it survives overlay loads; it holds the
