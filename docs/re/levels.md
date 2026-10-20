@@ -34,7 +34,7 @@ and the node table, sets the fog and background colours, and builds the spawners
 | +0xDC..+0x320 | 0x14-byte entries {count, pointer, n, 0x02RRGGBB, type}: colour/light sets? |
 | +0x53C | The entity table (below) |
 | +0x540 | The AI node table: count, then entries (the world object's +0x4/+0x8/+0xC) |
-| +0x544..+0x584 | {pointer, count} sections: 235, 6715, 52894, 158, 7, 1972, 7, 182, 1123 entries in 1:3 (collision geometry?), also the bases for models' offsets |
+| +0x544..+0x584 | {pointer, count} sections: 235, 6715, 52894, 158, 7, 1972, 7, 182, 1123 entries in 1:3 (model data? the world's collision is in the TSP files), also the bases for models' offsets |
 | +0x598, +0x59C, +0x5A0 | Sections parsed by `0x80086F98`, (world), `0x8007540C` |
 
 ## Entity records (`+0x53C`)
@@ -281,6 +281,37 @@ is completed; a new rating replaces it only if higher. A real save had 2 on 1:1.
 2/6, +0x38 parts 9/11/13/15, +0x3C parts 1/5 (legs and arms, one side each), +0x40.. kills per
 weapon (from `g_level_end`).
 
+## Collision: TSP chunks
+
+The level's world collision is in its **TSP chunks** (`TSP0\m_l_cN.TSP`, loaded by
+`0x8008C850` for each name in the header): the TSP header's word 15 (+0x3C) is the offset of a
+collision block, which `0x8003EB44` points the chunk's entry at (`0x80090DE8`, 0x28 bytes per
+chunk, count `0x80098984`). `tools/recon/tspcol.py` reads it (and exports the triangles as OBJ);
+all 220 TSP files on the disc parse with every node reached, every face in a leaf and the block
+ending at the end of the file.
+
+| Block | |
+|---|---|
+| +0x00 | s16 x min, z min, x max, z max: the chunk's rectangle |
+| +0x08 | u16 counts: nodes, face indices, vertices, normals, faces |
+| +0x12 | Nodes, 8 bytes {s16 a, s16 b, u16 split}: a 2D k-d tree over x/z (root 0). a < 0: a leaf of ~a faces listed from face index b. Else a split at (x min + split) on x when b >= 0 (children a, b), on z when b < 0 (children a, ~b) |
+| | Face indices (u16), padded to 4 bytes |
+| | Vertices, 8 bytes {s16 x, y, z} |
+| | Normals, 8 bytes {s16 x, y, z}, unit length 32767 (y down: floors have y < 0) |
+| | Faces (triangles), 10 bytes {u16 v0, v1, v2, normal, s16 d}: the plane is (normal · p) >> 15 + d = 0 |
+
+**Sweeping a segment** (`world_sweep`, `0x8003EF5C`, for everything but walkers): every chunk
+(but `0x800AA184`) whose rectangle holds either end or is crossed by the segment is searched
+(`0x8003E3F0`): the tree is walked along the segment, nearer half first, up to 8 deferred
+halves; in each leaf (`0x8003DC10`) a face is hit where the plane distance changes sign between
+the ends (t = |d0| / (|d0| + |d1|), in 1/4096) and the crossing point is inside the triangle
+(three edge cross products against the normal). The nearest hit wins: its point, normal and
+face (`-1`: nothing hit).
+
+Walkers (`walker_slide`, `0x80078F60`) use the same chunks through `0x80078E2C`/`0x80078D1C`
+(a cylinder: the probe radius, the height of the collision sphere); floors come from
+`0x80060474`.
+
 ## Open
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
@@ -288,4 +319,5 @@ weapon (from `g_level_end`).
   in game.
 - Record kinds' property numbers (one reader per kind, `0x8006488C`..`0x80065B24`), the message
   numbers, the register filters and what a context's +0x8/+0xC/+0x10/+0x14 are per message.
-- The collision sections, the TAF files.
+- The walkers' cylinder test and the floor search in detail; the BSD header's {pointer, count}
+  sections (+0x544..+0x584, not the world's collision); the TAF files.

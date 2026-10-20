@@ -26,8 +26,9 @@ check every finding.
    scripts into plain behaviour (docs/re/enemies.md)
 5. [ ] **Levels**: done: files, the level header, records and how each kind spawns, models and
    entity types, the level script VM fully (with a disassembler that folds scripts into
-   statements), objectives, the rating, campaign slots and career totals. Left: what record
-   kinds 0, 1, 5 are, the collision sections, the TAF files (docs/re/levels.md)
+   statements), objectives, the rating, campaign slots and career totals, the world collision
+   (TSP chunks: a k-d tree of triangles). Left: what record kinds 0, 1, 5 are, walkers' and
+   floor collision in detail, the TAF files (docs/re/levels.md)
 
 Tools: `tools/recon/fn.py c ADDR` decompiles with m2c (clone it into `build/m2c`).
 

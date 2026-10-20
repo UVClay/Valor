@@ -180,6 +180,13 @@
 
 # --- SHELL.BIN ---
 8003BA40 g_kill_required            # 4 words per campaign slot
+8003DC10 leaf_sweep                 # segment vs a leaf's triangles
+8003E3F0 chunk_sweep                # the k-d tree walk of one chunk's collision
+8003EB44 chunk_collision_setup      # TSP collision block -> chunk entry
 80062108 level_begin                # (mode): campaign slot -> mission/level, MSN9's missing LVL3, clears g_level_end
 80062694 career_add                 # the level's counters into g_game's career totals
 8007344C level_rating               # 0..2 stars: objectives, kills, health > 75%
+8008C514 tsp_parse
+8008C850 tsp_load                   # (path, chunk)
+80090DE8 g_chunk_collision          # 0x28 bytes per chunk: rect, counts, tree, indices, vertices, normals, faces
+80098984 g_chunk_count

@@ -28,6 +28,8 @@ Run inside the container (`./dev ...`).
 - `tools/recon/sst.py RAMDUMP --type 1402` disassembles an entity's model scripts.
 - `tools/recon/lvs.py RAMDUMP [ID...]` disassembles the level's scripts, folded into
   statements (`--raw`: one instruction per line).
+- `tools/recon/tspcol.py FILE.TSP...` checks TSP chunks' collision blocks; `--obj` exports the
+  triangles.
 - `VALOR_TRACE_DAMAGE=1` logs every damage event (victim, attacker, damage, health).
 - `VALOR_WATCH="name=EXPR:LEN;..."` makes the runtime log, every game tick, what changed in
   those bytes (EXPR: hex, `[EXPR]` to follow a pointer, `+HEX`/`-HEX`), e.g.
