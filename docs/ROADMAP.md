@@ -50,6 +50,12 @@ and full playthroughs of two missions.
 - [x] Optional sub-pixel vertex precision (PGXP-style, Video tab, off by default): projected vertices are
       drawn where they really project, from the camera-space positions recorded for interpolation
 
+## Main menu redesign
+
+- [ ] **Single-segment mode**: pick any mission and level at will, and keep stats per level:
+      the stars earned, enemies killed out of the total (Doom/Quake-style 100% runs), and the
+      rest of the game's end-of-level results.
+
 ## Known issues (testing tools)
 
 - `--warp 1:3` starts the sewer level with only a Garand and no ammunition: the warp skips
