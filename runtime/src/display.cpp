@@ -454,6 +454,7 @@ void gpu_present() {
                 video_frame();
             }))
             throw Halt("replay finished");
+        if (!config.video.empty() && gpu.frames > config.video_to) throw Halt("replay finished (end of --video-range)");
         overlay_frame_begin();
         return;
     }
@@ -549,6 +550,8 @@ void gpu_present() {
         static uint64_t next_present_ns;
         if (next_present_ns + 2 * interval < now_ns || next_present_ns > now_ns + 2 * interval)
             next_present_ns = now_ns + interval;
+        // Not before this vblank (after a stall the clock restarts at it).
+        next_present_ns = std::max(next_present_ns, vblank_ns);
         while (next_present_ns < next_frame_ns) {
             now_ns = SDL_GetTicksNS();
             if (next_present_ns > now_ns) SDL_DelayPrecise(next_present_ns - now_ns);

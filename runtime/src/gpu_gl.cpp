@@ -572,8 +572,10 @@ uint32_t pool_min = 1, pool_max = 0;              // the primitive pool, from th
 uint32_t frame_pool_min = 1, frame_pool_max = 0;  // ... from the last one
 
 // A top corner: the top 40%, that half, and within 80 pixels of the side (the pause menu's score
-// is farther in; a wide ammo icon reaches past the outer quarter).
+// is farther in; a wide ammo icon reaches past the outer quarter). Not on the pause screen, whose
+// objectives list starts there too.
 int8_t corner_anchor(const FrameList &list, int min_x, int max_x, int max_y) {
+    if (game_paused()) return 0;  // the pause screen is laid out as a whole
     int width = list.area_x2 - list.area_x1 + 1, height = list.area_y2 - list.area_y1 + 1;
     if (max_y > list.area_y1 + height * 2 / 5) return 0;
     if (max_x < list.area_x1 + width / 2 && min_x <= list.area_x1 + 80) return -1;
@@ -668,7 +670,8 @@ void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int m
         hud.world = !prim_other;
     }
     if (projected || world) return;
-    if (recording->tick->frame + 3 < gpu.frames || recording->tick->vertices.size() < 64) return;  // 2D screen
+    // A 2D screen: no 3D tick for a while (a slow one, as when a mission ends, is still 3D).
+    if (recording->tick->frame + 30 < gpu.frames || recording->tick->vertices.size() < 64) return;
     uint32_t p = gpu_packet_addr;
     if (polygon && p >= pool_min && p <= pool_max) {
         hud.world = true;
@@ -686,7 +689,7 @@ void begin_hud(const int32_t *src, int n, int min_x, int max_x, int min_y, int m
         hud.center = left;  // touching an edge (borders): stays on it
     } else if (max_x >= right - 1) {
         hud.center = right;
-    } else if (config.hud_edges) {
+    } else if (config.hud_edges) {  // the pause screen is laid out as a whole
         int x0 = min_x - recording->area_x1, x1 = max_x - recording->area_x1;
         int y0 = min_y - recording->area_y1, y1 = max_y - recording->area_y1;
         int anchor = 0;

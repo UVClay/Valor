@@ -89,8 +89,11 @@ Track *track(char kind) {
     }
 }
 
+// Once for each kind: what the game reads (controls, RAM) apart from what only the display shows.
 void report(const char *what, uint64_t frame) {
-    if (diverged) return;
+    static std::vector<std::string> reported;
+    if (std::find(reported.begin(), reported.end(), what) != reported.end()) return;
+    reported.push_back(what);
     diverged = true;
     log("replay: the game differs from the recording from vblank %llu (%s): the controls follow in "
         "the order it reads them, the frames shown at the recorded moments", (unsigned long long)frame, what);

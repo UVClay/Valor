@@ -288,7 +288,8 @@ void overlay_render() {
         if (static bool log_fps = getenv("VALOR_LOG_FPS"); log_fps) {
             float worst = 0;
             for (float v : frame_ms) worst = std::max(worst, v);
-            log("fps: display %.1f game %.1f, worst frame %.1f ms", display_hz, game_fps, worst);
+            log("fps: display %.1f game %.1f, worst frame %.1f ms at vblank %llu", display_hz, game_fps, worst,
+                (unsigned long long)hw::gpu.frames);
         }
         flips_in_window = presents_in_window = 0;
         flips_window_start_ns = now;

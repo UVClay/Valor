@@ -220,7 +220,10 @@ static void gp1(uint32_t v) {
     case 0x04: gpu.stat = (gpu.stat & ~0x60000000u) | ((v & 3) << 29); break;
     case 0x05: {
         int x = v & 0x3FE, y = (v >> 10) & 0x1FF;
-        if (x != gpu.display_x || y != gpu.display_y) overlay_note_flip();  // the game shows a new frame
+        if (x != gpu.display_x || y != gpu.display_y) {  // the game shows a new frame
+            overlay_note_flip();
+            gpu.flips++;
+        }
         gpu.display_x = x;
         gpu.display_y = y;
         break;

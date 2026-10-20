@@ -18,6 +18,7 @@ struct GpuState {
     uint32_t hrange = 0, vrange = 0, display_mode = 0;
     uint32_t odd_field = 0;
     uint64_t frames = 0;
+    uint64_t flips = 0;  // display start changes: the game showing a new frame
     uint64_t primitives = 0;
 };
 

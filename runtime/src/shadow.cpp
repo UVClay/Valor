@@ -48,6 +48,7 @@ struct Machine {
 Machine snapshot, saved;
 bool have_snapshot;
 uint64_t snapshot_frame, previous_frame;
+uint64_t pass_flips;  // gpu.flips after the latest copy's drawing pass
 int32_t eye[3];  // the player's position in the latest copy
 // The view's direction. The camera looks at a point about 200 units away in whole units, built
 // a tick behind the soldier's look: shown as is, its direction steps by up to a few tenths of a
@@ -343,12 +344,14 @@ void place_camera(Cpu &c, double vblank_time) {
 
 bool shadow_active() { return active; }
 
-bool shadow_fresh() { return have_snapshot && hw::gpu.frames <= snapshot_frame + 4; }
+// The latest copy is what the game shows: it hasn't shown anything else since (a 2D screen) but
+// the frame its own pass drew (shown at a vblank after it), and its ticks keep coming (slowly, as
+// when a mission ends).
+bool shadow_fresh() { return have_snapshot && hw::gpu.flips <= pass_flips + 1 && hw::gpu.frames <= snapshot_frame + 60; }
 
 bool shadow_render(double vblank_time, int &x, int &y) {
     if (!have_snapshot || active) return false;
-    // Only a copy from the latest tick (not a level left behind).
-    if (hw::gpu.frames > snapshot_frame + 4) return false;
+    if (!shadow_fresh()) return false;
     Cpu &c = *hw::cpu;
     capture(saved, c);
     load(snapshot, c);
@@ -441,6 +444,7 @@ extern "C" void hook_render_pass(Cpu *c, RecompFn body) {
         gte_record_other();
         body(c);
         weapon.known = gte_recorded_other(weapon.rt, weapon.tr, weapon.pc);
+        pass_flips = hw::gpu.flips;
         return;
     }
     body(c);

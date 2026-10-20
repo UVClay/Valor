@@ -4,6 +4,7 @@
 #include <set>
 #include <vector>
 
+#include "shadow.h"
 #include "hw.h"
 #include "runtime.h"
 
@@ -31,9 +32,16 @@ static void trace_once(const char *kind, uint32_t phys, int size, uint32_t value
         log("io: first %s%d %08X = %08X", kind, size * 8, phys, value);
 }
 
+// A drawing copy (shadow.cpp) runs the game's code, BIOS calls included: it may use the GPU (which
+// keeps its own state for it), but no other device. Its writes are dropped and its reads find
+// nothing (no interrupt pending, no data waiting), so the real devices never see it. (The drawing
+// pass sets the sound voices' volumes for the camera: a copy did that again for its own.)
+static bool copy_device(uint32_t phys) { return shadow_active() && phys != 0x1F801810 && phys != 0x1F801814; }
+
 uint32_t io_read(Cpu *c, uint32_t phys, int size) {
     (void)c;
     uint32_t v;
+    if (copy_device(phys)) return 0;
     if (phys >= 0x1F801040 && phys < 0x1F801050) v = hw::sio_read(phys, size);
     else if (phys == 0x1F801070 || phys == 0x1F801074) v = hw::irq_read(phys);
     else if (phys >= 0x1F801080 && phys < 0x1F801100) v = hw::dma_read(phys & ~3u) >> (8 * (phys & 3));
@@ -59,6 +67,7 @@ uint32_t io_read(Cpu *c, uint32_t phys, int size) {
 void io_write(Cpu *c, uint32_t phys, uint32_t value, int size) {
     (void)c;
     trace_once("W", phys, size, value);
+    if (copy_device(phys)) return;
     if (phys >= 0x1F801040 && phys < 0x1F801050) hw::sio_write(phys, value, size);
     else if (phys == 0x1F801070 || phys == 0x1F801074) hw::irq_write(phys, value);
     else if (phys >= 0x1F801080 && phys < 0x1F801100) hw::dma_write(phys, value, size);
