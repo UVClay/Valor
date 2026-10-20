@@ -13,8 +13,8 @@ The block is at the offset in the TSP header's word 15 (+0x3C):
           a >= 0, b < 0    split on z at z min + split: children a, ~b
         face indices (u16), padded to 4 bytes
         vertices (8 bytes: s16 x, y, z, pad)
-        normals (8 bytes: s16 x, y, z (1.0 = 0x8000?), pad)
-        faces (10 bytes: u16 v0, v1, v2, normal, s16 d)
+        normals (8 bytes: s16 x, y, z, pad), unit length 32767
+        faces (10 bytes: u16 v0, v1, v2, normal, s16 d): (normal . p) >> 15 + d = 0 on the plane
 """
 import struct
 import sys
