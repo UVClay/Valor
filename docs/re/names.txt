@@ -86,6 +86,7 @@
 8005CBA8 get_var                    # (var, entity): 0x60-0x7F sensors, else variables/flag bits
 8005D148 script_operand             # (n, mask, value, entity): variable or literal
 8005D18C script_step
+8005D32C destructible_touch         # type 0x1770: damage, message 1 at 0 health, objects-destroyed count
 8005DA24 mounted_gun_think          # MG emplacement operated by the player
 8005F28C text_add                   # (text, x, y, scale, r, g, b, ticks, id, ...): 32-byte entries at 0x80099F4C, at most 50
 8005F69C texts_update               # on-screen texts: lifetime, colour fade
@@ -101,6 +102,7 @@
 800664A0 script_run_message         # (entity, object, message): runs that handler
 800672E0 level_vm                   # level scripts: byte ops over a typed stack
 8006949C align_up
+8006A910 model_find                 # hash -> index in g_models
 8006B854 entity_link                # appends to g_entities
 8006B89C entity_unlink
 8006B8F0 entity_remove
@@ -109,6 +111,8 @@
 8006C08C entities_collide
 8006C83C entity_move
 8006D670 brain_alloc                # 0x124 bytes
+8006D6F0 spawn_from_model           # (model, template): spawn_by_type, then the model's script +0x94
+8007505C record_spawn               # by kind: template (+0x60/+0x74) -> model -> entity; kind 4 a pickup
 8007529C entity_records_register    # the BSD entity table
 8007540C paths_parse                # BSD header +0x5A0 -> g_paths
 8007570C action_held                # (port, action)
@@ -166,4 +170,6 @@
 8009E290 g_paths                    # 8 bytes each: {id, count, points (0x14 bytes each, s16 x y z first)}
 8009E874 g_slot_count               # weapon slots this level
 8009E878 g_slot_weapon              # byte per slot: index into g_weapons
+8009EC54 g_model_count
+8009EC58 g_models                   # 0x100 bytes each: +0 hash, +0x94 script, +0xB8 scripts, +0xFC entity type
 800AD260 g_vm_stack                 # 8-byte {type, value}, top index 0x8009D5A8

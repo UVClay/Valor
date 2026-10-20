@@ -71,22 +71,41 @@ health, +0x62, +0x63 aim error, +0x64 damage, +0x65, +0x66, +0x68 (150), +0x6A, 
 (and +0x60 or +0x74 by activation kind) are offsets within the record, made pointers by
 `0x80075120`.
 
-## Spawners
+## Spawning: records, models, entity types
 
-Records become spawner entities; a spawner creates the real entity through `spawn_by_type`
-(`0x80061350`, from `0x8006D6F0`), by the type it holds at `+0xFC`:
+A record becomes an entity when it's **activated** (`record_activate`, `0x80052D70`, level
+built-in 4: once per record, bit 0 of its state word): by its kind (`+0xC`, `0x8007505C`):
 
-| Type | Created by | |
-|---|---|---|
-| 0x1402 | `enemy_spawn` (`0x800563F0`) | Soldier |
-| 0x1405 | `0x80054E4C` | The other enemy (5 hit parts; contact damage: a dog?) |
-| 0x1770, 0x1778 | `0x8005D678` | |
-| 0x1771 | `0x80046B2C` | |
-| 0x1772 | `0x8005E2AC` | |
-| 0x1774 | `0x800905C0` | |
-| 0x1775 | `0x8005E510` | |
-| 0x1776 | `0x8005E648` | |
-| 0x1777, 0x1779, 0x177A | `0x8005E7B0` | |
+| Kind | Hash (1:3, 2:1, 2:2) | Count | Becomes |
+|---|---|---|---|
+| 0 | 0x4D078F23, 0x3011B913 | 3..11 | Nothing (activation does nothing) |
+| 1 | 0xB81C10E3 | 26..36 | Nothing; the most common record (positions, a yaw, small numbers: open) |
+| 2 | 0x166A85FB, 0x8877B646 | 3..15 | An entity of the model named by the template at `+0x60` (`+0x4` its hash); script id `+0x64` |
+| 3 | 0x4F292333 | 10..49 | A soldier: the template at `+0x74` (the weapon hashes, enemies.md); script id `+0x78` |
+| 4 | 0xBD12927E | 5..23 | A pickup (`0x80083960`, type 101) |
+| 5 | 0x413B09BF | 0..2 | Nothing |
+| 6 | 0xD31F988A | 1..45 | Like kind 2 |
+
+**Models** (`[0x8009EC58]`, count `[0x8009EC54]`, 0x100 bytes each, loaded with the level):
++0x0 hash, +0x94 the behaviour script started at spawning (-1: none), +0xB8/+0xBC the scripts
+(enemies.md), +0xFC the **entity type**. The type is the model's: `spawn_by_type`
+(`0x80061350`, from `0x8006D6F0`) creates the entity by it, then starts its script:
+
+| Type | Constructor | Think | |
+|---|---|---|---|
+| 0x1402 | `enemy_spawn` (`0x800563F0`) | `enemy_think` | Soldier (7 models in 2:1/2:2, 2 in 1:3) |
+| 0x1405 | `0x80054E4C` | `0x80054AB8` | Another character: soldier-like flags, 5 hit parts, contact damage |
+| 0x1770 | `0x8005D678` | (none) | **Destructible**: solid, health from the record's `+0x5C`; damaged by bullets, explosions (type 0x31) and melee (`0x8005D32C`); at 0 health its script gets message 1 (e.g. 1:3's script 84: animate, explode, sound, remove) and `0x80039D10` counts it (career stat `+0x1C`: objects destroyed); record `+0x68` set: `0x800838AC` (a drop?) |
+| 0x1778 | `0x8005D678` | (none) | The same model kind without collision (scenery) |
+| 0x1771 | `0x80046B2C` | `0x80046A88` | Scripted, spinning by variables 3..5, removed when variable 6 < variable 2 (a timed effect?) |
+| 0x1772 | `0x8005E2AC` | `mounted_gun_think` | Mounted gun, with a brain (ranges 3000) |
+| 0x1774 | `0x800905C0` | `0x8008FDF8` | A large object with a sub-object and two parameter blocks (a vehicle?) |
+| 0x1775 | `0x8005E510` | scripts | Scripted, a collision box, nothing collides with it |
+| 0x1776 | `0x8005E648` | scripts | Scripted and solid, with hit parts (5 in 2:1: doors?) |
+| 0x1777, 0x1779, 0x177A, others | `0x8005E7B0` | (none) | Inert; 0x1779 a box, the rest solid like 0x1770 (bullets ignore 0x1777) |
+
+Live types seen besides these: 1 the player's soldier, 2 the camera, 3, 0x31 (explosions),
+0x4C, 0x65 pickups.
 
 `enemy_spawn` refuses while `0x80097FEC` soldiers are alive (`0x80097FE8`).
 
@@ -251,7 +270,7 @@ is completed; a new rating replaces it only if higher. A real save had 2 on 1:1.
 2:1 and 2:2.
 
 **Career totals** (`career_add`, SHELL `0x80062694`) add the level's counters into `g_game`:
-+0x10 shots, +0x14 hits, +0x18 wounds, +0x1C `0x80039D10`, +0x20 kills, +0x24 head hits,
++0x10 shots, +0x14 hits, +0x18 wounds, +0x1C objects destroyed (`0x80039D10`), +0x20 kills, +0x24 head hits,
 +0x28 torso hits without part 8, +0x2C part 8 (the groin), +0x30 parts 10/12/14/16, +0x34 parts
 2/6, +0x38 parts 9/11/13/15, +0x3C parts 1/5 (legs and arms, one side each), +0x40.. kills per
 weapon (from `g_level_end`).
@@ -259,7 +278,8 @@ weapon (from `g_level_end`).
 ## Open
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
-- Classes other than the soldier, and the 0x177x types (pickups, doors, alarms, objectives...).
+- What kinds 0, 1 and 5 are (triggers? cover? sound sources?), and types 0x1405, 0x1771, 0x1774
+  in game.
 - Record kinds' property numbers (one reader per kind, `0x8006488C`..`0x80065B24`), the message
   numbers, the register filters and what a context's +0x8/+0xC/+0x10/+0x14 are per message.
 - The collision sections, the TAF files.
