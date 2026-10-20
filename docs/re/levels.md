@@ -107,18 +107,48 @@ at `0x800AD5A8`). Types: 0x0A integer, 0x0B boolean, 0x0E float (PsyQ software f
 `0x8001D590` int→float, `0x8001D7B0` equal, `0x8001D880` less), 0x0F string (strcmp), 0x10 a
 handle; binary operators switch on the pair of operand types.
 
-| Op | |
-|---|---|
-| 00 | nop |
-| 01 | pop |
-| 03 | call a built-in (a sub-opcode byte 0xF0..0xF3 follows) |
-| 04 | == |
-| 05 | && |
-| 06 | \|\| |
-| 07 | ! |
-| 08 | < |
-| 14 | end |
-| others | the remaining comparisons, arithmetic, pushes, jumps (to read) |
+Operands follow the opcode byte, 2- or 4-byte aligned (`0x8006949C`). Addresses are offsets
+in the script.
+
+| Op | Operand | |
+|---|---|---|
+| 00 | | nop |
+| 01 | | pop |
+| 02 | source byte 0xF4..0xFF, then by source | push: a literal or a value of an entity (the script's own, the message's sender, ...; jump tables at `0x8003CD50`, `0x8003CD68`) |
+| 03 | 0xF0..0xF3, ... | store (the counterpart of push) |
+| 04, 08..0B | | == < (and the other comparisons): push a boolean |
+| 05, 06, 07 | | && \|\| ! |
+| 0C..0F | | arithmetic (int and float) |
+| 10 | address (u16) | pop; jump if zero |
+| 11 | address (u16) | jump |
+| 12 | index (u8) | call built-in |
+| 13 | index (u16) | call built-in |
+| 14 | | end |
+| 15 | | push whether this script hasn't run yet (a once-flag in the script table) |
+| 16 | | set the once-flag |
+| 17 | byte or word | debug print |
+
+**Built-ins** (`g_level_builtins`, `0x8009D5C0`, 22 functions, filled at level start by
+`0x80066110`):
+
+| # | Function | |
+|---|---|---|
+| 0 | `0x80069514` | RegisterMsg: subscribe the entity to a message (filter types) |
+| 1 | `0x80069714` | UnregisterMsg |
+| 2, 12 | → `0x80066EA0` | send a message |
+| 3 | → `0x800660F4` | |
+| 4 | → `0x80052D70` | |
+| 5 | → `entity_remove` | remove an entity |
+| 6 | → `0x80052F14` | an explosion (sound, particles, `0x800719C0`) |
+| 7 | → `0x800536F4` | (sets `0x80098630`) |
+| 8 | → `0x80053464` | (dynamic lights) |
+| 9, 10 | → `0x8005351C`, `0x8005359C` | |
+| 11 | → `0x800539C8` | |
+| 13 | → `0x80052DC4` | activate the level's music (loads `m_la.vb`; sets `g_bPrimaryObjectivesComplete`) |
+| 14..17 | | objective add / remove / complete / is complete |
+| 18, 21 | → `0x80054740`, `0x80054990` | |
+| 19 | → `0x800533D4` | play a sound |
+| 20 | → `0x80053444` | stop a sound? |
 
 **Objectives** are built-ins (stack wrappers at `0x80069DF4`..`0x80069EC4`): `objective_add(id,
 text)` (`0x8005372C`: adds, or resets to incomplete; the text from the message table

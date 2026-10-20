@@ -115,6 +115,7 @@
 8009A5E0 g_paused
 8009CC64 g_level                    # the BSD level header
 8009D5AC g_level_scripts
+8009D5C0 g_level_builtins           # 22 level script built-ins (levels.md)
 8009D61C g_update_stamp
 8009D620 g_hit_list                 # 12-byte {entity, distance, part, done}, nearest-first bullet hits
 8009D638 g_player                   # camera entity; obj at +0x388

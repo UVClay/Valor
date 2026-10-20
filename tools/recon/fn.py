@@ -2,6 +2,7 @@
 """Function-level disassembly for reverse engineering (run inside ./dev).
 
   fn.py [--bin FILE] show ADDR...        disassemble the function(s) containing ADDR
+  fn.py [--bin FILE] range START END      disassemble an address range (across recompiler splits)
   fn.py [--bin FILE] callers ADDR        functions that call ADDR (jal)
   fn.py [--bin FILE] calls ADDR          functions ADDR calls
   fn.py [--bin FILE] uses ADDR           instructions that build the address ADDR (lui pairs)
@@ -188,6 +189,10 @@ def main():
                 return im
         sys.exit(f"{a:08X} is in none of the loaded binaries")
 
+    if cmd == "range":
+        a, b = int(rest[0], 16), int(rest[1], 16)
+        print("\n".join(disasm(find(a), a, b)))
+        return
     if cmd == "grep":
         pat = re.compile(rest[0])
         for im in images:
