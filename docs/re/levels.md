@@ -78,8 +78,8 @@ built-in 4: once per record, bit 0 of its state word): by its kind (`+0xC`, `0x8
 
 | Kind | Hash (1:3, 2:1, 2:2) | Count | Becomes |
 |---|---|---|---|
-| 0 | 0x4D078F23, 0x3011B913 | 3..11 | Nothing (activation does nothing) |
-| 1 | 0xB81C10E3 | 26..36 | Nothing; the most common record (positions, a yaw, small numbers: open) |
+| 0 | 0x4D078F23, 0x3011B913 | 3..11 | Nothing; built-in actions when the player enters or leaves (Triggers) |
+| 1 | 0xB81C10E3 | 26..36 | Nothing: a **trigger volume** (Triggers) |
 | 2 | 0x166A85FB, 0x8877B646 | 3..15 | An entity of the model named by the template at `+0x60` (`+0x4` its hash); script id `+0x64` |
 | 3 | 0x4F292333 | 10..49 | A soldier: the template at `+0x74` (the weapon hashes, enemies.md); script id `+0x78` |
 | 4 | 0xBD12927E | 5..23 | A pickup (`0x80083960`, type 101) |
@@ -281,6 +281,29 @@ is completed; a new rating replaces it only if higher. A real save had 2 on 1:1.
 2/6, +0x38 parts 9/11/13/15, +0x3C parts 1/5 (legs and arms, one side each), +0x40.. kills per
 weapon (from `g_level_end`).
 
+## Triggers
+
+Records have a volume (`+0x10` its centre, `+0x28` the shape, `record_contains`,
+`0x80083D30`): 0 a sphere of radius `+0x2A`; 1 a cylinder of radius `+0x2A` from `+0x2E` to
+`+0x2C` around the centre's height (1:3's kind-1 records: radius 330..542, ±500); 2 a box or
+polygon (`0x80083AB8`).
+
+Each floor **zone** (the k-d leaf's id, Collision) lists the records whose volumes reach into
+it (`[0x8009EC5C]`: per zone a byte count, then u16 indices into the level's record table).
+Every tick, the player and the walkers (`zones_update`, `0x800845A8` → `0x80084400`, from
+`entity_move`) test their position against their zone's records: a bit per record in
+`+0x394` (the previous zone and bits in `+0x390`/`+0x398` and `+0x39C`), and every bit that
+changes is an **enter** or a **leave** (`0x800840E0`):
+
+| | Enter | Leave |
+|---|---|---|
+| The player (flags A 1) | send each message of the list at `+0x38` (a count, then the messages: `send_event(message, 0, record, entity)`) | the list at `+0x3C` |
+| Characters (flags A 0x50) | `+0x40` | `+0x44` |
+| Kind-0 records (the player) | by class: 0xD1BA7D1E ends the level (`0x8009C840` \|= 0x24), 0x4D078F23 `0x80054378` (`0x80099070` = the record), 0x3011B913 spawns an entity of type 0x4C | 0x3011B913: `spawn_from_model(0x8877B646)` |
+
+Only records with lists (or kind 0) are tested. The level scripts' messages (1:3's objectives
+complete on messages 0x37..0x39) come from these lists and from entities' scripts.
+
 ## Collision: TSP chunks
 
 The level's world collision is in its **TSP chunks** (`TSP0\m_l_cN.TSP`, loaded by
@@ -323,8 +346,8 @@ Walkers (`walker_slide`, `0x80078F60`) collide with the same chunks through
 ## Open
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
-- What kinds 0, 1 and 5 are (triggers? cover? sound sources?), and types 0x1405, 0x1771, 0x1774
-  in game.
+- Kind 5 and shape 2; what 0x4D078F23 (`0x80054378`) and type 0x4C do; types 0x1405, 0x1771,
+  0x1774 in game.
 - Record kinds' property numbers (one reader per kind, `0x8006488C`..`0x80065B24`), the message
   numbers, the register filters and what a context's +0x8/+0xC/+0x10/+0x14 are per message.
 - The walkers' cylinder test and the floor search in detail; the BSD header's {pointer, count}

@@ -195,7 +195,14 @@
 80062694 career_add                 # the level's counters into g_game's career totals
 8007344C level_rating               # 0..2 stars: objectives, kills, health > 75%
 8007E034 aim_update                 # crosshair ray -> aim point, aim friction, the gun steered to the crosshair
+80083D30 record_contains            # (pos, ?, record pair): the record's volume: sphere, cylinder, box
+80083EF0 record_enter               # +0x38 / +0x40 message lists, kind 0 by class
+8008406C record_leave               # +0x3C / +0x44
+800840E0 zones_events               # enter/leave by changed bits
+80084400 zones_mask                 # the zone's records the entity is inside: +0x394
+800845A8 zones_update
 8008C514 tsp_parse
 8008C850 tsp_load                   # (path, chunk)
 80090DE8 g_chunk_collision          # 0x28 bytes per chunk: rect, counts, tree, indices, vertices, normals, faces
 80098984 g_chunk_count
+8009EC5C g_zone_records             # per zone: count byte, u16 record indices
