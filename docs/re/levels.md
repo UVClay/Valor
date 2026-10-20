@@ -105,7 +105,7 @@ built-in 4: once per record, bit 0 of its state word): by its kind (`+0xC`, `0x8
 | 0x1777, 0x1779, 0x177A, others | `0x8005E7B0` | (none) | Inert; 0x1779 a box, the rest solid like 0x1770 (bullets ignore 0x1777) |
 
 Live types seen besides these: 1 the player's soldier, 2 the camera, 3, 0x31 (explosions),
-0x4C, 0x65 pickups.
+0x4C the ladder (Triggers), 0x65 pickups.
 
 `enemy_spawn` refuses while `0x80097FEC` soldiers are alive (`0x80097FE8`).
 
@@ -363,7 +363,7 @@ walk goal is on, the same gathering also sorts the walls ahead/left/right for st
 ## Open
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
-- Kind 5; what 0x4D078F23 (`0x80054378`) and type 0x4C do; types 0x1405, 0x1771,
+- Kind 5; what 0x4D078F23 (`0x80054378`) does; types 0x1405, 0x1771,
   0x1774 in game.
 - Record kinds' property numbers (one reader per kind, `0x8006488C`..`0x80065B24`), the message
   numbers, the register filters and what a context's +0x8/+0xC/+0x10/+0x14 are per message.
