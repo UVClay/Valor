@@ -21,13 +21,15 @@ check every finding.
 3. [x] **Combat**: firing, bullets, hit tests, damage (flat per weapon, no headshot bonus), the
    player being hit, statistics (docs/re/combat.md)
 4. [ ] **Enemies**: done: the script VM (all 74 opcodes) and a disassembler, variables and
-   sensors, spawning from level records, firing and aim error, the brain's goals. Left: the
-   brain's movement and path following, the sensors one by one, reading the soldier's scripts
-   (docs/re/enemies.md)
-5. [ ] **Levels**: done: files, the level header, entity records and spawners, the level script
-   VM's structure and built-ins, objectives, the rating and career totals. Left: the level VM's
-   push/store operands and a disassembler, the collision sections, the other entity classes
-   (docs/re/levels.md)
+   every sensor, spawning from level records, firing and aim error, the brain (seek, flee,
+   paths, walking with wall avoidance, points and cover nodes). Left: reading the soldier's
+   scripts into plain behaviour, how aim follows the target (docs/re/enemies.md)
+5. [ ] **Levels**: done: files, the level header, records and how each kind spawns, models and
+   entity types, the level script VM fully (with a disassembler that folds scripts into
+   statements), objectives, the rating, campaign slots and career totals. Left: what record
+   kinds 0, 1, 5 are, the collision sections, the TAF files (docs/re/levels.md)
+
+Tools: `tools/recon/fn.py c ADDR` decompiles with m2c (clone it into `build/m2c`).
 
 Waiting for the game state they need (presentation, later): a separate HUD layer and then
 native HUD elements, a native sniper scope, a PC-style aim mode (the view keeps turning, the
