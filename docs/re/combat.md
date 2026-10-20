@@ -58,6 +58,15 @@ Every tick the player's controls (`player_controls`, `0x8007F300`) end in `aim_u
   distance, so the first tick's sweep starts behind the muzzle (no shooting through a wall the
   barrel pokes through).
 
+**Measured** (`VALOR_TRACE_SHOTS=1` on a replay of a 27-minute session, 335 unscoped shots,
+`tools/recon/shots.py`): the bullets' lines pass a median 0.8 units (90%: within 0.5° seen from
+the camera) from the aim point: where the game's crosshair ray ends is where shots go, the gun's
+lag doesn't matter. But that ray is **not the view's centre**: the crosshair rests at screen
+line 131 (`inv+0x192`, with the projection centre at 120: `SetGeomOffset(w/2, h/2)`), so the
+aim point is a median 2.95° below the view's direction (yaw: centred). The original draws no
+crosshair outside aim mode; a crosshair drawn at the screen's centre is ~3° above where the
+shots go (30 units at 600, 150 at 3000).
+
 **Turning** (`player_controls`): the turn and look inputs are scaled by 0.5625 (0.375 with
 `inv` flag 0x80000), then by the aim friction (½ or ¼) or the scope (⅛), and pitch is clamped
 to ±0x2AA (±60°).

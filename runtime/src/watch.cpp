@@ -4,6 +4,7 @@
 // VALOR_WATCH="name=EXPR:LEN;..." where EXPR is a hex address, [EXPR] (the word there), or
 // EXPR+HEX / EXPR-HEX; e.g. "inv=[8009D654]+3CC:80". Each tick, every changed aligned word is
 // logged as "watch VBLANK name+OFF: OLD -> NEW" (VALOR_WATCH_HALF=1: halfwords, signed decimal).
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -129,4 +130,33 @@ extern "C" void hook_apply_damage(Cpu *c, RecompFn body) {
         "health %.3f -> %.3f%s", (unsigned long long)hw::gpu.frames, victim, vtype, part, attacker,
         atype, weapon, damage / 65536.0, before / 65536.0, after / 65536.0,
         (psx_r32(c, victim + 0xC) & 0x20000000) ? " dead" : "");
+}
+
+// 0x80045A78 bullet_spawn(owner, ...) -> bullet (docs/re/combat.md, Aiming). VALOR_TRACE_SHOTS
+// logs each of the player's bullets: its yaw and pitch against the game's view (the soldier's
+// weapon block +0x184 yaw, +0x178 pitch), in degrees, and whether the scope was up.
+extern "C" void hook_bullet_spawn(Cpu *c, RecompFn body) {
+    static bool trace = getenv("VALOR_TRACE_SHOTS") != nullptr;
+    if (!trace) return body(c);
+    uint32_t owner = c->r[4];
+    body(c);
+    uint32_t bullet = c->r[2];
+    if (!bullet || !(psx_r32(c, owner + 0xC) & 1)) return;
+    uint32_t inv = psx_r32(c, owner + 0x388);
+    // 16.16 angles, 4096 per turn, wrapped to +-half a turn.
+    auto deg = [](int32_t a) {
+        double d = std::fmod(a / 65536.0 * 360.0 / 4096.0, 360.0);
+        return d > 180 ? d - 360 : d < -180 ? d + 360 : d;
+    };
+    int32_t byaw = int32_t(psx_r32(c, bullet + 0x22C)), bpitch = int32_t(psx_r32(c, bullet + 0x228));
+    int32_t vyaw = int32_t(psx_r32(c, inv + 0x184)), vpitch = int32_t(psx_r32(c, inv + 0x178));
+    auto pos = [&](uint32_t a, int i) { return int32_t(psx_r32(c, a + 4 * i)) / 65536.0; };
+    uint32_t cam = psx_r32(c, 0x8009D638);
+    log("shot %llu: yaw %.2f pitch %.2f, view yaw %.2f pitch %.2f, off by yaw %.2f pitch %.2f%s; "
+        "bullet %.1f %.1f %.1f, aim %.1f %.1f %.1f, camera %.1f %.1f %.1f",
+        (unsigned long long)hw::gpu.frames, deg(byaw), deg(bpitch), deg(vyaw), deg(vpitch),
+        deg(byaw - vyaw), deg(bpitch - vpitch), (psx_r32(c, inv) & 0x100) ? " scoped" : "",
+        pos(bullet + 0x20C, 0), pos(bullet + 0x20C, 1), pos(bullet + 0x20C, 2), pos(inv + 0x1A4, 0),
+        pos(inv + 0x1A4, 1), pos(inv + 0x1A4, 2), pos(cam + 0x20C, 0), pos(cam + 0x20C, 1),
+        pos(cam + 0x20C, 2));
 }
