@@ -340,8 +340,18 @@ each plane (`0x8005FDCC`) is a candidate if it's below the feet or at most 32 un
 when none is above. A floor whose normal's vertical part is less than 1.75 times its largest
 horizontal part (steeper than about 30°) is flagged steep (`0x80060138`). No floor: -0x7FFF.
 
-Walkers (`walker_slide`, `0x80078F60`) collide with the same chunks through
-`0x80078E2C`/`0x80078D1C` (a cylinder: the probe radius, the collision sphere's height).
+**Walkers** (`walker_slide`, `0x80078F60`: the player and characters, flags A 0x8) are a
+vertical capsule: radius `+0x2EC` (60 for soldiers), height from the collision sphere's
+(`+0x2D6` - 16). The triangles of the leaves within the radius of the new position, in every
+chunk holding it, are gathered as planes (`0x80078E2C` → `0x800787C0` → `0x8007848C`, at most
+32). Then, repeatedly, of the planes the capsule now penetrates (`0x80078BCC`: the plane's
+distance to the capsule's lowest or highest point, by the normal's vertical sign, less the
+radius), the one it was farthest from at the old position (touched first) pushes the position
+back out along the plane's normal, horizontally only (`0x80078C4C`): walkers slide along walls
+and never climb them; height comes only from the floor. The planes are gathered again at the
+result and checked once more (contact flags: 1 still touching a wall, 2 not). While the brain's
+walk goal is on, the same gathering also sorts the walls ahead/left/right for steering
+(enemies.md).
 
 ## Open
 

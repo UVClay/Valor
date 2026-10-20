@@ -194,6 +194,10 @@
 80062108 level_begin                # (mode): campaign slot -> mission/level, MSN9's missing LVL3, clears g_level_end
 80062694 career_add                 # the level's counters into g_game's career totals
 8007344C level_rating               # 0..2 stars: objectives, kills, health > 75%
+80078BCC capsule_plane_dist
+80078C4C wall_push                  # push a walker out of a plane, horizontally (the PsyQ match "UserFuncExecute" is wrong)
+80078D1C wall_first_hit
+80078E2C walls_gather
 8007E034 aim_update                 # crosshair ray -> aim point, aim friction, the gun steered to the crosshair
 80083D30 record_contains            # (pos, ?, record pair): the record's volume: sphere, cylinder, box
 80083EF0 record_enter               # +0x38 / +0x40 message lists, kind 0 by class
