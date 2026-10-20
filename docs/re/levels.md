@@ -83,7 +83,7 @@ built-in 4: once per record, bit 0 of its state word): by its kind (`+0xC`, `0x8
 | 2 | 0x166A85FB, 0x8877B646 | 3..15 | An entity of the model named by the template at `+0x60` (`+0x4` its hash); script id `+0x64` |
 | 3 | 0x4F292333 | 10..49 | A soldier: the template at `+0x74` (the weapon hashes, enemies.md); script id `+0x78` |
 | 4 | 0xBD12927E | 5..23 | A pickup (`0x80083960`, type 101) |
-| 5 | 0x413B09BF | 0..2 | Nothing |
+| 5 | 0x413B09BF | 0..2 | Nothing: a volume (2:1's: a 260 × 255 × 260 box) with a tag list (`+0x48`) and no messages; read through the tag built-ins (inferred) |
 | 6 | 0xD31F988A | 1..45 | Like kind 2 |
 
 **Models** (`[0x8009EC58]`, count `[0x8009EC54]`, 0x100 bytes each, loaded with the level):
@@ -363,7 +363,7 @@ walk goal is on, the same gathering also sorts the walls ahead/left/right for st
 ## Open
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
-- Kind 5; the chunk streaming records' fields; types 0x1405, 0x1771,
+- Who reads kind 5's volumes; the chunk streaming records' fields; types 0x1405, 0x1771,
   0x1774 in game.
 - Record kinds' property numbers (one reader per kind, `0x8006488C`..`0x80065B24`), the message
   numbers, the register filters and what a context's +0x8/+0xC/+0x10/+0x14 are per message.
