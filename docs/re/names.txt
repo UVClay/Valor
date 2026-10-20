@@ -62,6 +62,7 @@
 8005D148 script_operand             # (n, mask, value, entity): variable or literal
 8005D18C script_step
 8005DA24 mounted_gun_think          # MG emplacement operated by the player
+80061350 spawn_by_type              # (record, spawner): by spawner+0xFC
 800616E4 game_frame                 # input, then per tick: entities_update, entities_collide, 0x8005F69C; then draw
 8006210C level_end_carry            # inventory -> weapon table ammo -> g_level_end
 800625BC start_handler              # pause
@@ -73,6 +74,7 @@
 8006BA28 entities_update
 8006C08C entities_collide
 8006C83C entity_move
+8007529C entity_records_register    # the BSD entity table
 8007570C action_held                # (port, action)
 80075778 action_pressed             # (port, action)
 80075A30 role_button
@@ -85,6 +87,8 @@
 8007D5C8 fire_gun
 8007F084 center_view
 8007F300 player_controls
+80087080 model_relocate
+80087308 level_load                 # reads the TAF and BSD, relocates, builds spawners
 8008B3E8 tsp_walk
 8008BF00 tsp_draw
 8008D0CC frustum_build
@@ -100,6 +104,7 @@
 8009A5D4 g_catchup_ticks
 8009A5DC g_tick
 8009A5E0 g_paused
+8009CC64 g_level                    # the BSD level header
 8009D61C g_update_stamp
 8009D620 g_hit_list                 # 12-byte {entity, distance, part, done}, nearest-first bullet hits
 8009D638 g_player                   # camera entity; obj at +0x388
