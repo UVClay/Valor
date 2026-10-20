@@ -29,7 +29,10 @@
 8003F8F0 script_run_a
 8003FBFC script_run_b
 8003FFA4 brain_steer                # goal 0x4: turn along walls
+80040180 brain_seek                 # (e, forward, delta, turn_rate, dist): turn the heading toward delta, arrive slow-down
 800404E8 brain_move_to              # goals 0x1 / 0x4000
+80040618 brain_goto_node            # goal 0x800 (via the side waypoint brain+0xAC)
+800408B4 brain_goto_point           # goal 0x1000: distance into a variable, arrive radius brain+0xA8
 80040A0C brain_follow_path          # goal 0x2
 80040DF4 brain_update               # entity+0x38C: goals set by script op 0x2F
 80043AD4 bullet_touch               # touch(bullet, other): exact hit test, effects, target's handler
@@ -62,6 +65,13 @@
 80055628 enemy_think                # type 0x1402
 80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
 800563F0 enemy_spawn                # from a level spawn record: health, aim error, ranges
+80057474 brain_node_target          # node -> the point to stand at (+0xA0) and the side waypoint (+0xAC)
+80057C24 path_find                  # path id -> index in g_paths
+80057C8C path_nearest_point         # (e, path): index of the nearest point
+8005AB04 brain_release_node         # frees the node brain+0xB6 claimed
+8005ABA0 brain_reset_gait           # speed 1.0, gait 0, no slow-down
+8005ABEC brain_clear_moves          # goals &= ~0x5C03
+8005AC00 op_behaviour               # enemy script op 0x2F
 8005C97C set_var                    # (entity, var, value): script variables, enemies.md
 8005CBA8 get_var                    # (var, entity): 0x60-0x7F sensors, else variables/flag bits
 8005D148 script_operand             # (n, mask, value, entity): variable or literal
@@ -82,12 +92,15 @@
 8006BA28 entities_update
 8006C08C entities_collide
 8006C83C entity_move
+8006D670 brain_alloc                # 0x124 bytes
 8007529C entity_records_register    # the BSD entity table
+8007540C paths_parse                # BSD header +0x5A0 -> g_paths
 8007570C action_held                # (port, action)
 80075778 action_pressed             # (port, action)
 80075A30 role_button
 80075E7C role_axis_curve
 80075FB4 role_axis                  # (port, role, ?)
+80078F60 walker_slide               # walkers vs the level; sorts nearby walls ahead/left/right for the brain
 8007A32C player_think_mounted       # while on a mounted gun
 8007A6B0 player_update
 8007B350 player_weapon_update
@@ -132,5 +145,7 @@
 8009D64C g_entities                 # entity list head, linked through +0x4
 8009D654 g_soldier                  # the player's soldier; inventory at +0x3CC, player.md
 8009D678 g_handles                  # handle (low 16 bits) -> entity
+8009E28C g_path_count
+8009E290 g_paths                    # 8 bytes each: {id, count, points (0x14 bytes each, s16 x y z first)}
 8009E874 g_slot_count               # weapon slots this level
 8009E878 g_slot_weapon              # byte per slot: index into g_weapons

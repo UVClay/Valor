@@ -6,8 +6,8 @@ An enemy soldier (type 0x1402) is an entity (entities.md) whose behaviour is spl
   react to a hit by body part, die by cause, pick cover, route, raise the alarm, set animation
   and sounds. They read the world through variables and sensors.
 - **The brain** (`entity+0x38C`, run by `0x80040DF4` from the entity update) carries out what
-  the scripts ask through `behaviour` (op 0x2F): move to a target, follow a path of nodes, aim
-  at a target. It holds the perception ranges and the aim error.
+  the scripts ask through `behaviour` (op 0x2F): seek or flee a target, follow a path, walk,
+  go to a point or a cover node. It holds the perception ranges and the aim error.
 - **The weapon** (`enemy_weapon`, `0x8005163C`, from the think) fires bursts at the target
   when the scripts set the fire state (variable 0x16).
 
@@ -83,7 +83,7 @@ n-1 set makes operand n a variable id, else a literal (`script_operand`, `0x8005
 | 27 | if A op B goto T else F | op 1 ==, 2 >, 3 <, 4 != |
 | 28/29/2A, 2C/2D, 30 | arithmetic | var ops, add, sub, multiply |
 | 2E | query | A fact about a target (self, handle, player) into a variable: health, eye height, distance, angle, perception (sight/hearing range, 0.75× when the player's weapon-block bit 1 is set), nodes in range... |
-| 2F | behaviour | Brain goals (bits: 1 move to, 2 path through nodes, 4 aim at, 0x800, 0x1000, 0x4000, 0x8000; negative clears) |
+| 2F | behaviour | Brain goals (1 seek, 2 path, 4 walk, 0x800 node, 0x1000 point, 0x4000 flee, 0x8000 none; negative clears): The brain |
 | 31 | end | |
 | 32, 33, 3E | lookup / compute | Results of helper functions into variables |
 | 34 | node_eval | Score an AI node for cover (0x7FFF taken, 0x7FFE player within 600, 0x7FFD bad angle, else the angle) |
@@ -128,7 +128,7 @@ The brain's `+0xB0` and `+0xB2` (1500 and 3000 for most soldiers) are the ranges
 A soldier is made from a spawn record in the level data (`[a0+0x4]`), so health, accuracy and
 ranges are the level designer's, per enemy; the game's difficulty parameter (`g_params+0xB`,
 from `g_game+0x110`) is read by nothing in LEVEL.BIN. At most `0x80097FEC` soldiers are alive at
-once (`0x80097FE8` counts them).
+once (`0x80097FE8` counts them), and none while `0x800AB8C8` is 4 or more.
 
 | Record | Becomes |
 |---|---|
@@ -143,27 +143,83 @@ once (`0x80097FE8` counts them).
 | +0x6C | Brain `+0xB0`: a range (1500 in the dumps) |
 | +0x6E | Variable 0x22 |
 | +0x70 | Brain `+0xB2`: a range (3000; 2800 if under 10), and variables 5, 6, 7 = it, half, a third |
+| +0x68 | Entity `+0x290` and `+0x294` (150) |
+| +0x74 | → a sub-record: count, then hashes: +0x8 the weapon (matched in `g_enemy_weapons`, its index into variable 0xF), +0xC a second model part (unless 0x4CBF0BA5), and with 4 entries variable 0x101 = 1 and a third part 0x61282777 |
 
 The handlers: think `enemy_think`, `+0x370` `0x8005608C`, hit_part `enemy_hit_part`,
 world_contact `0x80056250`, touch `0x8005291C`, `+0x384` `0x80056288`.
 
 ## The brain (`brain_update`, `0x80040DF4`)
 
-Copies the position to `+0x94..+0x9C`, then runs one handler per goal bit in `+0x4`:
+The brain (0x124 bytes, `brain_alloc`) is the soldier's legs: the scripts set goals with
+`behaviour` (op 0x2F, `op_behaviour`, `0x8005AC00`), the brain turns the heading (`+0x22C`) and
+sets the speed scale (`+0x224`) every tick; the distance covered comes from the animation (its
+root motion), not from the brain. Decompiled with m2c (`fn.py c`); fields in `context.h`.
 
-| Bit | Handler | |
+### Goals (`+0x4`) and how scripts set them
+
+`behaviour GOAL A B C [D]`: operand 1 the goal, 2..4 its parameters, 5 the instruction's own
+immediate. A new movement goal first drops the others (`goals &= ~0x5C03`), frees the cover node
+the soldier held and resets the gait.
+
+| Goal | Parameters | Each tick (`brain_update`) |
 |---|---|---|
-| 0x1 | `0x800404E8(e, +0x10, +0x50, 0)` | Move to a target |
-| 0x4000 | `0x800404E8(e, +0x10, +0x50, 1)` | The same, other mode |
-| 0x1000 | `0x800408B4(e, +0x40, +0x80, +0xA8)` | |
-| 0x800 | `0x80040618(e, +0x3C, +0x7C, +0xA8)` | |
-| 0x4 | `0x8003FFA4(e, +0x18, +0xC0)` (unless 0x5C03) | Steer around walls: the heading (`+0x22C`) turns ±90° along a wall from the contacts at `+0xEC` |
-| 0x2 | `0x80040A0C(e)` | Follow a path of nodes |
+| 0x1 seek | target entity (`+0x10`), slow-down radius (`+0xC2`), turn rate (`+0xD4`, default 0x100) | `brain_move_to`: steer toward the target |
+| 0x4000 flee | target entity, `+0x50` | `brain_move_to` with the forward vector reversed: steer to put the target behind |
+| 0x2 path | path id, mode (`+0xBA`: 0 once, 1 backwards, 2 back and forth; -1 keep) | `brain_follow_path`: starts at the path's nearest point |
+| 0x4 walk | speed (16.16, `+0x18`), gait (`+0xC0`), backwards (`+0xD8`) | Walk the heading, turning along walls (`brain_steer`); also used during the other goals |
+| 0x1000 point | position pointer (`+0x40`), variable, arrive radius (`+0xA8`), slow-down radius | `brain_goto_point` |
+| 0x800 node | AI node (`+0x3C`), variable, arrive radius, slow-down radius | `brain_goto_node`, via `brain_node_target` |
+| 0x8000 | | Every goal off |
+| -bit | | That goal off (seek, path, walk, node, point and flee also reset the gait) |
+
+**Seeking** (`brain_seek`, `0x80040180`, shared by every goal): the GTE outer product of the
+forward vector (rotation matrix column `+0x344`/`+0x350`) and the offset to the goal gives the
+side it's on. Beyond a dead zone (|cross| > 0x20, after scaling the offset down by 2, or by 4
+past 2000 units) the heading turns toward it by the turn rate, or by less to land exactly on it;
+inside the dead zone, a dot product says whether the goal is behind (turn) or ahead (no turn).
+The heading wraps to ±half a turn. Turn rates: seek `+0xD4` (0x100 = 22.5° per tick, 675°/s),
+point and node 0x100, path 0xC0 (16.9° per tick).
+
+**Arriving**: with a slow-down radius (`+0xC2`) and the goal inside it, the speed scale is
+`distance / radius` (so the soldier slows to a stop), and so are the probe radius and `+0x3C8`;
+otherwise speed 1.0. Distances everywhere are the cheap `max + (mid + min) / 4`.
+
+**Point and node goals** write the remaining distance into the given script variable every
+tick; within the arrive radius they write 0 and set entity `+0x38` bit 0x400000.
+
+**Nodes** (the world's node table, `[[g_world+0x388]+0x8]`, 0x34 bytes each: +0x0 position,
++0xC kind, +0x10 approach side (1, 2; 4 none), +0x24/+0x28 facing x/z, +0x30 the handle of the
+soldier holding it): the soldier stands a little behind the node along its facing (and 40 units
+to one side); a node with an approach side is reached through a waypoint 100 units to that side
+first (`+0xAC`), unless the soldier is already within 250 units. The soldier claims the node
+(`+0xB6`) until its next movement goal.
+
+**Paths** (`g_paths`, `0x8009E290`, from the BSD header's `+0x5A0` by `paths_parse`): {id, count,
+points}, points of 0x14 bytes starting with s16 x, y, z. The current point (`+0xBC`) advances
+(by `+0xBE`, ±1) when the soldier moved past it this tick, is within 76 units, or has it behind
+(the dot of the path's direction and the offset). At the ends, by mode: once, stop and set
+`+0x38` bit 0x1000000; backwards, at 0 set 0x800000 and wrap; back and forth, turn round
+(0x800000 at the start, 0x1000000 at the end). Every point reached sets 0x400000.
+
+**Walls** (`walker_slide`, `0x80078F60`, the walkers' move against the level): while the walk
+goal is on, the walls within the probe radius are sorted by the angle of their normal to the
+heading into ahead, left and right; the nearest of each is kept at brain `+0xEC..+0x120` with
+state bits 4, 8, 0x10 (`+0x8`). `brain_steer` then sets the heading along the wall: the angle of
+its normal (`ratan2`) ±90°, away from the side it's turning to.
+
+### Set up at spawning (`enemy_spawn`)
+
+Sight and hearing ranges from the record (`+0x6C`, `+0x70`), aim error (`+0x63`), `+0xB4` =
+record `+0x6A` × 11, path mode 2 (back and forth), no slow-down, gait speeds 100, walk speed
+1.0, probe radius 60, collision radius 150 (the record's `+0x68`, 150, goes to entity
+`+0x290`/`+0x294`), no node held.
 
 ## Open
 
-- The brain (`0x80040DF4`): turning, moving, how aim is kept on the target, and where E,
-  the ranges and the weapon kind come from (level data? difficulty?).
+- How aim follows the target (the 0x4 goal isn't aim: it's walking).
+- Who reads entity `+0x38` bits 0x400000/0x800000/0x1000000 (arrived, path ends): events?
+- The gait table (`+0xCC`/`+0xD0`) and what `+0xB4`, `+0x3C8` do.
 - The player's weapon-block bit 1 (crouching?): smaller detection range, half the x error.
 - The sensors 0x60..0x7F one by one, and the variables the scripts use by convention.
 - Events (0x0D/0x0E) and `send_event` (`0x800662CC`).

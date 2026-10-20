@@ -12,7 +12,9 @@
 
 --bin defaults to LEVEL.BIN; the exe (SLUS_009.74) is always loaded too, for calls into it.
 Function starts come from the recompiler's tables (build/cmake/gen/game/*_table.c); names and notes from
-docs/re/names.txt ("ADDR name  # note" per line).
+docs/re/names.txt ("ADDR name  # note" per line), then the PsyQ library names in build/syms.
+  fn.py [--bin FILE] asm ADDR             the function as GNU assembly for m2c
+  fn.py [--bin FILE] c ADDR [M2C ARGS]    decompile it with m2c (build/m2c; types from docs/re/context.h)
 """
 import re
 import struct
@@ -60,9 +62,41 @@ class Image:
         end = self.starts[i + 1] if i + 1 < len(self.starts) else self.end
         return self.starts[i], end
 
+    def whole_function(self, a):
+        """(start, end) of the function containing a, merged with the pieces the recompiler split
+        off it: following pieces that its branches or jumps lead into and nothing calls."""
+        if not hasattr(self, "_called"):
+            self._called = {self.ins(x).getInstrIndexAsVram() for x in range(self.base, self.end, 4)
+                            if self.word(x) >> 26 == 3}
+        s, e = self.function(a)
+        while e < self.end:
+            targets = set()
+            for x in range(s, e, 4):
+                i = self.ins(x)
+                if i.isBranch():
+                    targets.add(i.getBranchVramGeneric())
+                elif self.word(x) >> 26 == 2:
+                    targets.add(i.getInstrIndexAsVram())
+            if e in self._called:
+                break
+            ahead = [t for t in targets if t >= e and t not in self._called and self.has(t)]
+            last = self.ins(e - 8)
+            falls = not (last.getOpcodeName() in ("j", "jr") or last.isUnconditionalBranch())
+            if ahead:
+                e = max(self.function(max(ahead))[1], self.function(e)[1] if falls else e)
+            elif falls:
+                e = self.function(e)[1]
+            else:
+                break
+        return s, e
+
 
 def load_names():
     names, notes = {}, {}
+    # PsyQ library functions identified by signature (build/syms, from the setup tools).
+    for path in sorted((ROOT / "build/syms").glob("*.txt")):
+        for m in re.finditer(r"^(\w+) = 0x([0-9A-Fa-f]{8});", path.read_text(), re.M):
+            names.setdefault(int(m.group(2), 16), m.group(1))
     path = ROOT / "docs/re/names.txt"
     if path.exists():
         for line in path.read_text().splitlines():
@@ -152,6 +186,76 @@ def disasm(img, start, end):
     return out
 
 
+def sym(a):
+    return NAMES.get(a, f"D_{a:08X}")
+
+
+def asm(img, start, end):
+    """The function as GNU assembly for m2c: hi/lo pairs as %hi/%lo of named symbols, jump
+    tables as .rodata (straight-line pairing, as in disasm)."""
+    lui_sym, lo_sym, jtbls = {}, {}, {}
+    hi = {}
+    labels = set()
+    for a in range(start, end, 4):
+        i = img.ins(a)
+        op = i.getOpcodeName()
+        if i.isBranch():
+            labels.add(i.getBranchVramGeneric())
+        elif op == "j" and start <= i.getInstrIndexAsVram() < end:
+            labels.add(i.getInstrIndexAsVram())
+        if op == "lui":
+            hi[i.rt.value] = (a, i.getProcessedImmediate() << 16)
+            continue
+        if op in ("addiu", "lw", "lh", "lhu", "lb", "lbu", "sw", "sh", "sb", "lwc2", "swc2") and i.rs.value in hi:
+            la, base = hi[i.rs.value]
+            v = (base + i.getProcessedImmediate()) & 0xFFFFFFFF
+            # A jump table: a word table of addresses inside this function, read then jumped to.
+            if op == "lw" and any(img.ins(x).getOpcodeName() == "jr" for x in range(a + 4, a + 12, 4)) \
+                    and img.has(v) and start <= img.word(v) < end:
+                targets = []
+                t = v
+                while img.has(t) and start <= img.word(t) < end:
+                    targets.append(img.word(t))
+                    t += 4
+                jtbls[v] = targets
+                labels.update(targets)
+                name_ = f"jtbl_{v:08X}"
+            else:
+                name_ = sym(v)
+            if la not in lui_sym:
+                lui_sym[la] = (name_, v)
+            first, fv = lui_sym[la]
+            lo_sym[a] = first if fv == v else f"{first} + 0x{v - fv:X}" if v > fv else f"{first} - 0x{fv - v:X}"
+        dest = i.rd.value if i.modifiesRd() else i.rt.value if i.modifiesRt() else None
+        if dest is not None and op != "lui":
+            hi.pop(dest, None)
+    out = [".set noat", ".set noreorder", ".section .text", f"glabel {name(start)}"]
+    for a in range(start, end, 4):
+        i = img.ins(a)
+        op = i.getOpcodeName()
+        text = i.disassemble()
+        if i.isBranch():
+            text = re.sub(r"\. \+ 4 \+.*$", f".L{i.getBranchVramGeneric():08X}", text)
+        elif op == "jal":
+            text = f"jal         {name(i.getInstrIndexAsVram())}"
+        elif op == "j":
+            t = i.getInstrIndexAsVram()
+            text = f"j           .L{t:08X}" if start <= t < end else f"j           {name(t)}"
+        elif a in lui_sym:
+            text = re.sub(r"0x[0-9A-Fa-f]+$", f"%hi({lui_sym[a][0]})", text)
+        elif a in lo_sym:
+            if op == "addiu":
+                text = re.sub(r"-?0x[0-9A-Fa-f]+$|-?\d+$", f"%lo({lo_sym[a]})", text)
+            else:
+                text = re.sub(r"-?(0x[0-9A-Fa-f]+|\d+)?\(", f"%lo({lo_sym[a]})(", text, count=1)
+        if a in labels and a != start:
+            out.append(f".L{a:08X}:")
+        out.append(f"/* {a:08X} */ {text}")
+    for t, targets in jtbls.items():
+        out += [".section .rodata", f"glabel jtbl_{t:08X}"] + [f".word .L{x:08X}" for x in targets]
+    return out
+
+
 def sort_names():
     path = ROOT / "docs/re/names.txt"
     lines = path.read_text().splitlines()
@@ -202,6 +306,24 @@ def main():
                     f = im.function(a)[0]
                     print(f"{a:08X} in {name(f)}: {t}")
         return
+    if cmd in ("asm", "c"):
+        a = int(rest[0], 16)
+        im = find(a)
+        s, e = im.whole_function(a)
+        text = "\n".join(asm(im, s, e)) + "\n"
+        if cmd == "asm":
+            print(text, end="")
+            return
+        import subprocess
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".s") as f:
+            f.write(text)
+            f.flush()
+            ctx = ROOT / "docs/re/context.h"
+            cmd_ = [sys.executable, str(ROOT / "build/m2c/m2c.py"), "-t", "mips-gcc-c", "--valid-syntax"]
+            if ctx.exists():
+                cmd_ += ["--context", str(ctx)]
+            sys.exit(subprocess.run(cmd_ + rest[1:] + [f.name]).returncode)
     if cmd == "show":
         for r in rest:
             a = int(r, 16)

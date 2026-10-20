@@ -65,7 +65,7 @@ Every record starts with:
 | 0x3011B913, 0xD31F988A, 0x8877B646 | 1 each | | |
 
 The soldier record (`enemy_spawn` reads it): +0x5B skill tier, +0x5C, +0x5E, +0x60, +0x61
-health, +0x62, +0x63 aim error, +0x64 damage, +0x65, +0x66, +0x68 radius (150), +0x6A, +0x6C and
+health, +0x62, +0x63 aim error, +0x64 damage, +0x65, +0x66, +0x68 (150), +0x6A, +0x6C and
 +0x70 ranges (1500, 3000), +0x6E (enemies.md, Spawning). Records differ soldier by soldier
 (1:3 has 6 health, aim error 40, damage 7 next to 4, 20 and 4). Pointer fields at +0x38..+0x50
 (and +0x60 or +0x74 by activation kind) are offsets within the record, made pointers by

@@ -11,7 +11,8 @@ combat, enemies, levels. Each document says how its claims were checked.
 | [enemies.md](enemies.md) | Scripts (the bytecode VM), variables and sensors, the brain, firing and aim error |
 | [levels.md](levels.md) | Level files, the level header, entity records, spawners |
 
-`names.txt` holds every named address (functions and data), read by the tools.
+`names.txt` holds every named address (functions and data), read by the tools, with the PsyQ
+library names in `build/syms` (from the setup tools) as a fallback.
 
 ## Tools
 
@@ -20,7 +21,10 @@ Run inside the container (`./dev ...`).
 - `tools/recon/fn.py` disassembles whole functions with labels, named calls, resolved
   addresses and the strings they point to (`show ADDR`), and searches: `callers`, `calls`,
   `uses ADDR` (code building an address), `offset OFF...` (functions using these load/store
-  offsets), `grep REGEX` (instructions), `sortnames`.
+  offsets), `grep REGEX` (instructions), `sortnames`. `c ADDR` decompiles a function with
+  [m2c](https://github.com/matt-kempster/m2c) (clone it into `build/m2c`), typed by `context.h`
+  (the entity, brain and weapon structs, prototypes); the recompiler's split-off pieces are
+  merged back. GTE instructions come out as `M2C_ERROR` lines: read those in `show`.
 - `tools/recon/sst.py RAMDUMP --type 1402` disassembles an entity's model scripts.
 - `VALOR_TRACE_DAMAGE=1` logs every damage event (victim, attacker, damage, health).
 - `VALOR_WATCH="name=EXPR:LEN;..."` makes the runtime log, every game tick, what changed in
