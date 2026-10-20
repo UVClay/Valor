@@ -240,6 +240,7 @@ void kbm_movement(double &forward, double &strafe) {
 }
 
 static double tick_yaw, tick_pitch;
+static double taken_yaw, taken_pitch;  // since the start
 
 // Mouse counts to degrees: Quake's 0.022 degrees per count at sensitivity 1.
 static double turn_degrees(double counts) { return counts * 0.022 * config.mouse_sensitivity; }
@@ -269,6 +270,7 @@ double kbm_take_turn() {
     double d = tape_turn(playing() ? turn_degrees(counts) + gyro_yaw : 0);
     gyro_yaw = 0;
     tick_yaw += d;
+    taken_yaw += d;
     return d;
 }
 
@@ -278,6 +280,7 @@ double kbm_take_pitch() {
     double d = tape_pitch(playing() ? pitch_degrees(counts) + gyro_pitch : 0);
     gyro_pitch = 0;
     tick_pitch += d;
+    taken_pitch += d;
     return d;
 }
 
@@ -296,6 +299,11 @@ void kbm_look_reach(double &yaw, double &pitch) {
     // taken yet: up to about three ticks' worth.
     yaw = peak_yaw * 3;
     pitch = peak_pitch * 3;
+}
+
+void kbm_look_taken(double &yaw, double &pitch) {
+    yaw = taken_yaw;
+    pitch = taken_pitch;
 }
 
 void kbm_pending_look(double &yaw, double &pitch) {

@@ -128,6 +128,18 @@ frame runs the game's own drawing pass again:
 - **Primitive pool.** The game stops drawing a frame once its 80000-byte primitive buffer is full.
   A wider or taller view than the original fills it (the near floor and the weapon are drawn
   last, and were cut off), so the copy gets both buffers' space.
+- **The view.** The game builds its camera a tick behind the soldier's look, toward a point about
+  200 units away in whole units, so its direction steps by up to 0.3 degrees each tick. The copy
+  looks along the soldier's own yaw and pitch (`[[0x8009D654]+0x388]+0x184/+0x178`, 16.16 with
+  4096 per turn), turned further by the mouse look taken since the copy and not yet taken, and
+  builds the view toward a point far along it. What the game's camera adds (its own turns, the
+  target's rounding) and the eye's position are blended from what was shown to the latest tick's
+  over a tick, so they stay steady when ticks vary in length.
+- **The weapon** is drawn with one transform made from the view: for a moved camera it would
+  slide across the screen. The copy draws it with the transform from the tick's own drawing pass,
+  blended between ticks, so its sway and bob are smooth too.
+- **Faults.** A copy that isn't mid-mission isn't drawn, and an error inside one only drops that
+  copy (the tick's own frame is shown): the game itself never runs on it.
 - **Menus** are not in a level: they are drawn at 4:3, unwidened.
 - Moving objects (enemies, doors) still move at the tick rate.
 

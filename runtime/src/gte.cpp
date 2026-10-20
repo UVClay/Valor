@@ -220,19 +220,49 @@ void note_matrix() {
     mat_uses.push_back(m);
 }
 
+// gte_record_other, gte_other_transform
+bool record_other, other_recorded, other_seen;
+int16_t recorded_rt[3][3];
+int32_t recorded_tr[3];
+uint32_t recorded_pc;
+psx::GteOtherFirst other_first;
+double other_a[3][3], other_b[3];
+
 void rtp(int n, bool last) {
     psx::gte_projections++;
     if (trace_mat) note_matrix();
     const Vec3s &v = g.v[n];
+    bool hud = std::find(psx::config.hud_projections.begin(), psx::config.hud_projections.end(), current_pc) !=
+               psx::config.hud_projections.end();
     int64_t mac3_raw = 0, accs[3];
     for (int r = 0; r < 3; r++) {
         int64_t acc = int64_t(g.tr[r]) * 0x1000;
         acc = check_mac(r + 1, acc + int64_t(g.rt[r][0]) * v.x);
         acc = check_mac(r + 1, acc + int64_t(g.rt[r][1]) * v.y);
         acc = check_mac(r + 1, acc + int64_t(g.rt[r][2]) * v.z);
-        if (r == 2) mac3_raw = acc;
         accs[r] = acc;
-        set_mac(r + 1, acc);
+    }
+    if (g.h != projection.world_h && !hud && (record_other || other_first)) {
+        if (record_other) {
+            record_other = false;
+            other_recorded = true;
+            memcpy(recorded_rt, g.rt, sizeof recorded_rt);
+            memcpy(recorded_tr, g.tr, sizeof recorded_tr);
+            recorded_pc = current_pc;
+        }
+        if (other_first) {
+            if (!other_seen) {
+                other_seen = true;
+                other_first(g.rt, g.tr, current_pc, other_a, other_b);
+            }
+            double y[3] = {double(accs[0]), double(accs[1]), double(accs[2])}, m[3];
+            for (int r = 0; r < 3; r++) m[r] = other_a[r][0] * y[0] + other_a[r][1] * y[1] + other_a[r][2] * y[2] + other_b[r] * 0x1000;
+            for (int r = 0; r < 3; r++) accs[r] = check_mac(r + 1, int64_t(std::llround(m[r])));
+        }
+    }
+    for (int r = 0; r < 3; r++) {
+        if (r == 2) mac3_raw = accs[r];
+        set_mac(r + 1, accs[r]);
     }
     set_ir(1, g.mac[1], lm);
     set_ir(2, g.mac[2], lm);
@@ -244,8 +274,6 @@ void rtp(int n, bool last) {
     push_sz(z12);
     uint32_t q = divide(g.h, g.sz[3]);
     int64_t sx = int64_t(q) * g.ir[1], sy = int64_t(q) * g.ir[2];
-    bool hud = std::find(psx::config.hud_projections.begin(), psx::config.hud_projections.end(), current_pc) !=
-               psx::config.hud_projections.end();
     double kx = 1, ky = 1;
     // Only in a mission: the menus (SHELL.BIN) are 2D pictures with a few 3D pieces, made for 4:3.
     if (projection.active && psx::game_in_level()) {
@@ -641,6 +669,25 @@ void gte_restore(const std::vector<uint8_t> &in) {
     memcpy(&sf_shift, p, sizeof sf_shift); p += sizeof sf_shift;
     memcpy(&lm, p, sizeof lm); p += sizeof lm;
     memcpy(&current_pc, p, sizeof current_pc);
+}
+
+void gte_record_other() {
+    record_other = true;
+    other_recorded = false;
+}
+
+bool gte_recorded_other(int16_t rt[3][3], int32_t tr[3], uint32_t &pc) {
+    record_other = false;
+    if (!other_recorded) return false;
+    memcpy(rt, recorded_rt, sizeof recorded_rt);
+    memcpy(tr, recorded_tr, sizeof recorded_tr);
+    pc = recorded_pc;
+    return true;
+}
+
+void gte_other_transform(GteOtherFirst first) {
+    other_first = first;
+    other_seen = false;
 }
 
 void gte_world_view(double &tan_h, double &tan_v) {

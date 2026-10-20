@@ -28,6 +28,8 @@ double kbm_take_pitch();
 // mouse motion it hasn't taken yet.
 void kbm_tick_look(double &yaw, double &pitch);
 void kbm_pending_look(double &yaw, double &pitch);
+// All the mouse look the game has taken so far (degrees; shadow.cpp).
+void kbm_look_taken(double &yaw, double &pitch);
 // How far mouse look may turn the view ahead of what the game drew (degrees, from its recent
 // speed), sideways and up or down.
 void kbm_look_reach(double &yaw, double &pitch);

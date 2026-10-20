@@ -136,6 +136,15 @@ void gte_world_view(double &tan_h, double &tan_v);
 // The GTE's registers, for running code on a copy of the machine (shadow.cpp).
 void gte_save(std::vector<uint8_t> &out);
 void gte_restore(const std::vector<uint8_t> &in);
+// Projections other than the world's (the weapon), for shadow.cpp. gte_record_other: the next one
+// projected keeps its transform (RT, TR, and the cop2 address), gte_recorded_other returns it
+// (false: none was projected) and stops recording.
+// gte_other_transform: at the first of them, `first` gets its transform and returns a move (in
+// camera space, GTE units: y' = rot y + t) applied to all of them; null: none.
+void gte_record_other();
+bool gte_recorded_other(int16_t rt[3][3], int32_t tr[3], uint32_t &pc);
+using GteOtherFirst = void (*)(const int16_t rt[3][3], const int32_t tr[3], uint32_t pc, double rot[3][3], double t[3]);
+void gte_other_transform(GteOtherFirst first);
 
 // cpu.cpp
 RecompFn find_function(uint32_t addr);

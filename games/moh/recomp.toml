@@ -53,6 +53,7 @@ seeds = []
 "0x800503D4" = "hook_render_pass"
 "0x800504F8" = "hook_render_flip"
 "0x80053B8C" = "hook_prim_pool"
+"0x8004913C" = "hook_camera_setup"
 # The HUD routine: its packets are the HUD (widescreen HUD).
 "0x8008019C" = "hook_draw_hud"
 
