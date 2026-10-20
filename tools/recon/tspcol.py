@@ -7,7 +7,7 @@
 The block is at the offset in the TSP header's word 15 (+0x3C):
   +0x00 s16 x min, z min, x max, z max      the chunk's rectangle
   +0x08 u16 nodes, face indices, vertices, normals, faces
-  +0x12 nodes (8 bytes: s16 a, s16 b, u16 split, pad), the k-d tree over x/z, root 0:
+  +0x12 nodes (8 bytes: s16 a, s16 b, u16 split, u16 zone id), the k-d tree over x/z, root 0:
           a < 0            leaf: ~a faces from the face index list at b
           a >= 0, b >= 0   split on x at x min + split: children a, b
           a >= 0, b < 0    split on z at z min + split: children a, ~b
