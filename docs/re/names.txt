@@ -24,6 +24,10 @@
 
 # --- LEVEL.BIN ---
 80039D90 overlay_base
+8003F454 script_start               # (entity, script, ?, channel)
+8003F8F0 script_run_a
+8003FBFC script_run_b
+80040DF4 brain_update               # entity+0x38C: goals set by script op 0x2F
 80043AD4 bullet_touch               # touch(bullet, other): exact hit test, effects, target's handler
 8004532C projectile_create          # +0xF8 damage
 80045A78 bullet_spawn               # bullets are entities at 600-669 units/tick
@@ -45,11 +49,15 @@
 8004DE3C input_poll                 # reads the controllers (was game_tick: it's run per tick, but only polls)
 800503D4 render_pass
 800504F8 render_flip
+8005163C enemy_weapon               # bursts, aim error +0x38C->+0xC8
 80053C20 draw_level
 80055628 enemy_think                # type 0x1402
 80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
 8005C97C set_var                    # (entity, var, value): script variables, enemies.md
 8005CBA8 get_var                    # (var, entity): 0x60-0x7F sensors, else variables/flag bits
+8005D148 script_operand             # (n, mask, value, entity): variable or literal
+8005D18C script_step
+8005DA24 mounted_gun_think          # MG emplacement operated by the player
 800616E4 game_frame                 # input, then per tick: entities_update, entities_collide, 0x8005F69C; then draw
 8006210C level_end_carry            # inventory -> weapon table ammo -> g_level_end
 800625BC start_handler              # pause
@@ -76,8 +84,13 @@
 8008BF00 tsp_draw
 8008D0CC frustum_build
 80090B90 present
+8009115C g_ai_nodes                 # 24 x 0x34
 80093640 g_weapons                  # 13 x 0x44 weapon definitions, player.md
+800939F4 g_params                   # "PARAMETER DATA": mission, level, mode, music, sound, ...
 80097FCC g_last_vsync
+80097FE0 g_alarm
+80097FF0 g_enemy_weapons            # 48-byte entries: type, burst timing, sound
+80099B38 g_script_ops               # 74 x {handler, opcode, size}
 8009A5D0 g_ticks_dropped
 8009A5D4 g_catchup_ticks
 8009A5DC g_tick

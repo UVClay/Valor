@@ -7,8 +7,8 @@ combat, enemies, levels. Each document says how its claims were checked.
 |---|---|
 | [player.md](player.md) | The soldier's inventory, the weapon table, carry-over between levels, cheat flags |
 | [combat.md](combat.md) | Firing, bullets (projectile entities), hit tests |
-| entities.md (to come) | The entity list, entity layout, think/touch handlers, physics |
-| enemies.md (to come) | Perception, states, targeting, accuracy, damage |
+| [entities.md](entities.md) | The entity list and layout, handlers, the tick, movement, collisions, hitboxes |
+| [enemies.md](enemies.md) | Scripts (the bytecode VM), variables and sensors, the brain, firing and aim error |
 | levels.md (to come) | Level data, scripts, objectives |
 
 `names.txt` holds every named address (functions and data), read by the tools.
@@ -20,7 +20,9 @@ Run inside the container (`./dev ...`).
 - `tools/recon/fn.py` disassembles whole functions with labels, named calls, resolved
   addresses and the strings they point to (`show ADDR`), and searches: `callers`, `calls`,
   `uses ADDR` (code building an address), `offset OFF...` (functions using these load/store
-  offsets), `grep REGEX` (instructions).
+  offsets), `grep REGEX` (instructions), `sortnames`.
+- `tools/recon/sst.py RAMDUMP --type 1402` disassembles an entity's model scripts.
+- `VALOR_TRACE_DAMAGE=1` logs every damage event (victim, attacker, damage, health).
 - `VALOR_WATCH="name=EXPR:LEN;..."` makes the runtime log, every game tick, what changed in
   those bytes (EXPR: hex, `[EXPR]` to follow a pointer, `+HEX`/`-HEX`), e.g.
   `VALOR_WATCH="inv=[8009D654]+3CC:80"`. `VALOR_WATCH_HALF=1` logs signed halfwords.

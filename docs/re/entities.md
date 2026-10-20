@@ -59,7 +59,7 @@ pickups) is an entity: one struct about 0x3D0 bytes long, in linked lists, updat
 | +0x37C | fn | **touch**(self, other): the spheres touch (or a bullet's path crosses the sphere) |
 | +0x384 | fn | ? |
 | +0x388 | ptr | Type-specific object (the soldier's weapon block, the camera's view, ...) |
-| +0x38C | | Sound emitter (`0x80040DF4`) |
+| +0x38C | ptr | Brain: goals, perception ranges, aim error (enemies.md); updated by `brain_update` (`0x80040DF4`) |
 | +0x3BC | 3×s32 | Position before this tick's move (restored when blocked) |
 | +0x3CA | s16 | Weapon index (on bullets and grenades) |
 
@@ -87,7 +87,7 @@ For each entity, in list order, parents first:
 4. Attached (`+0x30`): position = the target's bone `+0x34` (`0x8008DABC`).
 5. Otherwise, unless flag 0x20000: `entity_move` (`0x8006C83C`), then `world_contact(e, flags)`
    (`+0x378`) if anything was hit; player and walkers also `0x800845A8`.
-6. Sound emitter (`+0x38C`), `0x8006A76C(e)`, `player_weapon_update` for the player's soldier
+6. Brain (`+0x38C`, `brain_update`), `0x8006A76C(e)`, `player_weapon_update` for the player's soldier
    (flag 1), the bounding box (`entity_bounds`, `0x8004D43C`), and the camera's view for type 2
    (`camera_setup`).
 
