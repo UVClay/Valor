@@ -55,6 +55,14 @@ and full playthroughs of two missions.
 - `--warp 1:3` starts the sewer level with only a Garand and no ammunition: the warp skips
   whatever sets up the loadout when the level is reached normally. Only matters for testing.
 
+## Debugging
+
+- [x] Debug mode: every session recorded, named after its mission, with its log and a RAM dump
+      on a crash; F9 marks (README, Recording a play session).
+- [ ] Faster memory card loads: the card's protocol is emulated byte by byte at the real speed,
+      so reading saves is slow. Answer the BIOS card functions natively, or speed up the SIO
+      timing, as fast loading does for the CD.
+
 ## Later
 
 - Local split-screen multiplayer (second controller in port 2)

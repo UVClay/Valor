@@ -11,14 +11,20 @@
 //   l F YAW PITCH          the mouse look it showed ahead of the game
 //   a F                    the analog button (F7)
 //   h F HASH               RAM hash once a second: a replay checks it runs the same game
+//   mark F mission M L     a mission started (1-based)
+//   mark F user N          F9 was pressed
+// It also keeps log.txt, everything logged while recording, and on a crash ram.bin and
+// scratch.bin (main RAM and the scratchpad).
 #include "tape.h"
 
 #include <algorithm>
+#include <ctime>
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
 
+#include "game.h"
 #include "gpu.h"
 #include "hw.h"
 #include "pad.h"
@@ -38,6 +44,35 @@ struct Track { std::vector<Event> events; size_t next = 0; };
 Track buttons, sticks, movement, turn, pitch, presents, looks, analog, hashes;
 uint64_t last_frame;
 bool diverged;
+
+std::filesystem::path record_dir;
+FILE *log_file;
+bool session;          // a debug session (tape_session_start): named when it closes
+std::string started;   // its start time, the start of its name
+int first_mission, first_level;  // the first mission played (0: none)
+bool was_in_level, mission_pending;
+uint64_t level_projections;  // gte_projections when the level overlay came in
+int user_marks;
+// Replay: the marks, to announce as they pass.
+struct Mark { uint64_t frame; std::string text; };
+std::vector<Mark> marks;
+size_t next_mark;
+
+constexpr uint32_t MISSION = 0x80038660, LEVEL = 0x80038664;  // 0-based, the level being played
+constexpr int SESSIONS_KEPT = 20;  // debug sessions kept besides crashes
+
+// Debug sessions beyond the newest SESSIONS_KEPT are removed; crashes are kept.
+void prune_sessions() {
+    std::vector<std::filesystem::path> dirs;
+    std::error_code ec;
+    for (const auto &e : std::filesystem::directory_iterator("recordings", ec)) {
+        std::string name = e.path().filename().string();
+        bool ours = name.size() > 20 && name[4] == '-' && name[10] == '_';
+        if (e.is_directory() && ours && name.find("_crash") == std::string::npos) dirs.push_back(e.path());
+    }
+    std::sort(dirs.begin(), dirs.end());  // by start time
+    for (size_t i = 0; i + SESSIONS_KEPT < dirs.size(); i++) std::filesystem::remove_all(dirs[i], ec);
+}
 
 Track *track(char kind) {
     switch (kind) {
@@ -115,10 +150,32 @@ void tape_record(const std::filesystem::path &dir) {
     out = fopen((dir / "input.tape").c_str(), "w");
     if (!out) fatal("can't write %s", (dir / "input.tape").c_str());
     fprintf(out, "valor-tape 1\n");
+    record_dir = dir;
+    log_file = fopen((dir / "log.txt").c_str(), "w");
+    log_to(log_file);
     for (const auto &p : config.pokes) fprintf(out, "poke %X %X %u\n", p.call, p.addr, p.value);
     mode = RECORD;
     log("record: %s", dir.c_str());
 }
+
+void tape_session_start() {
+    char stamp[32];
+    time_t now = time(nullptr);
+    strftime(stamp, sizeof stamp, "%Y-%m-%d_%H-%M-%S", localtime(&now));
+    started = stamp;
+    prune_sessions();
+    session = true;
+    tape_record(std::filesystem::path("recordings") / (started + "_session"));
+}
+
+void tape_mark() {
+    if (mode != RECORD) return;
+    fprintf(out, "mark %llu user %d\n", (unsigned long long)hw::gpu.frames, ++user_marks);
+    fflush(out);
+    log("record: mark %d at vblank %llu", user_marks, (unsigned long long)hw::gpu.frames);
+}
+
+int tape_marks() { return user_marks; }
 
 void tape_replay(const std::filesystem::path &dir) {
     FILE *f = fopen((dir / "input.tape").c_str(), "r");
@@ -140,6 +197,14 @@ void tape_replay(const std::filesystem::path &dir) {
         int w, h;
         if (sscanf(line, "poke %X %X %u", &call, &addr, &value) == 3) {
             config.pokes.push_back({call, addr, value, false});
+        } else if (!strncmp(line, "mark ", 5)) {
+            unsigned long long frame;
+            int n = 0;
+            if (sscanf(line + 5, "%llu %n", &frame, &n) >= 1) {
+                std::string text = line + 5 + n;
+                while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+                marks.push_back({frame, text});
+            }
         } else if (sscanf(line, "window %d %d", &w, &h) == 2) {
             config.window_w = w;
             config.window_h = h;
@@ -236,12 +301,27 @@ void tape_presented(double vblank_time) {
 void tape_vblank() {
     uint64_t now = hw::gpu.frames;
     if (mode == RECORD) {
+        // A mission starting: the level overlay came in and has drawn 3D (its mission and level
+        // are set by then).
+        bool in_level = game_in_level();
+        if (in_level && !was_in_level) mission_pending = true, level_projections = gte_projections;
+        if (!in_level) mission_pending = false;
+        if (mission_pending && gte_projections != level_projections) {
+            mission_pending = false;
+            int m = int(psx_r32(hw::cpu, MISSION)) + 1, l = int(psx_r32(hw::cpu, LEVEL)) + 1;
+            fprintf(out, "mark %llu mission %d %d\n", (unsigned long long)now, m, l);
+            if (!first_mission) first_mission = m, first_level = l;
+            log("record: mission %d:%d at vblank %llu", m, l, (unsigned long long)now);
+        }
+        was_in_level = in_level;
         if (now % 60 == 0) {
             double v = double(ram_hash() >> 12);  // exact in a double
             write('h', 1, &v);
         }
         if (now % 60 == 0) fflush(out);
     } else if (mode == REPLAY) {
+        for (; next_mark < marks.size() && marks[next_mark].frame <= now; next_mark++)
+            log("replay: mark %s at vblank %llu", marks[next_mark].text.c_str(), (unsigned long long)marks[next_mark].frame);
         while (analog.next < analog.events.size() && analog.events[analog.next].frame <= now) {
             hw::pad_toggle_analog();
             analog.next++;
@@ -262,11 +342,32 @@ bool tape_replay_presents(void (*present)(double vblank_time)) {
     return now <= last_frame;
 }
 
-void tape_close() {
-    if (mode == RECORD && out) {
-        fclose(out);
-        out = nullptr;
+std::string tape_close(bool crashed) {
+    if (mode != RECORD || !out) return "";
+    fclose(out);
+    out = nullptr;
+    std::error_code ec;
+    if (crashed) {
+        FILE *f = fopen((record_dir / "ram.bin").c_str(), "wb");
+        if (f) fwrite(psx_ram, 1, PSX_RAM_SIZE, f), fclose(f);
+        f = fopen((record_dir / "scratch.bin").c_str(), "wb");
+        if (f) fwrite(psx_scratch, 1, sizeof psx_scratch, f), fclose(f);
     }
+    log_to(nullptr);
+    if (log_file) fclose(log_file);
+    log_file = nullptr;
+    if (!session) return record_dir.string();
+    // Named after the first mission played; a session that never got to one isn't kept.
+    if (!first_mission && !crashed) {
+        std::filesystem::remove_all(record_dir, ec);
+        return "";
+    }
+    std::string name = started;
+    if (first_mission) name += "_m" + std::to_string(first_mission) + "l" + std::to_string(first_level);
+    if (crashed) name += "_crash";
+    std::filesystem::path final_dir = record_dir.parent_path() / name;
+    std::filesystem::rename(record_dir, final_dir, ec);
+    return (ec ? record_dir : final_dir).string();
 }
 
 }  // namespace psx

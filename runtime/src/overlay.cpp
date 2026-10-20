@@ -1,5 +1,6 @@
 // Debug overlay (Dear ImGui): F3 cycles off -> basic (FPS) -> extended (frame times, pacing,
 // emulation load, renderer stats).
+#include <string>
 #include <SDL3/SDL.h>
 
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include "audio.h"
 #include "game.h"
 #include "gpu.h"
+#include "tape.h"
 #include "gpu_gl.h"
 #include "hw.h"
 #include "imgui.h"
@@ -217,6 +219,8 @@ void draw_menu() {
             ImGui::RadioButton("FPS", &config.overlay, 1);
             ImGui::SameLine();
             ImGui::RadioButton("Extended", &config.overlay, 2);
+            ImGui::Checkbox("Debug mode: record every session (from the next start)", &config.debug);
+            if (config.debug) ImGui::TextDisabled("Sessions go to recordings/; F9 marks a moment to look at.");
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -292,14 +296,15 @@ void overlay_render() {
     instructions_per_frame = double(cpu->cycles - last_cycles);
     last_cycles = cpu->cycles;
 
-    if (!initialized || (config.overlay == 0 && !menu_open && !config.crosshair)) return;
+    // Debug mode always shows the overlay, so a screenshot or video says it was on.
+    if (!initialized || (config.overlay == 0 && !config.debug && !menu_open && !config.crosshair)) return;
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     // Keep the UI readable at high resolutions: scale with the window height.
     ImGui::GetStyle().FontScaleMain = std::max(1.0f, ImGui::GetIO().DisplaySize.y / 720.0f);
     ImGui::NewFrame();
     if (config.crosshair) draw_crosshair();
-    if (config.overlay > 0) draw_stats();
+    if (config.overlay > 0 || config.debug) draw_stats();
     if (menu_open) draw_menu();
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -311,6 +316,12 @@ void draw_stats() {
     ImGui::Begin("stats", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
                      ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing);
+    if (config.debug) {
+        bool rec = tape_recording();
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "DEBUGGING%s", rec ? "  REC" : "");
+        ImGui::Text("vblank %llu%s", (unsigned long long)hw::gpu.frames,
+                    rec && tape_marks() ? ("  marks " + std::to_string(tape_marks())).c_str() : "");
+    }
     if (config.interpolate && display_hz > game_fps * 1.5f) ImGui::Text("%.0f FPS (game %.1f)", display_hz, game_fps);
     else ImGui::Text("%.1f FPS", game_fps);
     if (config.overlay >= 2) {

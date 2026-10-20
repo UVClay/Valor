@@ -153,6 +153,7 @@ bool handle_key(SDL_Keycode key, bool down) {
         }
         return true;
     case SDLK_F12: if (down) screenshot_requested = true; return true;
+    case SDLK_F9: if (down) tape_mark(); return true;
     case SDLK_MINUS: if (down) audio_adjust_volume(-10); return true;
     case SDLK_EQUALS: if (down) audio_adjust_volume(10); return true;
     default: return false;

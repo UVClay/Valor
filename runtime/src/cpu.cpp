@@ -21,9 +21,20 @@ namespace psx {
 Config config;
 Cop0 cop0;
 
+static FILE *log_file;
+
+void log_to(FILE *f) { log_file = f; }
+
 void log(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
+    if (log_file) {
+        va_list copy;
+        va_copy(copy, ap);
+        vfprintf(log_file, fmt, copy);
+        va_end(copy);
+        fputc('\n', log_file);
+    }
     vfprintf(stderr, fmt, ap);
     va_end(ap);
     fputc('\n', stderr);

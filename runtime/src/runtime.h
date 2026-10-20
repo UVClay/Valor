@@ -19,6 +19,7 @@ struct Halt : std::runtime_error {
 
 [[noreturn]] void fatal(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
+void log_to(FILE *f);  // log() also writes here (null: only stderr)
 
 struct Config {
     std::filesystem::path bios;  // openbios.bin
@@ -108,6 +109,9 @@ struct Config {
     // YUV4MPEG2 stream (the play script pipes it into ffmpeg), for vblanks video_from..video_to.
     std::filesystem::path video;
     uint64_t video_from = 0, video_to = UINT64_MAX;
+    // Debug mode (--debug, debug_mode): every session is recorded to recordings/, named after
+    // the first mission played, with its log and, on a crash, the RAM (tape.cpp).
+    bool debug = false;
 };
 extern Config config;
 

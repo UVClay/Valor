@@ -36,7 +36,7 @@ static bool parse_press(const char *arg) {
 }
 
 static void usage(const char *argv0) {
-    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--subpixel] [--depth-buffer] [--fast-loading] [--texture-filter] [--stick-aim] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd|FOLDER] [--memcard-import FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--coupled] [--window WxH] [--headless] [--hidden]\n"
+    fprintf(stderr, "usage: %s --bios openbios.bin --disc game.cue [--scale N] [--no-dither] [--subpixel] [--depth-buffer] [--fast-loading] [--texture-filter] [--stick-aim] [--aspect W:H|window] [--fov DEGREES] [--memcard FILE.mcd|FOLDER] [--memcard-import FILE.mcd] [--volume PERCENT] [--overlay 0-2] [--crosshair SIZE] [--frame-rate FPS] [--no-interpolate] [--coupled] [--debug] [--window WxH] [--headless] [--hidden]\n"
             "       [--screenshots DIR] [--screenshot-every N] [--screenshot-from FRAME] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--kbm FRAME:CONTROL[:DURATION]]... [--mouse FRAME:DX,DY]...\n"
@@ -49,6 +49,7 @@ static void usage(const char *argv0) {
 int main(int argc, char **argv) {
     // A replay runs with the recording's settings and card (tape.cpp); flags below still apply.
     std::filesystem::path record, replay;
+    bool debug_given = false;  // --debug records even a test run (debug_mode in the settings doesn't)
     for (int i = 1; i + 1 < argc; i++)
         if (!strcmp(argv[i], "--replay")) replay = argv[i + 1];
     if (replay.empty()) settings_load();  // command-line flags below override saved settings
@@ -70,6 +71,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--frame-rate") && i + 1 < argc) config.frame_rate = std::clamp(atoi(argv[++i]), 0, 1000);
         else if (!strcmp(argv[i], "--no-interpolate")) config.interpolate = false;
         else if (!strcmp(argv[i], "--decoupled")) config.decoupled = true;
+        else if (!strcmp(argv[i], "--debug")) config.debug = debug_given = true;
         else if (!strcmp(argv[i], "--coupled")) config.decoupled = false;
         else if (!strcmp(argv[i], "--window") && i + 1 < argc) {
             if (sscanf(argv[++i], "%dx%d", &config.window_w, &config.window_h) != 2) { usage(argv[0]); return 2; }
@@ -147,6 +149,7 @@ int main(int argc, char **argv) {
     config.test_run = config.headless || config.hidden;
     if (config.test_run && !memcard_given) config.memcard = "build/test-memcard.mcd";
     if (!record.empty()) tape_record(record);
+    else if (config.debug && replay.empty() && (!config.test_run || debug_given)) tape_session_start();
 
     static Cpu cpu;
     cpu.tail_link = 1;
@@ -166,7 +169,6 @@ int main(int argc, char **argv) {
         psx_call(&cpu, bios_project.entry);
         log("BIOS reset handler returned");
     } catch (const Halt &h) {
-        tape_close();
         hw::memcard_flush(true);
         log("halt: %s", h.what());
         log("  frames=%llu primitives=%llu", (unsigned long long)hw::gpu.frames, (unsigned long long)hw::gpu.primitives);
@@ -187,6 +189,10 @@ int main(int argc, char **argv) {
             recent += buf;
         }
         log("  recent functions (oldest first):%s", recent.c_str());
+        // Closing the window or a test run's limit isn't a crash.
+        bool crashed = strcmp(h.what(), "window closed") != 0 && strncmp(h.what(), "cycle limit", 11) != 0;
+        std::string recorded = tape_close(crashed);
+        if (!recorded.empty()) log("record: recorded to %s", recorded.c_str());
         return 1;
     }
     return 0;

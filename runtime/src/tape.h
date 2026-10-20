@@ -6,6 +6,7 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <string>
 
 #include "input.h"
 
@@ -14,6 +15,8 @@ namespace psx {
 // main.cpp: before the hardware starts. Recording copies the settings in effect and the memory
 // card; replaying loads them (and the recorded --poke-on-call list) into config.
 void tape_record(const std::filesystem::path &dir);
+// Debug mode: record this session to a new folder in recordings/ (named when it closes).
+void tape_session_start();
 void tape_replay(const std::filesystem::path &dir);
 bool tape_recording();
 bool tape_replaying();
@@ -37,7 +40,12 @@ bool tape_replay_presents(void (*present)(double vblank_time));
 // Recording, a frame was presented at this moment (in vblanks), in a window this size.
 void tape_presented(double vblank_time);
 void tape_window(int w, int h);
-// Finish the file (on exit).
-void tape_close();
+// F9: mark this moment in the recording (a replay announces it).
+void tape_mark();
+int tape_marks();  // marks made so far
+// On exit: finish the recording. A debug session is renamed after the first mission played
+// (deleted if none was, unless it crashed); a crash also keeps the RAM. Returns the folder
+// ("" if none is kept).
+std::string tape_close(bool crashed);
 
 }  // namespace psx
