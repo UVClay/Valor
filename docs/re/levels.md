@@ -285,8 +285,9 @@ weapon (from `g_level_end`).
 
 Records have a volume (`+0x10` its centre, `+0x28` the shape, `record_contains`,
 `0x80083D30`): 0 a sphere of radius `+0x2A`; 1 a cylinder of radius `+0x2A` from `+0x2E` to
-`+0x2C` around the centre's height (1:3's kind-1 records: radius 330..542, ±500); 2 a box or
-polygon (`0x80083AB8`).
+`+0x2C` around the centre's height (1:3's kind-1 records: radius 330..542, ±500); 2 a box of
+sizes `+0x2A`, `+0x2C`, `+0x2E` (x, y, z) turned by the record's angles `+0x18..+0x1C` (YXZ)
+(`0x80083AB8`).
 
 Each floor **zone** (the k-d leaf's id, Collision) lists the records whose volumes reach into
 it (`[0x8009EC5C]`: per zone a byte count, then u16 indices into the level's record table).
@@ -356,7 +357,7 @@ walk goal is on, the same gathering also sorts the walls ahead/left/right for st
 ## Open
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
-- Kind 5 and shape 2; what 0x4D078F23 (`0x80054378`) and type 0x4C do; types 0x1405, 0x1771,
+- Kind 5; what 0x4D078F23 (`0x80054378`) and type 0x4C do; types 0x1405, 0x1771,
   0x1774 in game.
 - Record kinds' property numbers (one reader per kind, `0x8006488C`..`0x80065B24`), the message
   numbers, the register filters and what a context's +0x8/+0xC/+0x10/+0x14 are per message.
