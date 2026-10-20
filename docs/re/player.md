@@ -42,6 +42,21 @@ entity's "object" pointer: for the soldier, the weapon block lives inside the en
 The level's slots: `g_slot_count` (`0x8009E874`) and `g_slot_weapon` (`0x8009E878`, a byte per
 slot, the weapon index). E.g. 1:3 has Garand (12), Thompson (1), shotgun (4), grenades (3).
 
+## Movement (measured)
+
+Scripted keyboard input in 1:1 (`build/re/move.sh`-style: `--kbm`, `VALOR_WATCH` on the
+soldier's position `+0x20C`, ground `+0x284`), 30 Hz ticks, y pointing down:
+
+| | Per tick | |
+|---|---|---|
+| Running forward | 34.8 units | ~1044 units/s (RECON.md: 17.4 per 60 Hz frame) |
+| Crouched, forward | 7.9 units | 23% of running |
+| Jump | 24 up at take-off, gravity 2 per tick | 156 units high, 23 ticks (0.77 s) in the air |
+
+The player's soldier is set up by `player_soldier_init` (`0x8007BE04`): health and maximum
+128.0, eye height 240 (`+0x2D4`), pitch limits `inv+0xB4` 0xD0 and `inv+0xB6` 0x56, `inv+0x8`
+the "life" parameter (`g_params+0xC`).
+
 ## Weapon table (`g_weapons`, `0x80093640`, 13 × 0x44 bytes, static data in LEVEL.BIN)
 
 | Offset | Type | Meaning |
