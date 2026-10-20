@@ -196,6 +196,7 @@
 80061244 ladder_spawn               # type 0x4C: radius and top from the trigger record
 80062108 level_begin                # (mode): campaign slot -> mission/level, MSN9's missing LVL3, clears g_level_end
 80062694 career_add                 # the level's counters into g_game's career totals
+800719C0 explosion_spawn            # type 0x31: fireball hit parts, camera shake, noise
 8007344C level_rating               # 0..2 stars: objectives, kills, health > 75%
 80078BCC capsule_plane_dist
 80078C4C wall_push                  # push a walker out of a plane, horizontally (the PsyQ match "UserFuncExecute" is wrong)

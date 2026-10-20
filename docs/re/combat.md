@@ -156,6 +156,21 @@ Hit parts still matter:
   (`0x80046C50`), a grunt 30% of the time, a hit sound, and noise for the enemies
   (`0x8004D8DC(.., 1, 255, 2)`).
 
+## Explosions (`explosion_spawn`, `0x800719C0`)
+
+Grenades, rockets, destructibles and the level built-in `explosion` all make an explosion
+entity (type 0x31): flags A 0x01228000, collision mask 0x88004451 (it touches characters and
+objects), `hit_part` = `damage_from_hit`, so it does its damage through the ordinary contact
+pass (entities.md) like a bullet's part, with the damage in its variable 0 (the caller's).
+Its hit parts are N fireballs (N the caller's), each placed at a random offset within ±spread
+of the centre (kind 3), and they damage whatever they touch while the explosion lasts; when
+its life runs out the parts and the radius go to 0. On its first tick it makes the
+particles (`0x80070DEC`), shakes the camera if the player is within 3000 units (strength
+(3000 - distance) / 16, `0x80046C50`) and makes a noise of that strength that enemies hear
+(`0x8004D8DC`). A destructible (`0x1770`) is damaged by explosions as by bullets.
+
 ## Open
 
-- How the results screen turns these counters into the rating (SHELL.BIN, `m_medals`).
+- The fireballs' size and growth over the explosion's life, and the callers' N, spread and
+  damage per weapon.
+- The results screen's medals (SHELL.BIN, `m_medals`); the rating itself is in levels.md.
