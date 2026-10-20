@@ -14,11 +14,20 @@ reimplemented from (an eventual engine with identical mechanics and presentation
 natively from game state). The recomp stays as the reference: recordings replayed through it
 check every finding.
 
-1. [ ] **Player state**: inventory, weapons, health, carry-over between levels (docs/re/player.md)
-2. [ ] **Entities**: the entity list and layout, think/touch handlers, physics and collision
-3. [ ] **Combat**: firing, bullets, hit tests, damage (docs/re/combat.md)
-4. [ ] **Enemies**: perception, states, targeting, accuracy
-5. [ ] **Levels**: data formats, scripts, objectives
+1. [x] **Player state**: inventory, weapons, health, movement, pickups, carry-over between
+   levels, cheat flags (docs/re/player.md)
+2. [x] **Entities**: the struct, lists and handles, the tick, movement, world and entity
+   collisions, sphere hitboxes (docs/re/entities.md)
+3. [x] **Combat**: firing, bullets, hit tests, damage (flat per weapon, no headshot bonus), the
+   player being hit, statistics (docs/re/combat.md)
+4. [ ] **Enemies**: done: the script VM (all 74 opcodes) and a disassembler, variables and
+   sensors, spawning from level records, firing and aim error, the brain's goals. Left: the
+   brain's movement and path following, the sensors one by one, reading the soldier's scripts
+   (docs/re/enemies.md)
+5. [ ] **Levels**: done: files, the level header, entity records and spawners, the level script
+   VM's structure and built-ins, objectives, the rating and career totals. Left: the level VM's
+   push/store operands and a disassembler, the collision sections, the other entity classes
+   (docs/re/levels.md)
 
 Waiting for the game state they need (presentation, later): a separate HUD layer and then
 native HUD elements, a native sniper scope, a PC-style aim mode (the view keeps turning, the
