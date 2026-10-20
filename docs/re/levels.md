@@ -161,6 +161,44 @@ and `0x8006463C`).
 `0x8005F69C`, run every tick after the collisions, is the dynamic lights (muzzle flashes): 32-
 byte entries at `0x80099F4C` (count `0x80099ED0`) with a lifetime and a colour fade.
 
+## Results: the rating and career totals (SHELL.BIN)
+
+After a level the menus read the statistics (combat.md) and `g_level_end`:
+
+**The rating** (`level_rating`, SHELL `0x8007344C`, "m_pmeval_overall"), 0..2:
+
+| Rating | When |
+|---|---|
+| 0 | The primary objectives aren't complete (`g_level_end+0xC`), or kills (`0x80039CB8`) are below the level's requirement |
+| 1 | Objectives complete and enough kills |
+| 2 | ... and more than 75% health at the end (`g_level_end+0x8` / 128.0 > 0.75) |
+
+The kill requirements (SHELL `0x8003BA40`, 4 words per row; the row from `0x80039C88`, the level
+from `0x80039C84`; 9999: no such level):
+
+| Row | Level 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| 0 | 21 | 49 | 40 | - |
+| 1 | 5 | 9 | 35 | 17 |
+| 2 | 29 | 24 | 37 | 25 |
+| 3 | 68 | 64 | 51 | - |
+| 4 | 49 | 40 | 46 | 43 |
+| 5 | 49 | 32 | 30 | 51 |
+| 6, 7 | 45 | 53 | 26 | 26 |
+
+(Rows 0..3 match missions 1..4's level counts; how 5, 7 and 9 map to the rest is open.)
+
+The **best rating per level** is kept in the level's carry-over row: halfword 13 of
+`g_level_ammo[mission][level]` (`g_game+0x18C + mission·152 + level·36 + 26`), -1 until the level
+is completed; a new rating replaces it only if higher. A real save had 2 on 1:1..1:3 and 1 on
+2:1 and 2:2.
+
+**Career totals** (`career_add`, SHELL `0x80062694`) add the level's counters into `g_game`:
++0x10 shots, +0x14 hits, +0x18 wounds, +0x1C `0x80039D10`, +0x20 kills, +0x24 head hits,
++0x28 torso hits without part 8, +0x2C part 8 (the groin), +0x30 parts 10/12/14/16, +0x34 parts
+2/6, +0x38 parts 9/11/13/15, +0x3C parts 1/5 (legs and arms, one side each), +0x40.. kills per
+weapon (from `g_level_end`).
+
 ## Open
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
