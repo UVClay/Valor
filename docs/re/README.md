@@ -31,6 +31,8 @@ Run inside the container (`./dev ...`).
 - `tools/recon/tspcol.py FILE.TSP...` checks TSP chunks' collision blocks; `--obj` exports the
   triangles.
 - `VALOR_TRACE_DAMAGE=1` logs every damage event (victim, attacker, damage, health).
+- `VALOR_TRACE_SHOTS=1` logs every player bullet with the aim point and the camera;
+  `tools/recon/shots.py LOG` measures them.
 - `VALOR_WATCH="name=EXPR:LEN;..."` makes the runtime log, every game tick, what changed in
   those bytes (EXPR: hex, `[EXPR]` to follow a pointer, `+HEX`/`-HEX`), e.g.
   `VALOR_WATCH="inv=[8009D654]+3CC:80"`. `VALOR_WATCH_HALF=1` logs signed halfwords.
