@@ -122,6 +122,10 @@ struct Cop0 {
     uint32_t epc = 0;
 };
 extern Cop0 cop0;
+// Exceptions being handled (cpu.cpp): how many, and dropping those taken after `depth` (code
+// abandoned by a Halt inside them, shadow.cpp).
+size_t exception_depth();
+void exception_unwind(size_t depth);
 
 // memory.cpp
 void load_bios(const std::filesystem::path &path);

@@ -193,6 +193,11 @@ struct ExceptionFrame {
 std::vector<ExceptionFrame *> exception_stack;
 }  // namespace
 
+size_t exception_depth() { return exception_stack.size(); }
+void exception_unwind(size_t depth) {
+    if (exception_stack.size() > depth) exception_stack.resize(depth);
+}
+
 static void take_exception(Cpu *c, uint32_t epc, uint32_t code) {
     cop0.epc = epc;
     cop0.cause = (cop0.cause & ~0x8000007Cu) | (code << 2);

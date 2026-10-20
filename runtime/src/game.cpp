@@ -236,7 +236,9 @@ extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
                  v[0][2] * (v[1][0] * v[2][1] - v[1][1] * v[2][0]);
     if (det <= 0) return;
     uint32_t hi = std::max({sz[0], sz[1], sz[2]}), lo = std::min({sz[0], sz[1], sz[2]});
-    uint32_t otz = (hi * 3 + lo) >> 4;
+    // Its place in the ordering table (512 entries, otz / 4): a polygon from the camera to far
+    // away would land past the table's end, and the game would write over whatever follows it.
+    uint32_t otz = std::min((hi * 3 + lo) >> 4, 0x7FFu);
     psx_w16(c, c->r[19] + 0x2A, sz[2]);
     psx_w32(c, c->r[19] + 0x34, gte_mfc2(c, 14));
     psx_w32(c, c->r[19] + 0x3A8, otz);

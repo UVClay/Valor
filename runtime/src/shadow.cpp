@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "game.h"
@@ -364,6 +365,11 @@ bool shadow_render(double vblank_time, int &x, int &y) {
     active = true;
     c.next_event = INT64_MAX;  // no interrupts or devices: the copy only draws
 
+    // The copy runs the CPU's code: whatever it does to the coprocessor's state and the exception
+    // stack is the copy's too.
+    Cop0 cop0_saved = cop0;
+    int isolated = psx_cache_isolated;
+    size_t depth = exception_depth();
     bool drawn = true;
     try {
         present_time = vblank_time;
@@ -374,10 +380,23 @@ bool shadow_render(double vblank_time, int &x, int &y) {
     } catch (const Halt &h) {
         // The copy went wrong: the game itself is untouched. Its own frame is shown instead, and
         // the copy isn't used again.
-        log("shadow: %s (drawing the tick's frame instead)", h.what());
+        std::string recent;
+        for (uint32_t i = 8; i > 0; i--) {
+            char buf[12];
+            snprintf(buf, sizeof buf, " %08X", psx_trace_ring[(psx_trace_pos - i) & (PSX_TRACE_SIZE - 1)]);
+            recent += buf;
+        }
+        log("shadow: %s at vblank %llu (drawing the tick's frame instead); ra=%08X, recent functions:%s", h.what(),
+            (unsigned long long)hw::gpu.frames, c.r[31], recent.c_str());
         drawn = have_snapshot = false;
     }
 
+    if (static bool trace = getenv("VALOR_TRACE_SHADOW"); trace &&
+        (memcmp(&cop0_saved, &cop0, sizeof cop0) || isolated != psx_cache_isolated || depth != exception_depth()))
+        log("shadow: the copy changed sr %08X -> %08X, exceptions %zu -> %zu", cop0_saved.sr, cop0.sr, depth, exception_depth());
+    cop0 = cop0_saved;
+    psx_cache_isolated = isolated;
+    exception_unwind(depth);
     gte_other_transform(nullptr);
     active = false;
     interp_shadow(false);
