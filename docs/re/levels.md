@@ -291,9 +291,9 @@ polygon (`0x80083AB8`).
 Each floor **zone** (the k-d leaf's id, Collision) lists the records whose volumes reach into
 it (`[0x8009EC5C]`: per zone a byte count, then u16 indices into the level's record table).
 Every tick, the player and the walkers (`zones_update`, `0x800845A8` → `0x80084400`, from
-`entity_move`) test their position against their zone's records: a bit per record in
-`+0x394` (the previous zone and bits in `+0x390`/`+0x398` and `+0x39C`), and every bit that
-changes is an **enter** or a **leave** (`0x800840E0`):
+`entity_move`) test their position against their zone's records: the zone in `+0x390`, a bit per record in
+`+0x394`, last tick's in `+0x398` and `+0x39C`; every bit that changes is an **enter** or a
+**leave** (`0x800840E0`):
 
 | | Enter | Leave |
 |---|---|---|
