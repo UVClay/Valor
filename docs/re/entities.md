@@ -69,7 +69,7 @@ pickups) is an entity: one struct about 0x3D0 bytes long, in linked lists, updat
 2. Paused: nothing else (the poll repeats for the dropped ticks).
 3. Otherwise, for each tick due (1 + the vblank-paced ticks dropped, at most 4):
    `g_tick` (`0x8009A5DC`) += 1, `entities_update(g_entities)`, `entities_collide(g_entities)`,
-   `0x8005F69C` (level logic?), and another `input_poll` when more ticks follow.
+   `texts_update` (`0x8005F69C`, the on-screen texts), and another `input_poll` when more ticks follow.
 4. `render_pass`, `0x8004137C`, `0x8006B894`.
 
 So everything that happens in a tick (moving, firing, spawning bullets) happens before any

@@ -57,11 +57,18 @@
 800503D4 render_pass
 800504F8 render_flip
 8005163C enemy_weapon               # bursts, aim error +0x38C->+0xC8
+80052D70 record_activate            # level built-in 4: once (bit 0), spawns the record's entity
+80052DC4 level_set                  # level built-in 13: (what, value): 0 fog near, 1 music, 2 primary objectives complete, 3 level end?
+80053464 show_text                  # level built-in 8: a message-table text on screen
+8005351C record_has_tag             # level built-in 9
 8005372C objective_add
 8005380C objective_remove
 800538B0 objective_complete
 8005394C objective_is_complete
+800539C8 entity_set_home            # level built-in 11: +0x3A4 from an entity or a record
 80053C20 draw_level
+80054740 world_anim_step            # level built-in 18: animated world texture groups by id
+80054990 world_anim_set             # level built-in 21
 80055628 enemy_think                # type 0x1402
 80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
 800563F0 enemy_spawn                # from a level spawn record: health, aim error, ranges
@@ -77,14 +84,20 @@
 8005D148 script_operand             # (n, mask, value, entity): variable or literal
 8005D18C script_step
 8005DA24 mounted_gun_think          # MG emplacement operated by the player
-8005F69C lights_update              # dynamic lights (muzzle flashes)
+8005F28C text_add                   # (text, x, y, scale, r, g, b, ticks, id, ...): 32-byte entries at 0x80099F4C, at most 50
+8005F69C texts_update               # on-screen texts: lifetime, colour fade
 80061350 spawn_by_type              # (record, spawner): by spawner+0xFC
-800616E4 game_frame                 # input, then per tick: entities_update, entities_collide, 0x8005F69C; then draw
+800616E4 game_frame                 # input, then per tick: entities_update, entities_collide, texts_update; then draw
 8006210C level_end_carry            # inventory -> weapon table ammo -> g_level_end
 800625BC start_handler              # pause
 80064374 level_entry                # LEVEL.BIN entry point
+80065F34 push_property              # level VM: a property of an entity's record, by the record's kind
+80066000 script_var_addr            # (entity, object, index): entity variables at record+0x20
+8006602C script_of                  # (entity, object): the script id from the record (+0x64, or +0x78 for kind 3)
 800662CC send_event
+800664A0 script_run_message         # (entity, object, message): runs that handler
 800672E0 level_vm                   # level scripts: byte ops over a typed stack
+8006949C align_up
 8006B854 entity_link                # appends to g_entities
 8006B89C entity_unlink
 8006B8F0 entity_remove
@@ -149,3 +162,4 @@
 8009E290 g_paths                    # 8 bytes each: {id, count, points (0x14 bytes each, s16 x y z first)}
 8009E874 g_slot_count               # weapon slots this level
 8009E878 g_slot_weapon              # byte per slot: index into g_weapons
+800AD260 g_vm_stack                 # 8-byte {type, value}, top index 0x8009D5A8

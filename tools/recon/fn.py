@@ -190,7 +190,7 @@ def sym(a):
     return NAMES.get(a, f"D_{a:08X}")
 
 
-def asm(img, start, end):
+def asm(img, start, end, images):
     """The function as GNU assembly for m2c: hi/lo pairs as %hi/%lo of named symbols, jump
     tables as .rodata (straight-line pairing, as in disasm)."""
     lui_sym, lo_sym, jtbls = {}, {}, {}
@@ -209,13 +209,16 @@ def asm(img, start, end):
         if op in ("addiu", "lw", "lh", "lhu", "lb", "lbu", "sw", "sh", "sb", "lwc2", "swc2") and i.rs.value in hi:
             la, base = hi[i.rs.value]
             v = (base + i.getProcessedImmediate()) & 0xFFFFFFFF
-            # A jump table: a word table of addresses inside this function, read then jumped to.
-            if op == "lw" and any(img.ins(x).getOpcodeName() == "jr" for x in range(a + 4, a + 12, 4)) \
-                    and img.has(v) and start <= img.word(v) < end:
+            # A jump table: a word table of addresses inside this function, read then jumped to
+            # (the table can be in another binary: LEVEL.BIN's are in the exe's data).
+            data = next((im for im in images if im.base <= v < im.base + len(im.data) - 3), None)
+            if op in ("lw", "addiu") and data and start <= data.word(v) < end \
+                    and any(img.ins(x).getOpcodeName() == "jr" and img.ins(x).rs.value != 31
+                            for x in range(a + 4, min(a + 32, end), 4)):
                 targets = []
                 t = v
-                while img.has(t) and start <= img.word(t) < end:
-                    targets.append(img.word(t))
+                while data.base <= t < data.base + len(data.data) - 3 and start <= data.word(t) < end:
+                    targets.append(data.word(t))
                     t += 4
                 jtbls[v] = targets
                 labels.update(targets)
@@ -310,7 +313,7 @@ def main():
         a = int(rest[0], 16)
         im = find(a)
         s, e = im.whole_function(a)
-        text = "\n".join(asm(im, s, e)) + "\n"
+        text = "\n".join(asm(im, s, e, images)) + "\n"
         if cmd == "asm":
             print(text, end="")
             return

@@ -26,6 +26,8 @@ Run inside the container (`./dev ...`).
   (the entity, brain and weapon structs, prototypes); the recompiler's split-off pieces are
   merged back. GTE instructions come out as `M2C_ERROR` lines: read those in `show`.
 - `tools/recon/sst.py RAMDUMP --type 1402` disassembles an entity's model scripts.
+- `tools/recon/lvs.py RAMDUMP [ID...]` disassembles the level's scripts, folded into
+  statements (`--raw`: one instruction per line).
 - `VALOR_TRACE_DAMAGE=1` logs every damage event (victim, attacker, damage, health).
 - `VALOR_WATCH="name=EXPR:LEN;..."` makes the runtime log, every game tick, what changed in
   those bytes (EXPR: hex, `[EXPR]` to follow a pointer, `+HEX`/`-HEX`), e.g.

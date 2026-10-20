@@ -96,70 +96,127 @@ Levels are event-driven: entities send each other messages (`Msg_SendMessageDire
 `MsgSys_ProcessPendingMessages`; `send_event` `0x800662CC` from the enemy scripts), and a message
 runs a script of the level (`0x80066318`, `0x800663B8`, `0x800664A0` → `level_vm`, `0x800672E0`).
 
-**Scripts** are in the BSD: the header's `+0x59C` points at the script table (`[0x8009D5AC]`
-while the level runs; 1:3: 158 scripts), offsets at `+0x8 + 4·id`. A running script's context
-holds its program counter (`+0x0`), the entity's handle (`+0x4`) and the script id (`+0x10`).
+**Scripts** belong to entities: each record names its script (id at `+0x64`, `+0x78` for kind 3),
+and a message to an entity runs that script's handler for it (`script_run_message`,
+`0x800664A0`). The table: `[0x8009D5AC]` (`g_level_scripts`, from the header's `+0x59C`): a
+count, a number of slots, then per slot the script's offset from the table (0: none; 1:3 has
+158 scripts in 167 slots). A script:
 
-**The VM** (`level_vm`, `0x800672E0`, ~2200 instructions, with its overflow cases split by the
-recompiler into the small functions that follow it): byte opcodes (0..0x17, jump table at
-`0x8003CCF0`) over a typed value stack (`0x800AD260`, 8-byte {type, value} entries, top index
-at `0x800AD5A8`). Types: 0x0A integer, 0x0B boolean, 0x0E float (PsyQ software floats:
-`0x8001D590` int→float, `0x8001D7B0` equal, `0x8001D880` less), 0x0F string (strcmp), 0x10 a
-handle; binary operators switch on the pair of operand types.
+| | |
+|---|---|
+| u32 N | Number of handlers |
+| N × {u16 message, u16 offset} | The handlers; offsets from the script's start |
+| bytes | The script's own variables (byte 0: the once-flag), up to the first handler's code |
+| code | Byte code; jump targets and operand alignment are relative to the script's start |
 
-Operands follow the opcode byte, 2- or 4-byte aligned (`0x8006949C`). Addresses are offsets
-in the script.
+Messages are queued (`MsgSys`, 32-byte contexts in a ring of 128 at `0x800B6460`) and run by
+`0x80066318`/`0x800663B8`. A context: +0x0 program counter, +0x4 the entity's handle, +0x8 and
++0xC two more handles (the sender?), +0x10 and +0x14 objects (records) for messages without an
+entity.
 
-| Op | Operand | |
+**The VM** (`level_vm`, `0x800672E0`; decompiled with `fn.py c`): byte opcodes over a stack of
+8-byte {type, value} entries (`g_vm_stack`, `0x800AD260`, top index `0x8009D5A8`). Types: 0x0A
+signed, 0x0B unsigned/boolean, 0x0C, 0x0D, 0x0E float (PsyQ software floats), 0x0F string,
+0x10 entity/pointer. Binary operators convert int to float when the types differ.
+`tools/recon/lvs.py RAMDUMP [ID...]` disassembles them (folded into statements by default).
+
+| Op | Operands | |
 |---|---|---|
 | 00 | | nop |
 | 01 | | pop |
-| 02 | source byte 0xF4..0xFF, then by source | push: a literal or a value of an entity (the script's own, the message's sender, ...; jump tables at `0x8003CD50`, `0x8003CD68`) |
-| 03 | 0xF0..0xF3, ... | store (the counterpart of push) |
-| 04, 08..0B | | == < (and the other comparisons): push a boolean |
+| 02 | value (below) | push |
+| 03 | F0..F3 variable | store the top into a variable, pop |
+| 04, 08, 09, 0A, 0B | | A == B, A > B, A < B, A >= B, A <= B (A pushed first): push a boolean |
 | 05, 06, 07 | | && \|\| ! |
-| 0C..0F | | arithmetic (int and float) |
-| 10 | address (u16) | pop; jump if zero |
-| 11 | address (u16) | jump |
-| 12 | index (u8) | call built-in |
-| 13 | index (u16) | call built-in |
+| 0C..0F | | + - * / |
+| 10 | u16 (aligned) | pop; jump if zero |
+| 11 | u16 (aligned) | jump |
+| 12 / 13 | u8 / u16 (aligned) | call built-in |
 | 14 | | end |
-| 15 | | push whether this script hasn't run yet (a once-flag in the script table) |
+| 15 | | push the once-flag (byte 0 of the script's variables) |
 | 16 | | set the once-flag |
-| 17 | byte or word | debug print |
+| 17 | type, value | debug print |
 
-**Built-ins** (`g_level_builtins`, `0x8009D5C0`, 22 functions, filled at level start by
-`0x80066110`):
+**Values** (push 02):
 
-| # | Function | |
+| First byte | Then | Pushes |
 |---|---|---|
-| 0 | `0x80069514` | RegisterMsg: subscribe the entity to a message (filter types) |
-| 1 | `0x80069714` | UnregisterMsg |
-| 2, 12 | → `0x80066EA0` | send a message |
-| 3 | → `0x800660F4` | |
-| 4 | → `0x80052D70` | |
-| 5 | → `entity_remove` | remove an entity |
-| 6 | → `0x80052F14` | an explosion (sound, particles, `0x800719C0`) |
-| 7 | → `0x800536F4` | (sets `0x80098630`) |
-| 8 | → `0x80053464` | (dynamic lights) |
-| 9, 10 | → `0x8005351C`, `0x8005359C` | |
-| 11 | → `0x800539C8` | |
-| 13 | → `0x80052DC4` | activate the level's music (loads `m_la.vb`; sets `g_bPrimaryObjectivesComplete`) |
-| 14..17 | | objective add / remove / complete / is complete |
-| 18, 21 | → `0x80054740`, `0x80054990` | |
-| 19 | → `0x800533D4` | play a sound |
-| 20 | → `0x80053444` | stop a sound? |
+| 09 | u8 | that byte |
+| 0A..0D | u32 (aligned 4) | an integer of that type |
+| 0E | f32 (aligned 4) | a float |
+| 0F | length, bytes | a string |
+| 10 | 4 bytes (aligned 4) | a pointer to them |
+| F0, F1 | selector, index (u8; F1: u16 aligned) | an entity variable: byte `index` of the entity's record + 0x20 |
+| F2, F3 | selector, index | a script variable: byte `index` after the handler table |
+| F4..FF | kind, property | with kind 0x10 the entity itself, else a property of its record (`push_property`, one reader per record kind, e.g. 0..5 the s16 fields at +0x28..+0x34, 13 the word at +0x54, 14..17 bits of +0x30). FA..FF: the context's entity +0x4 (self), +0x8, +0xC by (S - 0xF4) % 3; F4..F9: the context's objects +0x10, +0x14 |
 
-**Objectives** are built-ins (stack wrappers at `0x80069DF4`..`0x80069EC4`): `objective_add(id,
-text)` (`0x8005372C`: adds, or resets to incomplete; the text from the message table
-`0x80098188`), `objective_remove(id)` (`0x8005380C`), `objective_complete(id)` (`0x800538B0`),
-`objective_is_complete(id)` (`0x8005394C`, 1 for an unknown id). The list: ids at `0x8009892C`,
+The selector picks the part of the byte: 9 the whole byte, 1..8 bit 0..7 (store: set if the top
+is non-zero). The wide forms (F1, F3, and kinds F7..F9/FD..FF) read their index through a
+pointer made from a byte: broken, so unused.
+
+The variables are bytes **in the level record** (from `+0x20`): the record's own fields are
+what scripts read and write, and they keep their values when the entity is removed.
+
+**Built-ins** (`g_level_builtins`, `0x8009D5C0`, filled at level start by `0x80066110`; the
+arguments in push order):
+
+| # | Name | Pops | |
+|---|---|---|---|
+| 0 | register_msg | 2 + by filter | (args, filter, handler): subscribe this script's handler; filter 1, 2 take 1 more value, 3, 4 two, 5 three; other filters print "Fatal Error: Unhandled FilterType" and do nothing (1:3's objective script uses filter 0 six times) |
+| 1 | unregister_msg | 2 + by filter | the same |
+| 2 | send_self | 1 | (message) to this entity |
+| 3 | set_flags | 1 | entity `+0x40` \|= value |
+| 4 | activate | 2 | (record, ?): once per record (bit 0), spawns its entity by kind |
+| 5 | remove_entity | 1 | |
+| 6 | explosion | 1 | sound, particles, damage around the entity |
+| 7 | level_func | 3 → 1 | calls the level's function table (`0x80098630`) by index |
+| 8 | show_text | 1 | message-table text (`0x80098188`) on screen (`text_add`) |
+| 9 | has_tag | 3 → 1 | the record's tag list (`+0x48`) holds the value |
+| 10 | tags_match | 5 → 1 | two records' tag lists share a tag past a value |
+| 11 | set_home | 2 | the entity's home (`+0x3A4`) from another entity or a record |
+| 12 | send_to | 3 | (entity, object, message) |
+| 13 | level_set | 2 | (what, value): 0 fog near, 1 start the music, 2 primary objectives complete (`g_bPrimaryObjectivesComplete`), 3 level end flags (`0x8009C840` \|= 0x24), 4 `0x8005F068` |
+| 14..17 | objective_add / remove / complete / is_complete | 2, 1, 1, 1 → 1 | (text, id), ... |
+| 18 | world_anim_step | 1 | step the animated world textures of that group (modes: once, random, loop, reverse) |
+| 19 | sound | 7 (→ 1) | (..., mode): pushes a handle when the mode is 3 |
+| 20 | sound_stop | 1 | |
+| 21 | world_anim_set | 2 | (group, frame) |
+
+With these arities every one of 1:3's 158 scripts folds with an empty stack at each label.
+
+**An example**, 1:3's objectives (script 45):
+
+```
+on msg 0:
+    level_set(1, 1)               # music on
+    level_set(2, 0)               # primary objectives not complete
+    ent[1] = 0
+    ent[0] = 0
+    objective_add(223, 14)        # three objectives: text 223..225, ids 14..16
+    objective_add(224, 15)
+    objective_add(225, 16)
+on msg 37:
+    objective_complete(14)
+    show_text(226)
+    sound(0, 131072, 0, 65536, 53, 0, 0)
+    ent[0] = (1 + ent[0])         # objectives done
+...
+on msg 8C:
+    if !(3 > ent[0]) goto L1DE    # all three done:
+    ...
+  L1DE:
+    level_set(2, 1)               # primary objectives complete
+```
+
+**Objectives** (`objective_add`, `0x8005372C`: adds, or resets to incomplete; the text from the
+message table `0x80098188`; `objective_remove` `0x8005380C`, `objective_complete`
+`0x800538B0`, `objective_is_complete` `0x8005394C`, 1 for an unknown id): ids at `0x8009892C`,
 done flags at `0x800988DC`, texts at `0x80098904`, count at `0x80098620`;
-`g_bPrimaryObjectivesComplete` is `0x80098624` (set by `0x80052DC4`, read by `level_end_carry`
-and `0x8006463C`).
+`g_bPrimaryObjectivesComplete` (`0x80098624`) is what `level_end_carry` and the rating check.
 
-`0x8005F69C`, run every tick after the collisions, is the dynamic lights (muzzle flashes): 32-
-byte entries at `0x80099F4C` (count `0x80099ED0`) with a lifetime and a colour fade.
+`texts_update` (`0x8005F69C`), run every tick after the collisions, ages the on-screen texts:
+32-byte entries at `0x80099F4C` (count `0x80099ED0`, at most 50) with a lifetime and a colour
+fade, added by `text_add` (`0x8005F28C`).
 
 ## Results: the rating and career totals (SHELL.BIN)
 
@@ -203,6 +260,6 @@ weapon (from `g_level_end`).
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
 - Classes other than the soldier, and the 0x177x types (pickups, doors, alarms, objectives...).
-- The rest of the level VM's opcodes and its built-ins (a disassembler for the level scripts,
-  like `sst.py` for the enemy scripts).
+- Record kinds' property numbers (one reader per kind, `0x8006488C`..`0x80065B24`), the message
+  numbers, the register filters and what a context's +0x8/+0xC/+0x10/+0x14 are per message.
 - The collision sections, the TAF files.
