@@ -91,26 +91,41 @@ class Image:
         return s, e
 
 
-def load_names():
+def read_names():
+    """names.txt as {section: {addr: (name, note)}}; the sections are its "# --- BIN ---" headers
+    (the exe's section is "SLUS_009.74 (exe)")."""
+    sections = {}
+    section = "LEVEL.BIN"
+    path = ROOT / "docs/re/names.txt"
+    for line in path.read_text().splitlines() if path.exists() else []:
+        m = re.match(r"# --- (\S+)", line)
+        if m:
+            section = m.group(1)
+            continue
+        line, _, note = line.partition("#")
+        parts = line.split()
+        if len(parts) >= 2:
+            sections.setdefault(section, {})[int(parts[0], 16)] = (parts[1], note.strip())
+    return sections
+
+
+def load_names(binname):
+    """Names for the exe and binname's overlay: names.txt, then PsyQ library names (build/syms)."""
     names, notes = {}, {}
-    # PsyQ library functions identified by signature (build/syms, from the setup tools).
     for path in sorted((ROOT / "build/syms").glob("*.txt")):
         for m in re.finditer(r"^(\w+) = 0x([0-9A-Fa-f]{8});", path.read_text(), re.M):
             names.setdefault(int(m.group(2), 16), m.group(1))
-    path = ROOT / "docs/re/names.txt"
-    if path.exists():
-        for line in path.read_text().splitlines():
-            line, _, note = line.partition("#")
-            parts = line.split()
-            if len(parts) >= 2:
-                a = int(parts[0], 16)
-                names[a] = parts[1]
-                if note.strip():
-                    notes[a] = note.strip()
+    sections = read_names()
+    for section in ("SLUS_009.74", binname):
+        for a, (n, note) in sections.get(section, {}).items():
+            if section == binname or a < OVERLAY_BASE:
+                names[a] = n
+                if note:
+                    notes[a] = note
     return names, notes
 
 
-NAMES, NOTES = load_names()
+NAMES, NOTES = {}, {}
 
 
 def name(a):
@@ -267,13 +282,23 @@ def sort_names():
         if not line.startswith("#"):
             break
         head.append(line)
-    entries = {}
-    for line in lines:
-        if line and not line.startswith("#"):
-            entries[int(line.split()[0], 16)] = line
-    exe = [entries[a] for a in sorted(entries) if a < OVERLAY_BASE]
-    ovl = [entries[a] for a in sorted(entries) if a >= OVERLAY_BASE]
-    out = head + ["", "# --- SLUS_009.74 (exe) ---"] + exe + ["", "# --- LEVEL.BIN ---"] + ovl
+    sections = read_names()
+    # Exe addresses go to the exe's section wherever they were written.
+    exe = sections.setdefault("SLUS_009.74", {})
+    for sec, entries in sections.items():
+        if sec != "SLUS_009.74":
+            for a in [a for a in entries if a < OVERLAY_BASE]:
+                exe[a] = entries.pop(a)
+    titles = {"SLUS_009.74": "SLUS_009.74 (exe)"}
+    out = list(head)
+    for sec in ["SLUS_009.74", "LEVEL.BIN"] + sorted(set(sections) - {"SLUS_009.74", "LEVEL.BIN"}):
+        entries = sections.get(sec, {})
+        if not entries:
+            continue
+        out += ["", f"# --- {titles.get(sec, sec)} ---"]
+        for a in sorted(entries):
+            n, note = entries[a]
+            out.append(f"{a:08X} {n}".ljust(35) + (f" # {note}" if note else "") if note else f"{a:08X} {n}")
     path.write_text("\n".join(out) + "\n")
 
 
@@ -284,6 +309,8 @@ def main():
     binname = "LEVEL.BIN"
     if args[:1] == ["--bin"]:
         binname, args = args[1], args[2:]
+    NAMES.update(load_names(binname)[0])
+    NOTES.update(load_names(binname)[1])
     img = Image(binname)
     exe = Image("SLUS_009.74")
     images = [img] if binname == "SLUS_009.74" else [img, exe]

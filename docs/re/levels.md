@@ -249,20 +249,26 @@ After a level the menus read the statistics (combat.md) and `g_level_end`:
 | 1 | Objectives complete and enough kills |
 | 2 | ... and more than 75% health at the end (`g_level_end+0x8` / 128.0 > 0.75) |
 
-The kill requirements (SHELL `0x8003BA40`, 4 words per row; the row from `0x80039C88`, the level
-from `0x80039C84`; 9999: no such level):
+The kill requirements (SHELL `0x8003BA40`, 4 words per row; 9999: no such level) are per
+**campaign slot**: the row is `g_game+0xA8` (copied to `0x80039C88`), the level `0x80039C84`.
+The slots, at `0x80038D90` (12 bytes each: mission index, current level, level count; set at
+run time), and their requirements:
 
-| Row | Level 1 | 2 | 3 | 4 |
-|---|---|---|---|---|
-| 0 | 21 | 49 | 40 | - |
-| 1 | 5 | 9 | 35 | 17 |
-| 2 | 29 | 24 | 37 | 25 |
-| 3 | 68 | 64 | 51 | - |
-| 4 | 49 | 40 | 46 | 43 |
-| 5 | 49 | 32 | 30 | 51 |
-| 6, 7 | 45 | 53 | 26 | 26 |
+| Slot | Mission | Levels | Level 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|---|
+| 0 | MSN1 | 3 | 21 | 49 | 40 | - |
+| 1 | MSN2 | 4 | 5 | 9 | 35 | 17 |
+| 2 | MSN3 | 4 | 29 | 24 | 37 | 25 |
+| 3 | MSN4 | 3 | 68 | 64 | 51 | - |
+| 4 | MSN5 | 4 | 49 | 40 | 46 | 43 |
+| 5 | MSN7 | 3 | 49 | 32 | 30 | (51) |
+| 6 | (MSN8, not on the disc) | 3 | 45 | 53 | 26 | 26 |
+| 7 | MSN9 | 3 | 45 | 53 | (26) | 26 |
 
-(Rows 0..3 match missions 1..4's level counts; how 5, 7 and 9 map to the rest is open.)
+When a level starts (SHELL `0x80062108`): slot 6 becomes slot 7, and in slot 7 the third level
+becomes the fourth with the third's carry-over row copied to it, since MSN9 has LVL1, LVL2 and
+LVL4. MSN6 and MSN8 don't exist. Mode 2 (`0x80039D1C`) plays MSN12 (seven levels, the
+bonus/secret levels: mission index 11, the level from `0x80039C74`).
 
 The **best rating per level** is kept in the level's carry-over row: halfword 13 of
 `g_level_ammo[mission][level]` (`g_game+0x18C + mission·152 + level·36 + 26`), -1 until the level

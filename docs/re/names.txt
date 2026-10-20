@@ -19,9 +19,13 @@
 800386A4 g_cheats                   # bits: 0x10 rapid fire, 0x20 big bullets, 0x40 free throws
 80038758 g_level_ammo               # g_game+0x18C: [mission][4 levels] x 13 halfwords, stride 152/36
 80038D4C g_level_end                # level-end summary written by level_end_carry
+80038D90 g_campaign                 # 12 bytes per slot: mission index, current level, level count (MSN1..5, 7, 8, 9)
+80039C84 g_rating_level
+80039C88 g_rating_slot
 80039CA8 g_stat_shots
 80039CAC g_stat_hits
 80039CB8 g_stat_kills
+80039D1C g_play_mode                # 2: the bonus levels (MSN12)
 
 # --- LEVEL.BIN ---
 80039D90 overlay_base
@@ -173,3 +177,9 @@
 8009EC54 g_model_count
 8009EC58 g_models                   # 0x100 bytes each: +0 hash, +0x94 script, +0xB8 scripts, +0xFC entity type
 800AD260 g_vm_stack                 # 8-byte {type, value}, top index 0x8009D5A8
+
+# --- SHELL.BIN ---
+8003BA40 g_kill_required            # 4 words per campaign slot
+80062108 level_begin                # (mode): campaign slot -> mission/level, MSN9's missing LVL3, clears g_level_end
+80062694 career_add                 # the level's counters into g_game's career totals
+8007344C level_rating               # 0..2 stars: objectives, kills, health > 75%
