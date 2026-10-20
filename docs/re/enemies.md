@@ -129,7 +129,20 @@ n-1 set makes operand n a variable id, else a literal (`script_operand`, `0x8005
 ## Firing (`enemy_weapon`, `0x8005163C`)
 
 The weapon block (`enemy+0x388`): `+0x11` fire state (from variable 0x16), `+0x12` pause
-countdown, `+0x13` shots left in the burst, `+0x14` countdown to the next shot. The enemy's
+countdown, `+0x13` shots left in the burst, `+0x14` countdown to the next shot.
+
+| Fire state | |
+|---|---|
+| 0 | Hold fire: the countdowns run down |
+| 1 | Bursts, each shot only while the target is within ±350 (30.8°) of the enemy's heading (`angle_to`); outside it the burst goes on without shots |
+| 2 | One aimed shot now, then state 0 |
+| 3 | Bursts fired straight along the enemy's own facing, not at the target (suppressing fire) |
+| 4 | Bursts aimed at the target whatever the angle |
+
+A burst: when the pause has run out, shots = weapon `+0x18` + rand × `+0x1C`, then a shot
+every `+0x10` + rand × `+0x14` ticks; after the burst, a pause of `+0x20` + rand × `+0x24`.
+Every aimed shot is aimed afresh at where the target is now (no lead, no tracking lag): the
+only inaccuracy is the aim error. The enemy's
 weapon kind indexes the table at `0x80097FF0` (48 bytes each):
 
 | Kind | Type | Reading | Between shots | Shots per burst | Pause |
@@ -243,7 +256,6 @@ record `+0x6A` × 11, path mode 2 (back and forth), no slow-down, gait speeds 10
 
 ## Open
 
-- How aim follows the target (the 0x4 goal isn't aim: it's walking).
 - Who reads entity `+0x38` bits 0x400000/0x800000/0x1000000 (arrived, path ends): events?
 - The gait table (`+0xCC`/`+0xD0`) and what `+0xB4`, `+0x3C8` do.
 - The player's weapon-block bit 1 (crouching?): smaller detection range, half the x error.
