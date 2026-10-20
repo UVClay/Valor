@@ -117,3 +117,4 @@ without playing the one before it (`--warp`) has an empty row too, so its weapon
 | 0x10 | Faster refire (delay scaled by `0x80039D88`) |
 | 0x20 | Larger player bullets (bullet object +0x38 = 0xA40) |
 | 0x40 | Thrown weapons don't use ammo |
+| 0x80 | The player takes no damage |

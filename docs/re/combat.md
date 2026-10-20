@@ -92,7 +92,21 @@ Hit parts still matter:
   bullet), hits per part group `0x80039CC4`/`CC8`/`CCC` and per part `0x80039CD0`..`0x80039D0C`
   (17 counters), helmet hits `0x80039CC0`.
 
+## The player being hit (`player_hit_part`, `0x8007C1D0`)
+
+- Touching the **mounted gun** (type 0x1772) while facing it and pressing Use (action 5) mounts
+  it: weapon-block flag 0x4000, the gun's handle at `inv+0x1B0`, the player's think becomes
+  `0x8007A32C`; the gun (`mounted_gun_think`, `0x8005DA24`) then turns and fires with the
+  player's controls.
+- A soldier or dog touching with an attack part (kind 5) set does melee damage.
+- An explosion (type 0x31) within 300 units sets its part's damage to 1000: death.
+- Otherwise `damage_from_hit` as for enemies, **unless cheat bit 0x80** (god mode). There is no
+  armour: health (128.0) takes the damage as is.
+- When health dropped: collision radius 200, the attacker's type in `inv+0x1C0`, a view kick
+  away from the attacker (`inv+0x80..+0x88`), a flinch timer (`inv+0x154` = 8), a camera shake
+  (`0x80046C50`), a grunt 30% of the time, a hit sound, and noise for the enemies
+  (`0x8004D8DC(.., 1, 255, 2)`).
+
 ## Open
 
 - What the results screen shows from those counters, and what the part groups are.
-- The player's `hit_part` (`0x8007C1D0`) and the damage feedback.

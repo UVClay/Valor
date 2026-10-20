@@ -87,9 +87,11 @@
 80075A30 role_button
 80075E7C role_axis_curve
 80075FB4 role_axis                  # (port, role, ?)
+8007A32C player_think_mounted       # while on a mounted gun
 8007A6B0 player_update
 8007B350 player_weapon_update
 8007BE04 player_soldier_init        # health 128, eye height 240, pitch limits
+8007C1D0 player_hit_part
 8007CF4C throw_weapon
 8007D5C8 fire_gun
 8007F084 center_view
