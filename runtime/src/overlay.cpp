@@ -220,7 +220,7 @@ void draw_menu() {
             ImGui::SameLine();
             ImGui::RadioButton("Extended", &config.overlay, 2);
             ImGui::Checkbox("Debug mode: record every session (from the next start)", &config.debug);
-            if (config.debug) ImGui::TextDisabled("Sessions go to recordings/; F9 marks a moment to look at.");
+            if (config.debug) ImGui::TextDisabled("Sessions go to recordings/; Tab marks a moment to look at.");
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();

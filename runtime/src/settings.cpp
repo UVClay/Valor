@@ -119,7 +119,7 @@ void settings_write(const std::filesystem::path &path) {
     f << "crosshair = " << (config.crosshair ? "true" : "false") << "\n";
     f << "crosshair_size = " << config.crosshair_size << "\n";
     f << "overlay = " << config.overlay << "\n";
-    f << "debug_mode = " << (config.debug ? "true" : "false") << "  # record every session to recordings/ (F9 marks a moment)\n";
+    f << "debug_mode = " << (config.debug ? "true" : "false") << "  # record every session to recordings/ (Tab marks a moment)\n";
     f << "mouse_look = " << (config.mouse_look ? "true" : "false") << "\n";
     f << "mouse_sensitivity = " << config.mouse_sensitivity << "  # 0.022 degrees per count at 1 (as in Quake)\n";
     f << "invert_mouse = " << (config.invert_mouse ? "true" : "false") << "\n";

@@ -52,7 +52,8 @@ Rebind them in F1 → Controls.
 | Screenshot (into `screenshots/`) | F12 |
 | Debug overlay: off / FPS / extended stats | F3 |
 | Analog mode on/off (the DualShock's Analog button) | F7 |
-| Fast-forward (hold) | Tab |
+| Fast-forward (hold) | F10 |
+| Mark a moment (debug mode) | Tab or F9 |
 | Volume down / up | - / = (or `./play --volume 60`) |
 
 ## Saves
@@ -114,7 +115,7 @@ naming it first. It starts at boot (a replay has to), marks each mission start, 
 closes it's renamed after the first mission played, e.g.
 `recordings/2026-10-19_21-40-49_m1l3`, with `_crash` added if it crashed. It is deleted if no
 mission was played. The folder also keeps the full log (`log.txt`) and, after a crash, the RAM
-(`ram.bin`, `scratch.bin`). The crash output ends with `record: recorded to …`. F9 marks a moment
+(`ram.bin`, `scratch.bin`). The crash output ends with `record: recorded to …`. Tab (or F9) marks a moment
 to look at, and replays log each mark as they pass it. The overlay stays on and says DEBUGGING.
 The newest 20 sessions are kept, and crashes are always kept.
 

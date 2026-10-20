@@ -12,7 +12,7 @@
 //   a F                    the analog button (F7)
 //   h F HASH               RAM hash once a second: a replay checks it runs the same game
 //   mark F mission M L     a mission started (1-based)
-//   mark F user N          F9 was pressed
+//   mark F user N          Tab (or F9) was pressed
 // It also keeps log.txt, everything logged while recording, and on a crash ram.bin and
 // scratch.bin (main RAM and the scratchpad).
 #include "tape.h"

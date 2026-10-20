@@ -58,7 +58,7 @@ and full playthroughs of two missions.
 ## Debugging
 
 - [x] Debug mode: every session recorded, named after its mission, with its log and a RAM dump
-      on a crash; F9 marks (README, Recording a play session).
+      on a crash; Tab marks (README, Recording a play session).
 - [ ] Faster memory card loads: the card's protocol is emulated byte by byte at the real speed,
       so reading saves is slow. Answer the BIOS card functions natively, or speed up the SIO
       timing, as fast loading does for the CD.

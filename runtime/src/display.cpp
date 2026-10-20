@@ -132,7 +132,7 @@ void write_png(const std::filesystem::path &path, const std::vector<uint32_t> &p
 // Runtime keys (the game's controls are in kbm.cpp). True when the key was one of them.
 bool handle_key(SDL_Keycode key, bool down) {
     switch (key) {
-    case SDLK_TAB: fast_forward = down; return true;
+    case SDLK_F10: fast_forward = down; return true;
     case SDLK_F7:
         if (down) {
             pad_toggle_analog();
@@ -153,6 +153,7 @@ bool handle_key(SDL_Keycode key, bool down) {
         }
         return true;
     case SDLK_F12: if (down) screenshot_requested = true; return true;
+    case SDLK_TAB:
     case SDLK_F9: if (down) tape_mark(); return true;
     case SDLK_MINUS: if (down) audio_adjust_volume(-10); return true;
     case SDLK_EQUALS: if (down) audio_adjust_volume(10); return true;
