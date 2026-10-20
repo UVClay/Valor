@@ -53,6 +53,9 @@ soldier's position `+0x20C`, ground `+0x284`), 30 Hz ticks, y pointing down:
 | Crouched, forward | 7.9 units | 23% of running |
 | Jump | 24 up at take-off, gravity 2 per tick | 156 units high, 23 ticks (0.77 s) in the air |
 
+On a ladder (levels.md, Triggers: `inv+0x70` the top) the forward input climbs at half its
+value instead of walking, with gravity off.
+
 The player's soldier is set up by `player_soldier_init` (`0x8007BE04`): health and maximum
 128.0, eye height 240 (`+0x2D4`), pitch limits `inv+0xB4` 0xD0 and `inv+0xB6` 0x56, `inv+0x8`
 the "life" parameter (`g_params+0xC`).

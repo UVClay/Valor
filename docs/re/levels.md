@@ -300,7 +300,13 @@ Every tick, the player and the walkers (`zones_update`, `0x800845A8` → `0x8008
 |---|---|---|
 | The player (flags A 1) | send each message of the list at `+0x38` (a count, then the messages: `send_event(message, 0, record, entity)`) | the list at `+0x3C` |
 | Characters (flags A 0x50) | `+0x40` | `+0x44` |
-| Kind-0 records (the player) | by class: 0xD1BA7D1E ends the level (`0x8009C840` \|= 0x24), 0x4D078F23 `0x80054378` (`0x80099070` = the record), 0x3011B913 spawns an entity of type 0x4C | 0x3011B913: `spawn_from_model(0x8877B646)` |
+| Kind-0 records (the player) | by class: 0xD1BA7D1E ends the level (`0x8009C840` \|= 0x24), 0x4D078F23 `0x80054378` (`0x80099070` = the record), 0x3011B913 a **ladder** (an entity of type 0x4C, below) | 0x3011B913: `spawn_from_model(0x8877B646)` |
+
+**Ladders**: the ladder entity (type 0x4C, `0x80061244`; one at a time) holds the record's
+radius (`+0x2A`) and top (its y less `+0x2C`). While the player is within the radius and
+below the top, its think (`0x800611D0`) sets the player's `inv+0x70` to the top, and the
+controls climb (`0x8007F1E0`): gravity off, half the forward input as vertical speed, up to
+the top or down to the floor.
 
 Only records with lists (or kind 0) are tested. The level scripts' messages (1:3's objectives
 complete on messages 0x37..0x39) come from these lists and from entities' scripts.

@@ -191,6 +191,8 @@
 80060138 floor_in_chunk             # + the steep-slope flag
 8006028C floor_search               # over the chunks holding the point
 80060474 floor_find                 # (entity, normal out): the floor height under it; zone id -> +0x390
+800611D0 ladder_think               # player in range: inv+0x70 = top
+80061244 ladder_spawn               # type 0x4C: radius and top from the trigger record
 80062108 level_begin                # (mode): campaign slot -> mission/level, MSN9's missing LVL3, clears g_level_end
 80062694 career_add                 # the level's counters into g_game's career totals
 8007344C level_rating               # 0..2 stars: objectives, kills, health > 75%
@@ -199,6 +201,7 @@
 80078D1C wall_first_hit
 80078E2C walls_gather
 8007E034 aim_update                 # crosshair ray -> aim point, aim friction, the gun steered to the crosshair
+8007F1E0 ladder_climb               # forward input / 2 -> vertical speed, gravity off
 80083D30 record_contains            # (pos, ?, record pair): the record's volume: sphere, cylinder, box
 80083EF0 record_enter               # +0x38 / +0x40 message lists, kind 0 by class
 8008406C record_leave               # +0x3C / +0x44
