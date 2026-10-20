@@ -35,13 +35,13 @@ pickups) is an entity: one struct about 0x3D0 bytes long, in linked lists, updat
 | +0x1FC/+0x200/+0x204 | s32 | Gravity: acceleration, fall speed, terminal speed |
 | +0x208 | s32 | Floor height under the entity |
 | +0x20C | 3×s32 | Position, 16.16 (+0x354.. mirrors the integer part) |
-| +0x218..+0x220 | 3×s32 | Local velocity (forward/vertical/side); +0x21C vertical, gravity adds 2.0/tick up to 75.0 |
-| +0x224 | s32 | Speed scale (1.0: velocity as is) |
-| +0x228 | 3×s32 | Velocity, 16.16 (bullets: 600-669 units/tick) |
-| +0x234 | 3×s32 | Acceleration |
-| +0x240 | 3×s32 | Root motion accumulated from the animation (player) |
+| +0x218..+0x220 | 3×s32 | Local velocity (x, vertical, z), turned by the angles into the world; +0x21C vertical: gravity adds 2.0/tick up to 75.0 |
+| +0x224 | s32 | Speed scale (1.0: the local velocity as is; bullets: 600-669) |
+| +0x228 | 3×s32 | Angles: pitch, yaw, roll (16.16, 4096 per turn); for characters +0x22C is the heading |
+| +0x234 | 3×s32 | Angular velocity (added to the angles each tick) |
+| +0x240 | 3×s32 | The player's angles from animation root motion (wrapped to 28 bits) |
 | +0x258 | 3×s32 | Position at the previous tick (bullets sweep from here) |
-| +0x264 | 3×s32 | Velocity at the previous tick |
+| +0x264 | 3×s32 | Angles at the previous tick |
 | +0x270 | | Rotation (angles) |
 | +0x284 | s32 | On the ground |
 | +0x2D8/+0x2E0 | 3×s16 | Collision sphere centre, local and world |
@@ -81,7 +81,7 @@ if it's added after the shooter in the list.
 For each entity, in list order, parents first:
 1. `0x8004A828(e)`.
 2. Riding: with a parent (`+0x2C`), add the parent's movement this tick (position delta,
-   velocity delta, and its rotation applied to the offset) to `+0x1F0`/velocity. A dead parent
+   angle delta, and its rotation applied to the offset) to `+0x1F0`/velocity. A dead parent
    (flag 0x80000) or attachment bit 0 detaches it (`0x8006D84C`).
 3. `think(e)` (`+0x36C`).
 4. Attached (`+0x30`): position = the target's bone `+0x34` (`0x8008DABC`).
@@ -93,12 +93,12 @@ For each entity, in list order, parents first:
 
 ## Moving (`entity_move`, `0x8006C83C`)
 
-1. Velocity += acceleration. Root motion from the current animation frame is added (to `+0x240`
-   for the player, to the velocity for others).
+1. Angles += angular velocity. The current animation frame's root rotation is added (to
+   `+0x240` for the player, to the angles for others).
 2. Gravity: fall speed += acceleration up to the terminal speed; with flag 0x20 and off the
    ground, vertical velocity += 2.0 per tick, at most 75.0 (slower with flag 0x10000000).
-3. The local velocity turned by the entity's rotation (player: from its yaw) is added to the
-   position, plus the push from a parent (`+0x1F0`).
+3. The local velocity (scaled by `+0x224`), turned by the entity's angles (player: its yaw), is
+   added to the position, plus the push from a parent (`+0x1F0`).
 4. Against the level (if the entity's mask includes the world's bit): walkers (flag 0x8) slide
    (`0x80078F60`); everything else sweeps a line from the old position (`0x8003EF5C`: hit point,
    normal, surface at `+0x318`) and stops there.

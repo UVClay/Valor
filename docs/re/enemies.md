@@ -116,12 +116,49 @@ weapon kind indexes the table at `0x80097FF0` (48 bytes each):
 A shot is a `bullet_spawn` of type 0x13F4 aimed at the target's position raised by half its
 eye height, with the damage of the enemy's weapon model (byte `+0x64` of `[[enemy+0x1C]+0x4]`:
 2, 7, 8 or 10 in the dumps). Then **the aim error**: random offsets in ±E are added to the
-bullet's x and y velocity (16.16, the bullet moving at 600-669 per tick), E being the brain's
-`+0xC8`; when the player's weapon-block bit 1 is set the x offset is ±E/2. E differs per enemy:
-20 to 100 in the dumps (±1.8° to ±9°).
+bullet's pitch and yaw (angle units, 4096 per turn), E being the brain's `+0xC8`; when the
+player's weapon-block bit 1 is set the pitch offset is ±E/2. E differs per enemy, set by the
+level (Spawning): 20 to 100 in the dumps, ±1.8° to ±8.8°.
 
 The brain's `+0xB0` and `+0xB2` (1500 and 3000 for most soldiers) are the ranges `query` tests
 (sight and hearing?).
+
+## Spawning (`enemy_spawn`, `0x800563F0`)
+
+A soldier is made from a spawn record in the level data (`[a0+0x4]`), so health, accuracy and
+ranges are the level designer's, per enemy; the game's difficulty parameter (`g_params+0xB`,
+from `g_game+0x110`) is read by nothing in LEVEL.BIN. At most `0x80097FEC` soldiers are alive at
+once (`0x80097FE8` counts them).
+
+| Record | Becomes |
+|---|---|
+| +0x5B | Variable 8: 33, 67 or 100 (by value 0, 1, 2) |
+| +0x5C | Variable 0x24: 10, 20, 1000 or 100 (by value 0, 1, 2, else) |
+| +0x5E | Variable 0x10 |
+| +0x61 | Health and maximum health (6.0 in 1:3, 4.0 in 2:1) |
+| +0x63 | The aim error E (brain `+0xC8`) |
+| +0x65 | Variable 0x26 |
+| +0x66 | Variable 0x0B (30 → 1) |
+| +0x6A | Brain `+0xB6` |
+| +0x6C | Brain `+0xB0`: a range (1500 in the dumps) |
+| +0x6E | Variable 0x22 |
+| +0x70 | Brain `+0xB2`: a range (3000; 2800 if under 10), and variables 5, 6, 7 = it, half, a third |
+
+The handlers: think `enemy_think`, `+0x370` `0x8005608C`, hit_part `enemy_hit_part`,
+world_contact `0x80056250`, touch `0x8005291C`, `+0x384` `0x80056288`.
+
+## The brain (`brain_update`, `0x80040DF4`)
+
+Copies the position to `+0x94..+0x9C`, then runs one handler per goal bit in `+0x4`:
+
+| Bit | Handler | |
+|---|---|---|
+| 0x1 | `0x800404E8(e, +0x10, +0x50, 0)` | Move to a target |
+| 0x4000 | `0x800404E8(e, +0x10, +0x50, 1)` | The same, other mode |
+| 0x1000 | `0x800408B4(e, +0x40, +0x80, +0xA8)` | |
+| 0x800 | `0x80040618(e, +0x3C, +0x7C, +0xA8)` | |
+| 0x4 | `0x8003FFA4(e, +0x18, +0xC0)` (unless 0x5C03) | Steer around walls: the heading (`+0x22C`) turns ±90° along a wall from the contacts at `+0xEC` |
+| 0x2 | `0x80040A0C(e)` | Follow a path of nodes |
 
 ## Open
 

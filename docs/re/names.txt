@@ -27,6 +27,9 @@
 8003F454 script_start               # (entity, script, ?, channel)
 8003F8F0 script_run_a
 8003FBFC script_run_b
+8003FFA4 brain_steer                # goal 0x4: turn along walls
+800404E8 brain_move_to              # goals 0x1 / 0x4000
+80040A0C brain_follow_path          # goal 0x2
 80040DF4 brain_update               # entity+0x38C: goals set by script op 0x2F
 80043AD4 bullet_touch               # touch(bullet, other): exact hit test, effects, target's handler
 8004532C projectile_create          # +0xF8 damage
@@ -53,6 +56,7 @@
 80053C20 draw_level
 80055628 enemy_think                # type 0x1402
 80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
+800563F0 enemy_spawn                # from a level spawn record: health, aim error, ranges
 8005C97C set_var                    # (entity, var, value): script variables, enemies.md
 8005CBA8 get_var                    # (var, entity): 0x60-0x7F sensors, else variables/flag bits
 8005D148 script_operand             # (n, mask, value, entity): variable or literal
@@ -76,6 +80,7 @@
 80075FB4 role_axis                  # (port, role, ?)
 8007A6B0 player_update
 8007B350 player_weapon_update
+8007BE04 player_soldier_init        # health 128, eye height 240, pitch limits
 8007CF4C throw_weapon
 8007D5C8 fire_gun
 8007F084 center_view

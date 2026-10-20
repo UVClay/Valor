@@ -30,10 +30,11 @@ at once (`0x8006A76C`, `0x8004D43C`).
 ## Bullets (`bullet_spawn`, `0x80045A78`)
 
 Bullets are entities, not instant rays:
-- Speed: random 600–669 units per tick (16.16 velocity at bullet+0x228..0x230); the player runs
-  at about 35 per tick. At 3000 units a bullet needs about 5 ticks (0.17 s): a moving target can
+- Speed: random 600–669 units per tick (`+0x224`), along the bullet's angles (`+0x228`: pitch,
+  yaw); the player runs at about 35 per tick. At 3000 units a bullet needs about 5 ticks (0.17 s): a moving target can
   leave the line of fire after the trigger was pulled on it.
-- Spread: none, except weapon 11 (±2^11 per axis, then ×512, added to the velocity).
+- Spread: none, except weapon 11: ±2^11 ×512 (16.16) added to pitch and yaw, ±16 angle units
+  (4096 per turn): ±1.4°.
 - Tracer: `0x8004572C(bullet, 230, 180, 70, 40, 20, 10)`.
 - Touch handler (`bullet+0x37C`) = `bullet_touch` (`0x80043AD4`).
 
