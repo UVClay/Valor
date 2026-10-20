@@ -6,6 +6,24 @@ Boots from the disc image through recompiled OpenBIOS; GPU, SPU, CD-ROM, MDEC, G
 DualShock and memory card emulated. Validated with random-input sweeps of every single-player level
 and full playthroughs of two missions.
 
+## Direction (2026-10-20)
+
+Presentation is frozen: what exists stays, with crash and regression fixes only. The work goes
+into understanding the game's mechanics, system by system, written up in `docs/re/` to be
+reimplemented from (an eventual engine with identical mechanics and presentation rebuilt
+natively from game state). The recomp stays as the reference: recordings replayed through it
+check every finding.
+
+1. [ ] **Player state**: inventory, weapons, health, carry-over between levels (docs/re/player.md)
+2. [ ] **Entities**: the entity list and layout, think/touch handlers, physics and collision
+3. [ ] **Combat**: firing, bullets, hit tests, damage (docs/re/combat.md)
+4. [ ] **Enemies**: perception, states, targeting, accuracy
+5. [ ] **Levels**: data formats, scripts, objectives
+
+Waiting for the game state they need (presentation, later): a separate HUD layer and then
+native HUD elements, a native sniper scope, a PC-style aim mode (the view keeps turning, the
+game's aim follows it), moving objects interpolated between ticks.
+
 ## PC quality of life
 
 - [x] **Unrestricted resolution**: OpenGL renderer replaying GPU commands at any scale; the software
@@ -58,8 +76,9 @@ and full playthroughs of two missions.
 
 ## Known issues (testing tools)
 
-- `--warp 1:3` starts the sewer level with only a Garand and no ammunition: the warp skips
-  whatever sets up the loadout when the level is reached normally. Only matters for testing.
+- [x] `--warp` to a level after a mission's first started without ammunition: such a level
+  starts with what the previous one ended with (docs/re/player.md, Carry-over). The warp now
+  gives every weapon four clips.
 
 ## Debugging
 

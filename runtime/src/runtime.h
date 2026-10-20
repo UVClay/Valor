@@ -154,6 +154,9 @@ bool gte_recorded_other(int16_t rt[3][3], int32_t tr[3], uint32_t &pc);
 using GteOtherFirst = void (*)(const int16_t rt[3][3], const int32_t tr[3], uint32_t pc, double rot[3][3], double t[3]);
 void gte_other_transform(GteOtherFirst first);
 
+// watch.cpp: log changes in the memory VALOR_WATCH names (once per game tick).
+void watch_tick(Cpu *c);
+
 // cpu.cpp
 RecompFn find_function(uint32_t addr);
 void take_interrupt(Cpu *c, uint32_t pc);

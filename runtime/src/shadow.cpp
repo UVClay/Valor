@@ -420,6 +420,7 @@ using namespace psx;
 
 // 0x800503D4: the drawing pass. The tick's logic is done: keep a copy of the machine to draw again.
 extern "C" void hook_render_pass(Cpu *c, RecompFn body) {
+    if (!active) watch_tick(c);
     if (!active && config.decoupled) {
         capture(snapshot, *c);
         uint32_t player = psx_r32(c, PLAYER);

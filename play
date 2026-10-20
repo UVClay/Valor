@@ -23,6 +23,18 @@ while [ $# -gt 0 ]; do
     if [ "$1" = --warp ] && [ $# -ge 2 ]; then
         m=${2%:*} l=${2#*:}
         args+=(--poke-on-call "80064374:80038660=$((m - 1))" --poke-on-call "80064374:80038664=$((l - 1))")
+        # A level after a mission's first starts with the ammo the previous level ended with: a
+        # row per level at 0x80038758 (13 halfwords, one per weapon of the table at 0x80093640,
+        # -1: not carried), filled when a level ends. Warped there, it is still empty: give
+        # every weapon four clips (the level only hands out its own); weapon 7 is the papers.
+        if [ "$l" -gt 1 ]; then
+            ammo=(32 128 4 4 32 20 80 0 28 28 4 80 32 -1)
+            row=$((0x80038758 + (m - 1) * 152 + (l - 1) * 36))
+            for i in 0 2 4 6 8 10 12; do
+                word=$(( (ammo[i] & 0xFFFF) | ((ammo[i + 1] & 0xFFFF) << 16) ))
+                args+=(--poke-on-call "$(printf '80064374:%08X=%u' $((row + i * 2)) $word)")
+            done
+        fi
         shift 2
     elif [ "$1" = --video ] && [ $# -ge 2 ]; then
         video=$2

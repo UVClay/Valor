@@ -1,0 +1,66 @@
+# Names for tools/recon/fn.py: "ADDR name  # note". Functions and data, all binaries.
+# Keep sorted by address. Details live in the docs next to this file.
+
+
+# --- SLUS_009.74 (exe) ---
+8001552C rand
+80015B28 printf                     # debug output (strings like "MISSION:%d\n")
+80015DB8 VSync
+80016B60 ResetGraph
+80016E38 DrawSync
+8001704C LoadImage
+800172D8 DrawOTag
+80017348 PutDrawEnv
+80017408 PutDispEnv
+8001BAA0 InitGeom
+800385A8 g_overlays                 # {name, file, entry} x3
+800385CC g_game                     # persistent game state (survives overlay loads), player.md
+80038660 g_game_mission             # g_game+0x94, 0-based
+80038664 g_game_level               # g_game+0x98, 0-based
+800386A4 g_cheats                   # bits: 0x10 rapid fire, 0x20 big bullets, 0x40 free throws
+80038758 g_level_ammo               # g_game+0x18C: [mission][4 levels] x 13 halfwords, stride 152/36
+80038D4C g_level_end                # level-end summary written by level_end_carry
+
+# --- LEVEL.BIN ---
+80039D90 overlay_base
+80043AD4 bullet_touch               # touch(bullet, other): exact hit test, effects, target's handler
+80045A78 bullet_spawn               # bullets are entities at 600-669 units/tick
+80045CA0 rocket_spawn
+80045F14 pellet_spawn
+8004913C camera_setup               # builds the view matrix at obj+0xE4
+8004A634 level_read_parameters      # "PARAMETER DATA READ": ammo row -> weapon table, debug dump
+8004D974 controller_manager
+8004DE3C game_tick                  # one 30 Hz logic step (catch-up loop)
+800503D4 render_pass
+800504F8 render_flip
+80053C20 draw_level
+8005C97C soldier_anim               # (soldier, anim, ?): 0x10 = reload
+8006210C level_end_carry            # inventory -> weapon table ammo -> g_level_end
+800625BC start_handler              # pause
+80064374 level_entry                # LEVEL.BIN entry point
+8006B8F0 entity_remove
+8007570C action_held                # (port, action)
+80075778 action_pressed             # (port, action)
+80075A30 role_button
+80075E7C role_axis_curve
+80075FB4 role_axis                  # (port, role, ?)
+8007A6B0 player_update
+8007B350 player_weapon_update
+8007CF4C throw_weapon
+8007D5C8 fire_gun
+8007F084 center_view
+8007F300 player_controls
+8008B3E8 tsp_walk
+8008BF00 tsp_draw
+8008D0CC frustum_build
+80090B90 present
+80093640 g_weapons                  # 13 x 0x44 weapon definitions, player.md
+80097FCC g_last_vsync
+8009A5D0 g_ticks_dropped
+8009A5D4 g_catchup_ticks
+8009A5E0 g_paused
+8009D638 g_player                   # camera entity; obj at +0x388
+8009D64C g_entities                 # entity list head, linked through +0x4
+8009D654 g_soldier                  # the player's soldier; inventory at +0x3CC, player.md
+8009E874 g_slot_count               # weapon slots this level
+8009E878 g_slot_weapon              # byte per slot: index into g_weapons
