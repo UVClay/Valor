@@ -21,6 +21,7 @@
 80038D4C g_level_end                # level-end summary written by level_end_carry
 80039CA8 g_stat_shots
 80039CAC g_stat_hits
+80039CB8 g_stat_kills
 
 # --- LEVEL.BIN ---
 80039D90 overlay_base
@@ -96,6 +97,10 @@
 8007D5C8 fire_gun
 8007F084 center_view
 8007F300 player_controls
+80080240 stat_kill                  # (attacker, n)
+80080304 stat_wounded
+80080328 stat_hit
+8008034C stat_melee
 80082E90 health_pickup_touch        # +13 / +32 / +64, capped at 128
 800830BC ammo_pickup_touch
 80087080 model_relocate

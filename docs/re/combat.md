@@ -87,10 +87,24 @@ replay of 1:3 and 2:1:
 Hit parts still matter:
 - **Part 0 is the helmet**: a hit there knocks it off half the time (a helmet entity flies,
   `0x80051200`, with a sound by helmet model).
-- **Statistics** (in the exe's data, so the results screen can read them after the level):
-  shots fired `0x80039CA8` (`fire_gun`, `throw_weapon`), shots that hit `0x80039CAC` (once per
-  bullet), hits per part group `0x80039CC4`/`CC8`/`CCC` and per part `0x80039CD0`..`0x80039D0C`
-  (17 counters), helmet hits `0x80039CC0`.
+- **Statistics** live in the exe's data (from `0x80039CA8`), so the results screen can read
+  them after the level; the player's weapon block keeps its own copies:
+
+| Address | Counts | Player copy |
+|---|---|---|
+| `0x80039CA8` | Shots fired (`fire_gun`, `throw_weapon`) | |
+| `0x80039CAC` | Shots that hit (once per bullet) | `inv+0x148` |
+| `0x80039CB0` | Times the player was wounded (`0x80080304`) | `inv+0x144` |
+| `0x80039CB4` | Melee hits? (`0x8008034C`, attack parts 5/6/9) | `inv+0x14C` |
+| `0x80039CB8` | Kills (`0x80080240`); also per weapon at `g_weapons[w]+0x30`, carried to the next level with the ammo | `inv+0x142` |
+| `0x80039CC0` | Head hits (part 0, the helmet) | |
+| `0x80039CC4` | Torso hits (parts 3, 4, 7, 8) | |
+| `0x80039CC8` | Arm hits (parts 1, 2, 5, 6) | |
+| `0x80039CCC` | Leg hits (parts 9..16) | |
+| `0x80039CD0`..`0x80039D0C` | Hits per part (1..16) | |
+
+  The groups follow the parts' places on a 1:3 soldier (part 0 at the top, 1/2/5/6 about 50
+  units to the sides, 9..16 the lower 120 units, 7 and 8 the two big spheres in the middle).
 
 ## The player being hit (`player_hit_part`, `0x8007C1D0`)
 
@@ -109,4 +123,4 @@ Hit parts still matter:
 
 ## Open
 
-- What the results screen shows from those counters, and what the part groups are.
+- How the results screen turns these counters into the rating (SHELL.BIN, `m_medals`).
