@@ -205,5 +205,5 @@ void brain_goto_node(Entity *e, s32 node, s32 var, s32 radius);
 void brain_goto_point(Entity *e, SVec3 *point, s32 var, s32 radius);
 s32 brain_node_target(Entity *e, Brain *b, s32 node);
 Entity *spawn_by_type(s32 type);
-s32 get_var(Entity *e, s32 id);
+s32 get_var(s32 id, Entity *e);
 void set_var(Entity *e, s32 id, s32 value);

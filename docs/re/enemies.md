@@ -32,7 +32,33 @@ A variable id is 9 bits:
 | 0x40 + n | Bit n of flags A (`+0xC`) |
 | 0x80 + n | Bit n of flags B (`+0x10`) |
 | 0x100 + n | Bit n of the flag words at `+0xEC` (`+0xEC + 4·(n>>5)`) |
-| 0x60..0x7F | Sensors, computed when read (jump table at `0x8003C288`): the player's model id, the player's flags B & 0x400, the entity's spawn point (`+0x3A4`), whether the player is in front (dot sign), `+0x29C`, the player's current weapon, the player's `+0x11E`, the fire button, an AI node state, the alarm entity (`0x80097FE0`), the player's flags B & 0x800, the player's weapon-block bit 1, the number of other living soldiers within 3000 (and 1000 vertically), the height difference to the player, the model's id, line of sight to the player (a sweep at eye height, within 600 of the facing), the mission and level, the distance from the spawn point to the player, ... |
+| 0x60..0x7F | Sensors, computed when read (below) |
+
+**Sensors** (`get_var(id, entity)`, `0x8005CBA8`; "the player" is the player's soldier):
+
+| Id | Value |
+|---|---|
+| 0x60 | The player's model id |
+| 0x61 | The player's flags B & 0x400 |
+| 0x62 | A pointer to the entity's home (`+0x3A4`: position, then angles) |
+| 0x63 | 1 if the player is behind the entity (dot of its forward vector and the offset < 0) |
+| 0x64 | The entity's `+0x29C` |
+| 0x65 | The player's current weapon (`inv+0x55`) |
+| 0x66 | The player's `+0x11E` |
+| 0x67 | The player holds fire (action 0) |
+| 0x68 | The entity's node (`+0xFC`, 1..23) is usable: not taken (`+0xE`), enabled (`0x800910D0`), and not flagged |
+| 0x69 | The alarm entity (`g_alarm`, `0x80097FE0`), 0 if none |
+| 0x6B | The player's flags B & 0x800 |
+| 0x6C | The player's weapon-block bit 1 |
+| 0x6D | The number of other living soldiers within 3000 units (and 1000 vertically) |
+| 0x6E | A pointer to `0x8009817C` |
+| 0x6F | Height above the player (entity y - player y; y points down) |
+| 0x70 | The entity's own model id |
+| 0x71 | **The player is looking at it**: within ±600 (52.7°) of the player's heading (`angle_to`, `0x8003F858`), and a sweep from the player's eye to the entity's eye hits nothing (`world_sweep`, `0x8003EF5C`, -1 for no hit) |
+| 0x72 | `g_params` (mission and level) |
+| 0x73 | `0x800939F8` |
+| 0x74 | Distance from the entity's home to the player |
+| other | 0 |
 
 Known uses: 0x0C the part last hit, 0x0D health left in percent, 0x0E random rolls, 0x16 fire
 state, 0x18 the type of what hit it, 0x13 vertical velocity, 0x1C hit-part reaction.
@@ -221,5 +247,6 @@ record `+0x6A` × 11, path mode 2 (back and forth), no slow-down, gait speeds 10
 - Who reads entity `+0x38` bits 0x400000/0x800000/0x1000000 (arrived, path ends): events?
 - The gait table (`+0xCC`/`+0xD0`) and what `+0xB4`, `+0x3C8` do.
 - The player's weapon-block bit 1 (crouching?): smaller detection range, half the x error.
-- The sensors 0x60..0x7F one by one, and the variables the scripts use by convention.
+- The variables the scripts use by convention; what the player's flags B 0x400/0x800 and
+  `+0x11E` are.
 - Events (0x0D/0x0E) and `send_event` (`0x800662CC`).

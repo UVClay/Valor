@@ -25,7 +25,9 @@
 
 # --- LEVEL.BIN ---
 80039D90 overlay_base
+8003EF5C world_sweep                # (from, to, hit, ..., surface out, ...): -1 if the segment hits nothing in the level
 8003F454 script_start               # (entity, script, ?, channel)
+8003F858 angle_to                   # (a, b): angle from a's heading to b, +-0x800
 8003F8F0 script_run_a
 8003FBFC script_run_b
 8003FFA4 brain_steer                # goal 0x4: turn along walls
@@ -72,6 +74,7 @@
 80055628 enemy_think                # type 0x1402
 80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
 800563F0 enemy_spawn                # from a level spawn record: health, aim error, ranges
+80056EB4 dist_approx                # (s16 vec[3]): max + (mid + min) / 4
 80057474 brain_node_target          # node -> the point to stand at (+0xA0) and the side waypoint (+0xAC)
 80057C24 path_find                  # path id -> index in g_paths
 80057C8C path_nearest_point         # (e, path): index of the nearest point
@@ -135,6 +138,7 @@
 8008BF00 tsp_draw
 8008D0CC frustum_build
 80090B90 present
+800910D0 g_node_enabled             # a byte per AI node
 8009115C g_ai_nodes                 # 24 x 0x34
 80093640 g_weapons                  # 13 x 0x44 weapon definitions, player.md
 800939F4 g_params                   # "PARAMETER DATA": mission, level, mode, music, sound, ...
