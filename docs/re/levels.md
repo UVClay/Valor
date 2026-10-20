@@ -90,10 +90,51 @@ Records become spawner entities; a spawner creates the real entity through `spaw
 
 `enemy_spawn` refuses while `0x80097FEC` soldiers are alive (`0x80097FE8`).
 
+## Level logic: messages and scripts
+
+Levels are event-driven: entities send each other messages (`Msg_SendMessageDirectly`,
+`MsgSys_ProcessPendingMessages`; `send_event` `0x800662CC` from the enemy scripts), and a message
+runs a script of the level (`0x80066318`, `0x800663B8`, `0x800664A0` → `level_vm`, `0x800672E0`).
+
+**Scripts** are in the BSD: the header's `+0x59C` points at the script table (`[0x8009D5AC]`
+while the level runs; 1:3: 158 scripts), offsets at `+0x8 + 4·id`. A running script's context
+holds its program counter (`+0x0`), the entity's handle (`+0x4`) and the script id (`+0x10`).
+
+**The VM** (`level_vm`, `0x800672E0`, ~2200 instructions, with its overflow cases split by the
+recompiler into the small functions that follow it): byte opcodes (0..0x17, jump table at
+`0x8003CCF0`) over a typed value stack (`0x800AD260`, 8-byte {type, value} entries, top index
+at `0x800AD5A8`). Types: 0x0A integer, 0x0B boolean, 0x0E float (PsyQ software floats:
+`0x8001D590` int→float, `0x8001D7B0` equal, `0x8001D880` less), 0x0F string (strcmp), 0x10 a
+handle; binary operators switch on the pair of operand types.
+
+| Op | |
+|---|---|
+| 00 | nop |
+| 01 | pop |
+| 03 | call a built-in (a sub-opcode byte 0xF0..0xF3 follows) |
+| 04 | == |
+| 05 | && |
+| 06 | \|\| |
+| 07 | ! |
+| 08 | < |
+| 14 | end |
+| others | the remaining comparisons, arithmetic, pushes, jumps (to read) |
+
+**Objectives** are built-ins (stack wrappers at `0x80069DF4`..`0x80069EC4`): `objective_add(id,
+text)` (`0x8005372C`: adds, or resets to incomplete; the text from the message table
+`0x80098188`), `objective_remove(id)` (`0x8005380C`), `objective_complete(id)` (`0x800538B0`),
+`objective_is_complete(id)` (`0x8005394C`, 1 for an unknown id). The list: ids at `0x8009892C`,
+done flags at `0x800988DC`, texts at `0x80098904`, count at `0x80098620`;
+`g_bPrimaryObjectivesComplete` is `0x80098624` (set by `0x80052DC4`, read by `level_end_carry`
+and `0x8006463C`).
+
+`0x8005F69C`, run every tick after the collisions, is the dynamic lights (muzzle flashes): 32-
+byte entries at `0x80099F4C` (count `0x80099ED0`) with a lifetime and a colour fade.
+
 ## Open
 
 - The state values of an entity pair, and what activates a record (kinds 0..6).
 - Classes other than the soldier, and the 0x177x types (pickups, doors, alarms, objectives...).
-- The level logic run each tick after the collisions (`0x8005F69C`) and objectives
-  (`level_end_carry` complains when `g_bPrimaryObjectivesComplete` isn't set).
+- The rest of the level VM's opcodes and its built-ins (a disassembler for the level scripts,
+  like `sst.py` for the enemy scripts).
 - The collision sections, the TAF files.

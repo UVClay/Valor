@@ -53,6 +53,10 @@
 800503D4 render_pass
 800504F8 render_flip
 8005163C enemy_weapon               # bursts, aim error +0x38C->+0xC8
+8005372C objective_add
+8005380C objective_remove
+800538B0 objective_complete
+8005394C objective_is_complete
 80053C20 draw_level
 80055628 enemy_think                # type 0x1402
 80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
@@ -62,11 +66,14 @@
 8005D148 script_operand             # (n, mask, value, entity): variable or literal
 8005D18C script_step
 8005DA24 mounted_gun_think          # MG emplacement operated by the player
+8005F69C lights_update              # dynamic lights (muzzle flashes)
 80061350 spawn_by_type              # (record, spawner): by spawner+0xFC
 800616E4 game_frame                 # input, then per tick: entities_update, entities_collide, 0x8005F69C; then draw
 8006210C level_end_carry            # inventory -> weapon table ammo -> g_level_end
 800625BC start_handler              # pause
 80064374 level_entry                # LEVEL.BIN entry point
+800662CC send_event
+800672E0 level_vm                   # level scripts: byte ops over a typed stack
 8006B854 entity_link                # appends to g_entities
 8006B89C entity_unlink
 8006B8F0 entity_remove
@@ -99,12 +106,15 @@
 80097FCC g_last_vsync
 80097FE0 g_alarm
 80097FF0 g_enemy_weapons            # 48-byte entries: type, burst timing, sound
+80098620 g_objective_count
+80098624 g_bPrimaryObjectivesComplete
 80099B38 g_script_ops               # 74 x {handler, opcode, size}
 8009A5D0 g_ticks_dropped
 8009A5D4 g_catchup_ticks
 8009A5DC g_tick
 8009A5E0 g_paused
 8009CC64 g_level                    # the BSD level header
+8009D5AC g_level_scripts
 8009D61C g_update_stamp
 8009D620 g_hit_list                 # 12-byte {entity, distance, part, done}, nearest-first bullet hits
 8009D638 g_player                   # camera entity; obj at +0x388
