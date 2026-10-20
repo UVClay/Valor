@@ -14,8 +14,9 @@ replayed to vblank 14000).
 
 ## Loading (`level_load`, `0x80087308`)
 
-The BSD is read whole (`0x8004A374`); `g_level` (`0x8009CC64`) points at its level header (in
-1:3, 0x6B00 bytes into the file; the file starts with other data). The loader turns the
+The BSD is read (`0x8004A374`); `g_level` (`0x8009CC64`) points at its level header, file
+offset 0x800 (the file starts with a 0x800-byte table of 25 offsets, sizes of its later parts;
+some of those parts end up elsewhere in RAM). The loader turns the
 header's offsets into pointers (adding the section base), relocates every model
 (`model_relocate`, `0x80087080`: its data, and its scripts through `0x8003F788`), runs the
 section parsers (`0x80086C9C`, `0x80086D18`, `0x80086D8C`, `0x80086E34`, `0x80086EB0`,
@@ -38,7 +39,10 @@ and the node table, sets the fog and background colours, and builds the spawners
 
 ## Entity records (`+0x53C`)
 
-A count, a size and two words, then `count` pairs of {key, record pointer} (1:3: 121 records).
+A count, a size and two words, then `count` pairs of {state, record} (1:3: 121 records, at file
+offset 0x2E7C). In the file the records are offsets from the first record and every state is
+0: the state is runtime, as the scripts test it (op 0x34: bit 0x2; 1:3 at vblank 14000 showed
+0, 1 and 2: not spawned yet, alive, dead?).
 Every record starts with:
 
 | Offset | Meaning |
@@ -53,7 +57,7 @@ Every record starts with:
 
 | Hash | Count | Size | |
 |---|---|---|---|
-| 0x4F292333 | 49 | 0x98 | Soldier spawn (keys 0, 1, 2) |
+| 0x4F292333 | 49 | 0x98 | Soldier spawn |
 | 0xB81C10E3 | 33 | 0x6C | |
 | 0xBD12927E | 23 | 0x7C | |
 | 0x4D078F23 | 10 | 0x38 | |
@@ -62,9 +66,10 @@ Every record starts with:
 
 The soldier record (`enemy_spawn` reads it): +0x5B skill tier, +0x5C, +0x5E, +0x60, +0x61
 health, +0x62, +0x63 aim error, +0x64 damage, +0x65, +0x66, +0x68 radius (150), +0x6A, +0x6C and
-+0x70 ranges (1500, 3000), +0x6E (enemies.md, Spawning). Two records of the same soldier can
-sit side by side with different keys and stats (key 1: 6 health, aim error 40, damage 7; key 2:
-4 health, aim error 20, damage 4, a few units away): what selects one is open.
++0x70 ranges (1500, 3000), +0x6E (enemies.md, Spawning). Records differ soldier by soldier
+(1:3 has 6 health, aim error 40, damage 7 next to 4, 20 and 4). Pointer fields at +0x38..+0x50
+(and +0x60 or +0x74 by activation kind) are offsets within the record, made pointers by
+`0x80075120`.
 
 ## Spawners
 
@@ -87,7 +92,7 @@ Records become spawner entities; a spawner creates the real entity through `spaw
 
 ## Open
 
-- What the key of an entity pair selects (difficulty? a trigger group?).
+- The state values of an entity pair, and what activates a record (kinds 0..6).
 - Classes other than the soldier, and the 0x177x types (pickups, doors, alarms, objectives...).
 - The level logic run each tick after the collisions (`0x8005F69C`) and objectives
   (`level_end_carry` complains when `g_bPrimaryObjectivesComplete` isn't set).
