@@ -65,7 +65,7 @@ state, 0x18 the type of what hit it, 0x13 vertical velocity, 0x1C hit-part react
 
 ## Scripts
 
-Each entity runs up to two script channels: contexts of 0x74 bytes at `+0x104`, each with the
+Each entity runs up to two script channels (soldier.md: channel 0 decides, channel 1 runs the current action): contexts of 0x74 bytes at `+0x104`, each with the
 current script (`+0x10` → {+0xA length, +0xC code}), the program counter (`+0x14`), wait
 counters (`+0x18` animation frame, `+0x1C` ticks) and a call stack (`+0x1E` depth, frames of 16
 bytes at `+0x24`, at most 5). `script_run_a` steps channel 0 and 1 until an instruction yields
@@ -89,7 +89,7 @@ n-1 set makes operand n a variable id, else a literal (`script_operand`, `0x8005
 | 03/04/05 | gravity / fall / impulse | Gravity; fall and vertical speeds; add to them |
 | 06 | nudge | Move the position by an offset |
 | 07, 26 | goto I | |
-| 08 | other_script N | Switch the other channel to script N |
+| 08 | restart N | Restart the channel running it with script N (`0x800589E8`; the channel index is `0x80099EB8`). (sst.py still prints it as `other_script`) |
 | 09, 0B | stop | The program counter stays |
 | 0C | hit_part | Configure a hit part (kind, damage...): melee attacks (`0x8004C64C`) |
 | 0D, 0E, 42 | event | Store an instruction to run when an event matches |

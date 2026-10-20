@@ -22,8 +22,8 @@ check every finding.
    player being hit, statistics (docs/re/combat.md)
 4. [ ] **Enemies**: done: the script VM (all 74 opcodes) and a disassembler, variables and
    every sensor, spawning from level records, firing and aim error, the brain (seek, flee,
-   paths, walking with wall avoidance, points and cover nodes). Left: reading the soldier's
-   scripts into plain behaviour (docs/re/enemies.md)
+   paths, walking with wall avoidance, points and cover nodes). and the soldier's scripts read into
+   behaviour (docs/re/enemies.md, soldier.md). Left: soldier.md's open points
 5. [ ] **Levels**: done: files, the level header, records and how each kind spawns, models and
    entity types, the level script VM fully (with a disassembler that folds scripts into
    statements), objectives, the rating, campaign slots and career totals, the world collision

@@ -9,6 +9,7 @@ combat, enemies, levels. Each document says how its claims were checked.
 | [combat.md](combat.md) | Firing, bullets (projectile entities), hit tests |
 | [entities.md](entities.md) | The entity list and layout, handlers, the tick, movement, collisions, hitboxes |
 | [enemies.md](enemies.md) | Scripts (the bytecode VM), variables and sensors, the brain, firing and aim error |
+| [soldier.md](soldier.md) | The enemy soldier's behaviour scripts read into plain behaviour: alerting, combat, cover, grenades, alarms, 2:1's disguise |
 | [levels.md](levels.md) | Level files, the level header, entity records, spawners |
 
 `names.txt` holds every named address (functions and data), read by the tools, with the PsyQ
