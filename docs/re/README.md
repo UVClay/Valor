@@ -5,6 +5,7 @@ combat, enemies, levels. Each document says how its claims were checked.
 
 | Document | Covers |
 |---|---|
+| [ENGINE.md](ENGINE.md) | **Start here**: how the documents fit together for rebuilding the game, the units and conventions, the tick |
 | [player.md](player.md) | The soldier's inventory, the weapon table, carry-over between levels, cheat flags |
 | [combat.md](combat.md) | Firing, bullets (projectile entities), hit tests |
 | [entities.md](entities.md) | The entity list and layout, handlers, the tick, movement, collisions, hitboxes |
