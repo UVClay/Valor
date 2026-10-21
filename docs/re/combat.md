@@ -115,22 +115,52 @@ the player's (`0x8007C1D0`) handle a hit:
    of +0xF0, for the scripts, enemies.md), and is marked as shot at by the attacker
    (`0x8004AC58`'s caller passes it on).
 
-All 17 parts of a soldier are kind 1, so **every hit does the weapon's damage, wherever it
-lands**: there are no headshot multipliers in MoH. Measured with `VALOR_TRACE_DAMAGE` over a
-replay of 1:3 and 2:1:
+All 17 parts of a soldier are kind 1, so every hit does the weapon's damage wherever it
+lands, **except the head: a hit on part 0 kills** (below). (An earlier version of this
+document said there was no headshot effect; the replay's damage trace and `enemy_hit_part`
+show otherwise.)
 
-| Attacker | Damage | Notes |
+### Head hits (`enemy_hit_part`, `0x80055864`, part 0)
+
+After the ordinary damage (`damage_from_hit`), if the hit lowered the soldier's health and the
+part is 0:
+1. With the helmet on (the helmet slot's flags at weapon block `+0x160`: bit 0 set,
+   bits 1..4 clear) and `rand` < 50%: the helmet is knocked off (a helmet entity flies,
+   `0x80051200`; the slot's flags get bit 1) and, by the helmet's model hash: **0x8A522920 or
+   0xAA1714FE: the soldier survives** (sound 0x23: the steel helmet rings, inferred); any other
+   helmet: `apply_damage(soldier, its remaining health)`, killed (sound 0x25).
+2. Otherwise (no helmet, or the other 50%): `apply_damage(soldier, its remaining health)`:
+   **killed**.
+3. The head-hit statistic `0x80039CC0` +1 (not for explosions).
+
+So a head shot kills outright unless it knocks off one of two helmet models (50% while the
+helmet is on); the first hit's own damage is applied first, then the rest of the health as a
+second damage event from the same bullet. Dogs (type 0x1405) use their own handler.
+
+### Damage measured
+
+`VALOR_TRACE_DAMAGE=1` over the replay of the recorded session (1:3, 2:1, 2:2: 51 soldiers and
+14 dogs killed; 2:3 left out, the replay stops matching the recording there). Every value is
+the weapon's damage (×1, kind 1), apart from the head kills' second events:
+
+| Attacker | Damage per hit | Notes |
 |---|---|---|
-| Garand (12) | 2.5 | 3 hits for a 1:3 soldier (6.0 health) |
-| Thompson (1) | 1.2 | 5 hits |
-| Shotgun (4) | 2.0 per pellet | 3 of 6 pellets kill |
-| Silenced pistol (9) | 1.5 | 2:1 soldiers have 4.0 health: 3 hits |
-| Enemy bullet (type 0x13F4) | 7.0 rifle, 2.0 SMG (1:3); 4.0 (2:1) | The player has 128.0 |
-| Type 0x1405 (a dog?) | 2.0 | Contact between parts (the player's parts 1 and 2) |
+| Garand (12) | 2.5 | 3 body hits for a 6.0 soldier, 2 for a 4.0 dog |
+| Thompson (1) | 1.2 | 5 body hits for 6.0 |
+| Shotgun (4) | 2.0 per pellet | 3 pellets kill a 6.0 soldier |
+| Silenced pistol (9) | 1.5 | |
+| Sniper rifle (5) | 5.0 | 2 body hits for 6.0 or 8.0 |
+| Head kill (second event) | the remaining health | 26 of the 51 soldier kills: Garand 2, Thompson 2, shotgun 4, silenced pistol 13, sniper rifle 5 |
+| Enemy bullet (type 0x13F4) | 1:3: 7.0 and 2.0; 2:1: 4.0, 8.0, 10.0; 2:2: 5.0, 6.0 | The soldier record's `+0x64` per soldier (enemies.md); the player has 128.0 |
+| Dog (type 0x1405) | 2.0 | Contact between parts (the player's parts 1 and 2) |
+| Explosion (type 0x31) | 4.0 per tick | On objects (type 0x1777) in 2:2 |
 
-Hit parts still matter:
-- **Part 0 is the helmet**: a hit there knocks it off half the time (a helmet entity flies,
-  `0x80051200`, with a sound by helmet model).
+Soldiers' starting health (first hit's "before"): 1:3 6.0 (all 28), dogs 4.0; 2:1 4.0, 6.0,
+8.0 and 10.0; 2:2 6.0 and 8.0: per record, not per level. Events of 0.0 damage are the head
+kill's second event on a soldier the first hit had already killed.
+
+Hit parts also matter for:
+- **The helmet** (above).
 - **Statistics** live in the exe's data (from `0x80039CA8`), so the results screen can read
   them after the level; the player's weapon block keeps its own copies:
 
@@ -181,4 +211,6 @@ particles (`0x80070DEC`), shakes the camera if the player is within 3000 units (
 ## Open
 
 - (The fireballs' size, growth and damage per caller: objects.md.)
+- Which helmet models carry the hashes 0x8A522920 / 0xAA1714FE (the ones that save a soldier),
+  and which levels' soldiers wear them.
 - The results screen's medals (SHELL.BIN, `m_medals`); the rating itself is in levels.md.

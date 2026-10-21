@@ -183,6 +183,7 @@
 8005608C enemy_draw                 # soldier's +0x370
 80056250 enemy_world_contact        # floor: +0x38 |= 2; wall: +0x3C |= 2
 80056288 enemy_remove               # +0x384: soldier count, record state |= 2 when flags A 0x20000000
+80056290 enemy_destroy              # soldier +0x384: count, mounted gun, brain, slot release
 800563F0 enemy_spawn                # from a level spawn record: health, aim error, ranges
 80056AEC enemy_home_changed         # +0x3C |= 0x8000
 80056B00 route_turn_kind            # 0 ahead, 1/2 sides, 3 behind; *out = signed angle
@@ -217,6 +218,7 @@
 8005E2AC mounted_gun_spawn
 8005E61C scripted_think             # type 0x1776: script_run_b, script_run_a
 8005E648 door_spawn                 # type 0x1776
+8005E760 draw_in_view_counter       # a draw handler: entity_in_view, else countdown
 8005EA54 alarm_spawn
 8005EDF8 alarm_think
 8005F068 alarm_from_level           # level_set(4, id)
@@ -306,10 +308,13 @@
 8006A0C8 bi_tags_match              # level built-in 10
 8006A184 bi_set_home                # level built-in 11
 8006A204 msg_still_subscribed       # a queued context runs only if its subscription still exists
+8006A3BC offscreen_keep             # (e, camera): within the far distance; cap rule: behind and 3501+ away -> despawn now
 8006A570 cull_countdown             # off screen and not near the player: +0x290 -= 1
 8006A5B4 entity_draw_model          # pose (unless off screen and seen before) and draw
 8006A910 model_find                 # hash -> index in g_models
 8006A96C model_instance_init        # (inst, model, flags, entity): pose buffers, hit parts from model +0xC0
+8006B350 entity_defaults
+8006B5B8 entity_create              # (flags, object size, model hash, ..., model): one block, handle, defaults, instance
 8006B834 entity_link_front          # after the camera
 8006B854 entity_link                # appends to g_entities
 8006B89C entity_unlink
@@ -324,7 +329,15 @@
 8006D670 brain_alloc                # 0x124 bytes
 8006D6F0 spawn_from_model           # (model, template): spawn_by_type, then the model's script +0x94
 8006D788 entity_home_changed        # soldier -> 0x80056AEC; 0x1774 -> 0x80090938
+8006D7D0 handle_same                # (&handle, &entity)
+8006D888 handle_make                # (_, slot, serial) -> serial << 16 | slot
+8006D8AC handle_dead                # (&handle): 0, stale serial, or entity word 0xDEDEDEDE (never written)
+8006D930 handle_alloc               # (out, entity): (serial << 16) | slot into g_handles; entity +0x0 = handle
+8006DA50 handle_mark_removed        # removed flag for the entity's slot (0x8009DE78)
 8006DA88 handles_free_removed
+8006F7BC impact_effect_draw
+800701DC impact_effect_think        # life countdown, colours halved over the last 3 ticks
+800702E0 impact_effect_spawn        # type 0x23: up to 8 particles at a hit point
 80070DEC explosion_burst
 800712A0 particles_update
 800715D4 explosion_think
@@ -454,7 +467,11 @@
 8008D0CC frustum_build
 8008DABC model_bone_point
 8008E354 entity_bone_point          # (entity, bone, out, offset): a point on a bone in the world
+8008E5B0 box_in_view                # (min, max): box corners against the 6 view edges with the GTE; far = view +0x40
 8008E9DC entity_in_view             # bounding sphere against the view (inferred)
+8008EAC8 char_pool_update           # per frame: release countdowns of both character pools
+8008EE60 char_release               # (slot, frames): freed after that many frames
+8008EEF0 char_alloc                 # one of 5 character slots (0x2814 bytes at 0x800B7B08), types 0x1402/0x1405
 8008FDF8 obj1774_think
 800905C0 obj1774_spawn
 80090A30 frame_idle_job             # one message + one round-robin job
@@ -508,6 +525,8 @@
 8009A60C g_level_starting
 8009A618 g_taf_variant              # TAF digit (cheat bit 0x2)
 8009AF38 g_mp_drops                 # 14 x 0x34: model hash, ..., name[32], colour
+8009C828 g_view_right_edge          # 540: entity_in_view's right screen limit (28 past the 512-wide screen)
+8009C82C g_view_bottom_edge         # 240
 8009C840 g_level_flags              # 0x02 died (restart), 0x04 finished, 0x20 leave, 0x40/0x80 quit; 0x01/0x08/0x10 never set in retail
 8009C844 g_overlays                 # 12 x 0x58 (unused)
 8009CC64 g_level                    # the BSD level header
@@ -524,7 +543,11 @@
 8009D64C g_entities                 # entity list head, linked through +0x4
 8009D650 g_last_explosion
 8009D654 g_soldier                  # the player's soldier; inventory at +0x3CC, player.md
+8009D670 g_handle_serial            # serial counter
+8009D674 g_handle_count             # slots in use (high-water mark)
 8009D678 g_handles                  # handle (low 16 bits) -> entity
+8009DA78 g_handle_serials           # [256]
+8009DE78 g_handle_removed           # [256]
 8009E28C g_path_count
 8009E290 g_paths                    # 8 bytes each: {id, count, points (0x14 bytes each, s16 x y z first)}
 8009E294 g_spawn_queue              # 64 records; count 0x8009E288
@@ -555,6 +578,8 @@
 800B6460 g_msg_queue                # 128 x 32 bytes
 800B74B0 g_role_axes                # analog role config, port*0xA0 + role*0x28
 800B75F0 g_role_buttons             # digital role config, port*0xD0 + role*0x34
+800B7B08 g_char_pool                # 5 x 0x2814: soldiers and dogs live here
+800C4378 g_char_pose_pool           # 5 x 0x1308: their pose buffers
 800CA2A4 g_rand_seed
 
 # --- SHELL.BIN ---

@@ -18,7 +18,7 @@ check every finding.
    levels, cheat flags (docs/re/player.md)
 2. [x] **Entities**: the struct, lists and handles, the tick, movement, world and entity
    collisions, sphere hitboxes (docs/re/entities.md)
-3. [x] **Combat**: firing, bullets, hit tests, damage (flat per weapon, no headshot bonus), the
+3. [x] **Combat**: firing, bullets, hit tests, damage (flat per weapon; a head hit kills unless one of two helmet models is knocked off), the
    player being hit, statistics (docs/re/combat.md)
 4. [ ] **Enemies**: done: the script VM (all 74 opcodes) and a disassembler, variables and
    every sensor, spawning from level records, firing and aim error, the brain (seek, flee,
