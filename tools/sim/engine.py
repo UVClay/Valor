@@ -591,6 +591,9 @@ class Engine:
             if path:
                 open(path, "wb").write(bytes(self.m.d))
             self.end_frame()
+            path = getattr(self, "dumps", {}).get(f"{self.tick_no}a")
+            if path:
+                open(path, "wb").write(bytes(self.m.d))
         if f:
             f.close()
 
@@ -663,7 +666,9 @@ def main():
     before = [d for d in lines if d["tick"] <= t0]
     lines = [d for d in lines if d["tick"] > t0]
     eng = Engine(level, seed, feed, frames_of(lines))
-    eng.dumps = {int(a.split(":")[0]): a.split(":", 1)[1] for i, a in enumerate(args) if i and args[i - 1] == "--dump"}
+    # --dump TICK:PATH writes RAM after the tick's update, TICKa:PATH after its frame's end (drawn)
+    eng.dumps = {(int(k) if k.isdigit() else k): v for k, v in
+                 (a.split(":", 1) for i, a in enumerate(args) if i and args[i - 1] == "--dump")}
     # the seed is the state at the drawing of tick t0's frame: the frame's end comes first
     eng.vblank_prev = before[-1]["vblank"]
     eng.world.skip_to(before[-1]["vblank"])

@@ -326,23 +326,8 @@ def start_scripts(eng, e):
 
 
 def attachments_init(eng, e, hashes):
-    """0x80050720: the attachment list at weapon block +0x18 (count, entries of 0x144)."""
-    m = eng.m
-    obj = m.u32(e + 0x388)
-    m.w32(obj + 0x18, 0)
-    for k, h in enumerate(hashes):
-        if not h or k == 3:
-            break
-        m.w32(obj + 0x18, m.u32(obj + 0x18) + 1)
-        base = obj + 0x1C + 0x144 * k
-        m.w32(base, 0)
-        m.w32(base + 0x8, 0)
-        m.w32(base + 0x8 + 0xE4, m.u32(e + 0x100))
-        m.w32(base + 0x8 + 0x1C, m.u32(e + 0x270))
-        m.w32(base + 0x8 + 0x20, m.u32(e + 0x274))
-        m.w32(base + 0x8 + 0x24, m.u32(e + 0x278))
-        if h != 0xFFFFFFFF:
-            m.w32(base + 0x94, h)
+    from engine_attach import attachments_init as ai
+    ai(eng, e, hashes)
 
 
 def cdiv(a, b):
@@ -355,25 +340,44 @@ def cdiv(a, b):
 # ---------------------------------------------------------------- the think
 
 def enemy_think(eng, e):
-    """enemy_think (0x80055628; enemies.md, The think)."""
+    """enemy_think (0x80055628; enemies.md, The think), in its order."""
     m = eng.m
+    import engine_attach as at
     obj = m.u32(e + 0x388)
+    if m.s16(e + 0xF6) <= 0:
+        m.w32(e + 0xF4, 0)
+        holder = eng.resolve(m.u32(e + 0x30))
+        if holder and m.u32(holder + 0x30) == m.u32(e):
+            m.w32(holder + 0x30, 0)
+    at.ranges_update(eng, e)
     # the fire state goes to the weapon block, enemy_weapon, and back
     m.w8(obj + 0x11, m.s32(e + 0x4C + 4 * 0x16))
     from engine_combat import enemy_weapon
     enemy_weapon(eng, e)
     m.w32(e + 0x4C + 4 * 0x16, m.u8(obj + 0x11))
-    from engine_combat import enemy_aim_hook, attachments_hook
-    enemy_aim_hook(eng, e)
-    attachments_hook(eng, e)
+    at.attachments_update(eng, e)
+    if m.s32(e + 0x4C + 4 * 0x1A):
+        at.attachments_op(eng, e, m.u32(e + 0x4C + 4 * 0x1A), m.s32(e + 0x4C + 4 * 0x1B))
     witness_report(eng, e)
     scripts(eng, e, 0x13)
+    if m.s32(e + 0x4C + 4 * 0x1C):
+        at.hit_reaction(eng, e, 0x1C, m.s32(e + 0x4C + 4 * 0xC))
+    m.w32(obj + 4, at.puffs_update(m, obj + 0x3E8))
+    m.w32(obj, at.drops_update(eng, e, obj + 0x49C))
 
 
 def dog_think(eng, e):
-    """dog_think (0x80054AB8): the witness report, the scripts around the heading (v0E)."""
+    """dog_think (0x80054AB8): the witness report, the scripts around the heading (v0E), the hit
+    reaction (v13), the puffs and drops."""
+    m = eng.m
+    import engine_attach as at
+    obj = m.u32(e + 0x388)
     witness_report(eng, e)
     scripts(eng, e, 0x0E)
+    if m.s32(e + 0x4C + 4 * 0x13):
+        at.hit_reaction(eng, e, 0x13, m.s32(e + 0x4C + 4 * 0xC))
+    m.w32(obj + 4, at.puffs_update(m, obj + 0x3E8))
+    m.w32(obj, at.drops_update(eng, e, obj + 0x49C))
 
 
 def scripts(eng, e, hv):

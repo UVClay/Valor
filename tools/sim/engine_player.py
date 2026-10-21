@@ -469,6 +469,14 @@ def move(eng, e):
     if st.get("strafe_cleared"):
         m.w32(e + 0x218, 0)
         m.w32(e + 0x220, 0)
+    # entity_move's contact words for the player: walker_slide's result 2 (free) or a slide with
+    # walls left sets +0x38 0x8000; a slide keeps the move's delta in +0x364 (entities.md)
+    n, res = st.get("slide", (0, 0))
+    if res == 2 or n > 0:
+        m.w32(e + 0x38, m.u32(e + 0x38) | 0x8000)
+    if n > 0:
+        for k in range(3):
+            m.w16(e + 0x364 + 2 * k, st["delta"][k])
     if st.get("landed"):
         # player_world_contact (0x8007B4B8): on landing the whole velocity is zeroed
         for o in (0x200, 0x218, 0x21C, 0x220):

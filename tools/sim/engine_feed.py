@@ -133,7 +133,7 @@ def read_trace(path):
 # The functions whose draws the engine takes, by the system that draws (objects.md, Randomness).
 FN = {
     "scripts": (0x8003F8F0, 0x8005959C, 0x8005989C),        # script_run_a's pick, ops 1E, 21
-    "hit_reaction": (0x80052084, 0x80072244, 0x800727B4),
+    "hit_reaction": (0x80052084, 0x80072244, 0x800727B4, 0x80072EEC),
     "enemy_weapon": (0x8005163C,),
     "enemy_aim": (0x80055198,),
     "bullet": (0x80045A78,),

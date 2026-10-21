@@ -68,6 +68,14 @@ def draw_pass(eng):
         if inst and m.u32(inst + 0x74):
             if not (fa & 0x02000000 and not drawn_now and m.u32(e + 0x298)):
                 pose_update(eng, e, inst, drawn_now)
+        # enemy_draw (0x8005608C): a living soldier's attached attachments follow their bones
+        if m.s32(e + 8) == 0x1402 and m.s32(e + 0x4C + 4 * 0xD) != -1:
+            from engine_attach import attachment_draw
+            obj = m.u32(e + 0x388)
+            for k in range(3):
+                B = obj + 0x1C + 0x144 * k
+                if m.u32(B) & 0x27 == 1:
+                    attachment_draw(eng, e, B, m.s32(B + 8))
         # the drawn flags and the out-of-sight counter (entities.md, Despawning)
         if drawn_now:
             m.w32(e + 0x298, 1)
