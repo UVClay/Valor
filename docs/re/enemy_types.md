@@ -37,6 +37,38 @@ entities exist yet. New tools:
 Code was read with `fn.py c`/`show`; the dog's state was checked against the replay dump
 `build/re/mid_8000.bin` (1:3, one dog, killed).
 
+**Warped runs** (the per-level behaviours below marked "Watched (warp)"): `--warp M:L` with
+the menu's cross presses stopped before the level starts (vblank 8380; the level's first
+`player_update` is at 8421..8499), `VALOR_WATCH` from `ver_hear.py --watch`, a RAM dump at
+12000 for the script tables, and the player moved with pokes:
+
+- **Teleport at the start**: `--poke-on-call 8007A6B0:...` (the first `player_update`) writes
+  the position into all its copies: `+0x20C` (16.16), `+0x258` (last tick's, restored when a
+  move is undone), `+0x3BC`, and the integer `+0x354`; writing `+0x20C` alone was undone two
+  ticks later in 3:4. In 1:2, 2:3, 3:4, 4:1 this sticks; in 5:1, 7:1 and 7:3 the player ended
+  at y 0 and never moved (no floor), and so did every teleport there into a part of the level
+  whose TSP chunk wasn't resident (5:1's crawl spaces, 7:1/7:3's assault soldiers, 2:3 and
+  5:2 at some points): teleports reach only the chunks loaded around the start. The player's
+  address is fixed per level (`[0x8009D654]` in the `build/etypes` dumps).
+- **Teleport later**: `--press N:cross` fires once; the bullet's `projectile_think`
+  (`0x80044470`) is called through a pointer, so its first call is a timer for pokes (direct
+  calls, like `player_crouch_done`, don't reach `--poke-on-call`). The yaw goes into `+0x22C`,
+  `+0x268` and `+0x558` (all three, or it eases back), the pitch into `+0x228`, `+0x264`,
+  `+0x54C`. The shot's voice follows the player's position (it played at the destination and
+  was heard there: 5:3, vblank 9011), so the same call sets flag 2 (unheard, as the silenced
+  pistol's) on voices 1..4 (`0x8009115C + 0x34·v`); clearing `g_voice_enabled` doesn't work
+  (the sound update re-sets it the next frame).
+- God mode (`g_cheats` `0x800386A4` = 0x80) on the first `player_update`; level messages
+  started directly by poking a slot's `+0x40` on the same call (seen at the next think).
+- New tools: `unr_spawns.py DUMP` (each soldier record: spawn behaviour bits from its script's
+  msg-0 `set_flags`, tags, the trigger boxes that spawn it, distance from the start),
+  `unr_nodes.py DUMP` (the AI nodes: kind, approach side, position, facing; entries at
+  `[g_world+0x388]+0x8`, count `+0xC`, position s16 at `+0x14`, facing s16 at `+0x24`/`+0x28`),
+  `unr_slots.py DUMP` (the character slots and both channels' `script:word`),
+  `unr_durations.py` (time per script from `ver_ai.py`'s output). `ver_ai.py` prints `-1` for
+  the first script of a slot whose list address is logged later in the same tick; `--pc`
+  resolves it.
+
 ## The survey
 
 Model types found (models are per level, `[0x8009EC58]`, type at `+0xFC`; levels.md):
@@ -292,9 +324,21 @@ with a gun within reach; 1:3's 96 sends 0x200 while the player is within 969 uni
 node's facing angle and 0x2000 beyond). The levels that have guns add a gunner's routine: in
 1:1 (126 on channel 1, entered from 101/102): hide its own weapon (attachment op, v1A bit
 0x08000000), gun to tracking (0x200), fire off, wait 10..18 ticks; then whenever it sees the
-player with the long range unreduced by crouching (query 0x12), fire on (0x800) for 1..8 ticks,
-off (0x1000) for 10..45, again; the gun gone → show the weapon. While a gunner holds it the
-gun fires at the player's middle with its own spread (objects.md).
+player with the long range unreduced by crouching (query 0x12), fire on (0x800) for **1..8
+plays of the gunner's anim 114** (2:3's script 113, 1:1's 125; anim 27 at an approach-side-4 node), 14 ticks
+each, then off (0x1000) for 10..45 ticks, again; while it doesn't see the player it loops
+anim 114 frames 0..4 (5 ticks) and tests again. The gun gone → show the weapon. While a gunner
+holds it the gun fires at the player's middle with its own spread (objects.md).
+
+**Watched (warp)** in 2:3 (record 22, a stationary soldier (bit 2, spawn message 0x8000000)
+220 units from node 0, a kind-0x10 node by the gun at (-16771, 41, 1646), gun yaw 341):
+spawned by trigger 25, idle (220) with the player 1800..2300 away; its `+0x40` poked with
+0x100 (the group alert) at vblank 9003: **99 (1:3's 94, moving to the node) at 9006**, run
+(107) for 10 ticks, **101 (1:3's 96) and the gun routine 114 at 9026**. With the player 1750
+away it never saw him (query 0x12) and kept the 5-tick aim loop for the whole run. With the
+player 1050 away in front of the gun: fire on from 9068, the count v15 = 1..8 uniform over
+858 bursts (106..134 each), each count one 14-tick play; off 10..45 uniform (17..45 per value
+over 1000 holds). Whether the gun's shots hit was not checked (god mode).
 
 ## Witnesses: soldiers who see a comrade hit
 
@@ -308,9 +352,20 @@ valid, tests whether it sees the victim with its long range (`+0xB2`, the sight 
 answer that with 201 (the dog 16): run to where the victim was hit, then alert (209).
 
 So shooting a soldier in view of up to five others (by list order, not distance) pulls those
-that can see him to the spot, one candidate per frame. Not watched: in the replay (1:3, 2:1,
-2:2) no soldier entered 201 and no dog 16; at most five characters exist and the others were
-rarely in view of the one hit.
+that can see him to the spot, one candidate per frame. 1:3's 201: point
+goal to the spot, a voice (74), anim 215, then **walks** (217: anim 7 with footsteps, not a run);
+every tick, the player seen with the long range (query 0x10) → **210, engage** (not 209);
+arrived (`s38` 0x400000) → stop, weapon anim (38), → 209. Only the idle and patrol scripts
+register 0x10000: a soldier already engaged ignores it, and 2:1's papers soldiers (220/221)
+don't register it either (2:1 has it in its idles 296..299 → 295 and in 268 → 254).
+
+**Watched (warp)** in 3:4 (where 201 is 193): the player teleported 2000 units in front of two
+idle soldiers (slots 1 and 2, 360 apart), beyond their sight (1500) and hearing, and fired the
+pistol: slot 2 hit at vblank 9107; slot 1 entered **193 at 9113** (3 ticks later), played anim
+215 (14 ticks), started the walk at 9141 and in that tick saw the player (1996 away, inside the
+long range 3000) and went to 25 (through 202, 3:4's 210). In the run before, with the player
+770 away, both had seen the player first and were already in 25 when the shots hit: no
+witness report was taken.
 
 ## Events: what the scripts react to
 
@@ -435,7 +490,15 @@ firing; after the stand time a non-Panzerfaust soldier walks on only if the play
 1000 (beyond it, it keeps firing indefinitely). Grenade events just skip to walking; it never
 takes cover. Hits while standing: pain and a plain flinch (86: 1:3's 6 without the by-part and
 knock-down reactions) → 81; while walking: 1:3's 82 (anim 122) → 81, or 210 for a bit-10
-soldier.
+soldier. 81 also registers the **end of a burst** (`s3C` 0x1 → 81:127: stop the fire loop, the
+weapon anim 39, back to 81:18), so every burst restarts the stand and its 40..70-tick timer.
+
+**Watched (warp)** in 2:3 (record 21, the path soldier near the start, scripts 80/81/87 as
+numbered here): spawned into 80 walking its path; its `+0x40` poked with 0x100 (the group
+alert) at vblank 9003 → **81 at 9006**; 87 on channel 1 from 9036 with the player 2530 away and
+in view: the stand ended each time on the burst's end, not on the timer, 158 ticks after it
+began (9036 → 9352, 9414 → 9730, ...: 316 vblanks every time), then 39 for 26..31 ticks and a new
+87; in 8000 ticks it never walked (the player beyond 1000, as read).
 
 **L, low-wall node** (approach side 4: 1:3's empty 112; 1:1 121, 1:2 116, 5:2/5:3 116, 7:3 113,
 9:1 121; hits in the 4 scripts before it): take the node, hide (anim 274) 50..90 ticks; stay
@@ -453,6 +516,18 @@ under The mounted gun. Hit: flinch (anims 118..121; 36..39 at approach side 4) a
 dying or the gun gone: 97 releases it (0x1000 | 0x400), shows the weapon, clears the nodes.
 
 **T, sentry** (`s40` 0x400; 1:2 202..213, 7:1 194..205, as 2:1's 202..213 in soldier.md).
+In 1:2's numbering: 202 stands (209 on channel 1: anim 0 1..2 times (+1 with a skill pass), then
+anims 209, 210 ×n, 211 or 1, 207 ×n, 208) and every v0B ticks tests 208 (the player within v5
+and aiming at it, query 0xF → 204) and 44 (detection → 203); 203 and 204 drop back to 202 when
+the player is beyond v5 (3000). Fire (213, from 210/211): anim 240 v3 times, then, unless the
+player is within 565 and unseen, fire 1 during anim 241 and anim 242 (sound 5).
+**Watched (warp)** in 1:2 (record 81, spawned by trigger 23 at the level start; the sentry
+stands on a height 381 above the ground): with the player 1689 away it stayed in 202 (pc
+202:23, the `wait v0B`) for the whole run; teleported to 900 away (977 in 3D) at vblank 9003, it
+**detected at 9007** and stayed in 203/210 for the rest of the run (400 000 vblanks). Cycle:
+anim 240 26 ticks per play, fire state 1 for 15 ticks (anim 241), anim 242 36 ticks. The play
+count v3 over 1363 cycles: 1: 101, 2: 121, 3: 369, 4: 348, 5: 211, 6: 213, i.e. 1..4 uniform
+plus 2 with the skill pass (skill 67: P(pass) from the counts 0.62..0.67).
 
 **A, alarm runner** (3:3 187..193, as 2:1's 195..199): with no alarm up, an alerted or engaging
 soldier runs to a free kind-8 node within 1500 and raises the alarm there (70% per tick at the
@@ -478,6 +553,11 @@ take/lob/done attachment bits) and waits 120..160 (120..125). Unseen (query 0x10
 Hit: below 10% the fall-and-writhe death (1:3's 198), else anims 136 (70%) or 137, 138, 147,
 60..180 ticks, back to firing. A second message, `s40` 0x4 (sent on the record's msg 6),
 **jumps out**: anims 157, 158, 159 looped until it lands (`s38` 0x2), 160 → 210 (engage).
+**Watched (warp)**, the hidden part only, in 4:1 (record 94, spawned by trigger 70 with the
+player 3373 away and never detected): channel 0 in 200 polling detection every 4 ticks;
+channel 1: 206 (anim 139 = 16 ticks + 30..90) measured 46..106 ticks (503 times), then 207
+(268) or 208 (235), 60..120 ticks each (anims 140+142 = 30 ticks, 143+145 the same, plus the
+30..90 hold). The pop-up fire was not reached.
 
 **H, hidden ambusher** (`s40` 0x200000, sent at spawn and again on msg 0x98; 3:4 199/206..208,
 4:2 = 7:2 207/214..216): stop, hides its weapon (v1A = 1, 0x08000000), channel 1 loops 1:3's
@@ -486,6 +566,11 @@ within v07 (model `0x11EDCD18`, 7:2's nine SMG soldiers with aim error 0) or, fo
 when the player is looking at it (sensor 0x71) or within 200, then 60 ticks; gets up (anim 311),
 faces the player, anim 237 1..2 times, 50% anim 239 3..5 times → 17. Hit while hidden or
 rising: below 10% death, else anim 312 → 17.
+**Watched (warp)** in 3:4 (record 5, in the room next to the start): spawned at 8424 into 199
+with 206 (anim 310) on channel 1. With the player at the start, 590 away and turned toward it
+for 4000 ticks, it never woke (sensor 0x71 needs a clear sweep from the player's eye to its eye:
+a wall, presumably). Teleported 150 away at vblank 9003: **207 at 9126**, 61 ticks later (the
+60-tick wait); 207 → 17 after 170 ticks (anim 311, 237, the 50% 239s); then 25.
 
 **W, worker** (`s40` 0x80000; 5:1 205..210, 5:2/5:3 208..213): sets bit 3, hides its weapon,
 walks its path (mode 2, no walk goal, anim 255 with footsteps); at each end pauses the path and
@@ -495,6 +580,13 @@ holds), 30% again, else walks on. Detection is **hearing only** (query 0x11) or 
 anim 238 (sound 0x22), anim 239 2..4 times, 55% anim 303, repeated while the player aims at it,
 then 17 (engage, which shows the weapon again). Bit 3 makes it keep cowering when aimed at in
 combat (25's bit-3 branch) instead of dodging (inferred to be the reason it is set).
+**Watched (warp)**, partly: in 5:3 (two workers spawned with others by trigger 132)
+the workers started on their paths (211, about 22 ticks) and the work script (213), and were
+startled (209) 26 and 76 ticks into it with the player 2960 and 2135 away, beyond their 500:
+by hearing, the soldiers spawned with them having spawned alerted and shouting (alert shouts
+id 0xF within range; the workers' detection writes v1, so `ver_hear.py` doesn't list it). In
+5:2 record 24 (trigger 25) was startled on its first tick, with fighting going on 3000 away;
+209 lasted 100 ticks. A full work cycle was not seen.
 
 **C, crawl-space chaser** (5:1 211..219; `s40` 0x40 with `set_home` to the sender, 0x80 at
 spawn, 0x20): if the player is not in a low zone (flags B 0x800) → engage; else runs (anim 14)
@@ -503,8 +595,29 @@ otherwise goes prone (`to_spawn`, anim 179 with shout 0xF, anim 180 with sound 0
 (eye height) = 50, and **crawls at the player** (seek, anim 180); every 2 ticks seen and within
 ±350 → prone fire (219: bit 1, ≥ 820, a skill pass and 50% a prone grenade (anim 313); else SMG
 2..5 rounds of fire 1 over 3 × anim 184, rifle 2..3 fire 2 shots with the bolt; anim 185, wait 10;
-the fire roll every 15 ticks). `s40` 0x20 (the player out of every low zone) → eye height 188,
-stand (anim 61), engage. Prone hits: anims 130..133/112; death anim 103.
+the fire roll every 15 ticks). `s40` 0x20 → eye height 188, stand (anim 61), engage. Prone
+hits: anims 130..133/112; death anim 103. **Who sends what** (5:1's record script 17 and the
+zones, `lvs.py`): 0x80 at spawn; 0x40 with `set_home` on message 0x19, relayed by the
+tag-group records 123/124 (scripts 85/86, messages 0x5F/0x60) to its own zone; **0x20 counts
+characters, not the player**: the low-zone boxes of its tag group send 0xF/0x10 for every
+character entering or leaving them (their `c_enter`/`c_leave` lists), the record counts them
+from 128 and sends 0x20 when the count is back to 128, i.e. when it (or any soldier) has
+crawled out of those zones. (Earlier text here said "the player out of every low zone": the
+player's own zone messages are 0xD/0xE, which only level script 13 handles.) Not watched: the
+crawl spaces are outside the chunks resident at 5:1's start (teleports there froze, above).
+
+**Low zones and sight** (flags B 0x800, soldier.md, The player's concealment flags). Besides
+the halved sweep of query 0xB, the scripts read the flag directly (sensor 0x6B,
+`player_low_zone`): in 5:2's kneeling fire (156, 1:3's 148) a player in a low zone skips the
+"too close / too far" exits, and C's chase is built on it. **Watched (warp)**, without a
+control: in 5:2 the player was teleported into low zone 109 (a box 2140 wide) and flags B went
+0x21000 → 0x21800; the worker it spawned (record 24, 1259 away on the same floor, startled and
+then fighting) cycled for the rest of the run (1195 times) through kneel (156, 31 ticks) →
+**lost sight** (query 0x10 = 0, 158, 41 ticks) → search (183, 246 ticks: 13 walk cycles toward
+the player without seeing him) → 218 (4 ticks) → 156, never getting a clear look at a player
+standing in the open at 1259. That fits the halved sweep (the sweep aimed at half the
+player's eye height hits something low between them) but two control runs outside the zone
+failed (no floor at the chosen points), so it is not separated from the geometry.
 
 **X, assault soldier** (`s40` 0x2000000; 7:1 206..217 = 7:3 205..216): idle fidgets, detection
 every 2 ticks (a comrade-hit report: walk to the spot, anim 215) → face the player, anims
@@ -615,11 +728,15 @@ firing"; soldier.md's "+0x11E = 8, 3 or 4" reads as the classes.
 - The 0x1407 weapon's identity (enemies.md calls it a pistol, soldier.md an MG; its burst is 11
   shots 12 ticks apart).
 - Mission indices 6 and 8 crash when warped to: whether the shell ever maps to them.
-- Not reached in play (no recording covers their levels, and warped starts don't get near them
-  without a route): the sentries (T), gun crews (G), low-wall nodes (L), foxholes (F), hidden
-  ambushers (H), workers (W), the crawl-space chaser (C), assault soldiers (X), technicians (R)
-  and the papers chain. The path advance (P) was seen entering 81 in 2:3 (vblanks 63057, 63141,
-  70497) but its stand/walk timings were not measured.
+- Not reached in play: the assault soldiers (X: 7:1, 7:3) and the crawl-space chaser (C: 5:1),
+  whose areas are outside the chunks resident at the level start, so warped teleports froze
+  there; the technician (R: 9:4; its records have no trigger and nothing seen activates
+  them); the low-wall nodes (L: approach side 4; no soldier took one in the runs); the papers
+  chain (2:1: the role-3 soldier, record 16, stayed in its stand script 220 2267 away while the
+  player, after a circle press (the weapon switch to the papers, not checked), held cross; it never
+  came to inspect); the sentry's "aimed at"
+  branch (204); the foxhole's pop-up fire; a worker's full work cycle; the dog's 16 and 35.
+  Watched only in part: workers (W), low-zone sight (above).
 
 ## Names
 

@@ -252,8 +252,9 @@ fire loop's program counter and variable 3, and the time spent in 25's `wait v0B
   expected 0.5..1, too few to say more); the other 11 came through the pain script 6 and the
   scripts after it (173, 171, 34, 299, 75: the hit-reaction chains that end in a dodge), so most
   dodges seen in play follow a hit.
-- **Running to cover:** no soldier entered 110 in the whole replay (no 0x11 node found), so the
-  "no firing while running to cover" reading could not be watched.
+- **Running to cover:** no soldier entered 110 in the whole replay (no 0x11 node found). Watched
+  since in a warped run of 5:3 (83 nodes, 36 of them kind 1 with approach side 4; enemy_types.md,
+  How it was checked): Cover, below.
 
 ### Dodges (135; moves 139..147)
 
@@ -331,6 +332,18 @@ the node's facing angle, 0x2000 beyond (the gunner working the gun, inferred).
 
 Hit at cover (102/108/109): death anims 91/202 below 10%, else a flinch and back to 95; the
 third hit at 108 → 210.
+
+**Watched (warp)** in 5:3, whose cover scripts keep 1:3's numbers (94 moving, 96 holding, 100
+the lob from cover with anim 264, 109 the hit-at-cover death with anim 202) except the run and
+the peek, 1:3's 110/111, which are 114/115 there,
+with the player standing 900..2600 from soldiers that spawned alerted (`unr_slots.py`,
+`ver_ai.py --vars 0x16,0x1E,0x15`, vblanks 9000..11100): two soldiers took nodes. Slot 0: 94 at
+9167 with node 60 809 units away (v15), ran 31 ticks (about 26 units a tick), **fire state 0
+the whole run**, arrived (v15 0) at 9227 → 96/115; then **fire 4 for exactly 80 ticks** four
+times (four plays of the 20-tick lean), separated by 76..90 ticks hidden; at 10655 a throw from
+cover (100, 26 ticks) and back to 96; it died at the node at 10861 (109; the player hadn't
+fired: its own grenade, inferred), and another soldier reacted to that grenade (120 at 10683).
+Slot 1: 94 at 9533, 30 ticks, node at 9593.
 
 ## Search (175, 204..206)
 
