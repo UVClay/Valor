@@ -6,8 +6,9 @@
 
 The engine carries its own state from tick to tick. What it takes from outside is what a new
 engine would get from outside (engine_feed.py): the player's input per tick, the frame structure
-(which ticks ran in one drawn frame: real time), the CD's timing for streamed world chunks, and
-the random draws by the function that made them. Its starting state is one RAM dump of the
+(which ticks ran in one drawn frame: real time), the idle work done while each frame waited for
+the vblank (which messages, spawn retries and handle freeing ran: real time too), the CD's timing
+for streamed world chunks, and the random draws by the function that made them. Its starting state is one RAM dump of the
 original taken just after the level started (build/engine/seed/), standing for what loading
 the level's files produces: the engine does not parse the BSD itself. Everything else, every
 think, move, collision, script and message, is the engine's, following the documents; the
@@ -633,13 +634,56 @@ class Engine:
             self.logic.send(0x59, None, 0, None, src="timer")
 
     def end_frame(self):
-        """After the frame's ticks: the drawing pass's work (out-of-sight counters), then the
-        queued messages and spawn retries, the handles of removed entities."""
+        """After the frame's ticks: the drawing pass's work (out-of-sight counters), then the work
+        done while waiting for the vblank (frame_wait_vblank, 0x80090B80; objects.md, The frame
+        and the tick): one frame_idle_job (0x80090A30), then frame_idle_loop (0x80090AEC) until
+        the vblank. How many of each ran is real time: taken from the recording's trace."""
         from engine_draw import draw_pass
         draw_pass(self)
-        self.logic.run_queue()
-        self.handles_free_removed()
+        jobs = self.feed.idle.get((self.level, self.tick_no))
+        if jobs is None:
+            self.note("idle work: no record of the frame (all messages, spawns, handles)")
+            self.logic.run_queue()
+            self.handles_free_removed()
+        else:
+            for j in jobs:
+                if j is None:
+                    self.idle_loop()
+                else:
+                    self.idle_job(j)
         self.audio.update()
+
+    def idle_job(self, state):
+        """frame_idle_job (0x80090A30), round-robin 0x800AB8E8: 0 one message; 1 one message and
+        one spawn retry; 2 one message, the removed handles freed, one more message (and the chunk
+        streaming check), then back to 0."""
+        m = self.m
+        if state != s32(m.u32(0x800AB8E8)):
+            self.note("idle job state differs from the original's", f"{s32(m.u32(0x800AB8E8))} / {state}")
+        self.msg_one()
+        if state == 1:
+            self.logic.spawn_retry_one()
+        elif state == 2:
+            self.handles_free_removed()
+            self.msg_one()
+        elif state == 3:
+            pass
+        m.w32(0x800AB8E8, 0 if state >= 2 else state + 1)
+
+    def idle_loop(self):
+        """frame_idle_loop (0x80090AEC), round-robin 0x800AB8EC: 0 all messages, 1 all spawn
+        retries, 2 a frame_idle_job (traced on its own), 3 nothing (back to 0)."""
+        m = self.m
+        k = s32(m.u32(0x800AB8EC))
+        if k == 0:
+            self.logic.run_queue_all()
+        elif k == 1:
+            self.logic.spawn_retry()
+        m.w32(0x800AB8EC, k + 1 if 0 <= k < 3 else 0)
+
+    def msg_one(self):
+        """msg_run_one: the queue's first context, if any."""
+        self.logic.run_one()
 
     def run(self, to=None, out=None, compare=None):
         """Every frame of the recording's level: vblanks advance the timer, ticks run."""

@@ -8,6 +8,7 @@
 #include "gpu.h"
 #include "hw.h"
 #include "input.h"
+#include "shadow.h"
 #include "interp.h"
 
 
@@ -100,6 +101,26 @@ extern "C" void hook_role_axis(Cpu *c, RecompFn body) {
     uint32_t port = c->r[4], role = c->r[5];
     role_axis(c, body);
     trace_role(port, role, 1, int32_t(c->r[2]));
+}
+
+// 0x80090A30 frame_idle_job / 0x80090AEC (the idle loop's second round-robin): what the wait for
+// the vblank did after each frame, for a reimplementation to replay (docs/re/objects.md, The
+// frame and the tick): "idle TICK: STATE" with the round-robin state 0x800AB8E8 before the job
+// (0 a message, 1 + a spawn retry, 2 + freeing removed handles, 3 + chunk streaming) and
+// "idle2 TICK" for each pass of the second round-robin (all messages, all spawn retries).
+static bool trace_idle() {
+    static bool on = getenv("VALOR_TRACE_INPUT") != nullptr;
+    return on && !shadow_active();
+}
+
+extern "C" void hook_frame_idle_job(Cpu *c, RecompFn body) {
+    if (trace_idle()) log("idle %u: %d", r32(0x8009A5DC), int32_t(r32(0x800AB8E8)));
+    body(c);
+}
+
+extern "C" void hook_idle_round(Cpu *c, RecompFn body) {
+    if (trace_idle()) log("idle2 %u", r32(0x8009A5DC));
+    body(c);
 }
 
 // 0x80076008 role_axis_alt(port, source role, role, ?): with the port's "pitch from the move

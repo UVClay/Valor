@@ -115,6 +115,27 @@ class LevelLogic(lv.Sim):
     def send(self, msg, sender, sender_obj, actor, target=0, src=""):
         lv.Sim.send(self, msg, sender, sender_obj, actor, target, src)
 
+    def run_one(self):
+        """msg_run_one: one queued context (none queued: nothing)."""
+        if not self.queue:
+            return 0
+        c = self.queue.pop(0)
+        self.head = (self.head + 1) % 128
+        if self.still_subscribed(c):
+            self.vm(c)
+        else:
+            self.stats["queued, unsubscribed"] += 1
+        self.m.w32(lv.G_HEAD, self.head)
+        self.m.w32(lv.G_TAIL, self.tail)
+        return 1
+
+    def run_queue_all(self):
+        """msg_run_all (0x800663B8): every queued context, those queued meanwhile included."""
+        n = 0
+        while self.queue:
+            n += self.run_one()
+        return n
+
     def run_queue(self, limit=None):
         n = lv.Sim.run_queue(self, limit)
         # the ring's indices in memory, as the original keeps them

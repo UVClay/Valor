@@ -48,6 +48,9 @@ seeds = []
 "0x80075FB4" = "hook_role_axis"
 # Control role from another role's stick (pitch from the move stick): traced for the engine.
 "0x80076008" = "hook_role_axis_alt"
+# The idle work while waiting for the vblank (traced: which jobs ran after each frame).
+"0x80090A30" = "hook_frame_idle_job"
+"0x80090AEC" = "hook_idle_round"
 # Builds the view frustum's planes from the camera (culls rooms and objects): widened to the
 # widescreen/FOV projection.
 "0x8008D0CC" = "hook_view_frustum"

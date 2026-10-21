@@ -89,11 +89,22 @@ the count (World animations), and the alarm entity (`0x8005EDF8`) times itself w
       use message 0x59 as a periodic timer (1:3's objective script repeats a sound with it).
 6. `render_pass` (`0x800503D4`): draws the frame, then at its end (`0x800504A8` →
    `0x80090B80`) **waits for the vblank, and does the level's slow work while it waits**:
-   - once: `0x80090A30`, which runs **one** queued message and one job of a round-robin: (a)
-     nothing more, (b) one queued spawn retry (`0x80074F9C`), (c) free the handles of removed
-     entities (`0x8006DA88`), (d) the world-chunk streaming check (`0x8005439C`, levels.md);
-   - then, until the vblank count changes, a second round-robin (`0x80090AEC`): **all**
-     queued messages (`0x800663B8`), all spawn retries (`0x80075034`), `0x80090A30` again.
+   - once: `frame_idle_job` (`0x80090A30`), a round-robin on `0x800AB8E8`: state 0 runs
+     **one** queued message (`msg_run_one`); 1 one message and one queued spawn retry
+     (`0x80074F9C`); 2 one message, the handles of removed entities freed (`0x8006DA88`),
+     one more message and the world-chunk streaming check (`0x8005439C`, levels.md), and the
+     state goes back to 0 (so the states run 0, 1, 2, 0, ...; the code for a state 3, one
+     message and the streaming check, is not reached);
+   - then, until the vblank count changes, `frame_idle_loop` (`0x80090AEC`), a second
+     round-robin on `0x800AB8EC`: 0 **all** queued messages, those queued meanwhile included
+     (`msg_run_all`, `0x800663B8`); 1 all spawn retries (`0x80075034`); 2 `frame_idle_job`
+     again; 3 nothing; then 0 again.
+   - How many of these run is **real time**: a frame that ends just before the vblank gets
+     only the one `frame_idle_job` (1:3's slow frames at ticks 2210..2215 freed the removed
+     handles only every third frame). A reimplementation that must match the original's
+     handle slots replays the recorded sequence (the runtime traces each call under
+     `VALOR_TRACE_INPUT`: `idle TICK: STATE`, `idle2 TICK`); otherwise running all messages,
+     all spawn retries and the handle freeing each frame is the fast-machine behaviour.
    - then the ticks due for the next frame: `g_ticks_dropped` = (vblanks since the last frame
      + parity) / 2 - 1, so a frame that took 2 vblanks runs one tick, 4 vblanks two, and so
      on: the game advances at **30 ticks per second of real time** whatever the frame rate,

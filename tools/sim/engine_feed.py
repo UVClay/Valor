@@ -60,6 +60,9 @@ class Feed:
         self.rand = defaultdict(list)           # (vblank_of_level, tick) -> [(function, ra, value)]
         self.pad = {}                           # (level, tick) -> 4 words
         self.roles = defaultdict(dict)          # (level, tick) -> {(port, role, src): value}
+        # the vblank wait's idle work after each frame, in order (runtime/src/game.cpp): the
+        # job state of each frame_idle_job call, None for each frame_idle_loop call
+        self.idle = defaultdict(list)           # (level, last tick of the frame) -> [state | None]
         level = None
         for line in open(log_path, errors="replace"):
             c = line[0]
@@ -80,6 +83,13 @@ class Feed:
                     self.marks.append((int(m[3]), level))
                     continue
             elif c == "i":
+                if line.startswith("idle2 "):
+                    self.idle[(level, int(line.split()[1]))].append(None)
+                    continue
+                if line.startswith("idle "):
+                    p = line.split()
+                    self.idle[(level, int(p[1].rstrip(":")))].append(int(p[2]))
+                    continue
                 m = INPUT.match(line)
                 if m:
                     self.pad[(level, int(m[2]))] = tuple(int(m[k], 16) for k in range(3, 7))
