@@ -764,6 +764,12 @@ def main():
     seed = os.path.join(ROOT, "build", "engine", "seed", f"d{seed_v}.bin")
     sm = Mem(open(seed, "rb").read())
     t0 = sm.u32(G_TICK)
+    # the level's lines end where the tick counter starts again (the next level's first tick can
+    # come before its mark)
+    for i in range(1, len(lines)):
+        if lines[i]["tick"] < lines[i - 1]["tick"]:
+            lines = lines[:i]
+            break
     before = [d for d in lines if d["tick"] <= t0]
     lines = [d for d in lines if d["tick"] > t0]
     eng = Engine(level, seed, feed, frames_of(lines))
@@ -771,9 +777,11 @@ def main():
     eng.dumps = {(int(k) if k.isdigit() else k): v for k, v in
                  (a.split(":", 1) for i, a in enumerate(args) if i and args[i - 1] == "--dump")}
     # the seed is the state at the drawing of tick t0's frame: the frame's end comes first
-    eng.vblank_prev = before[-1]["vblank"]
-    eng.world.skip_to(before[-1]["vblank"])
-    eng.audio.adopt(before[-1]["vblank"])
+    # the seed's own tick's vblank (the dump at vblank V holds the tick stamped V - 1)
+    vb0 = before[-1]["vblank"] if before else seed_v - 1
+    eng.vblank_prev = vb0
+    eng.world.skip_to(vb0)
+    eng.audio.adopt(vb0)
     eng.logic.run_queue()
     eng.handles_free_removed()
     from engine_cmp import Compare
