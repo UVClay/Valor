@@ -15,6 +15,14 @@ combat, enemies, levels. Each document says how its claims were checked.
 `names.txt` holds every named address (functions and data), read by the tools, with the PsyQ
 library names in `build/syms` (from the setup tools) as a fallback.
 
+## Other sources
+
+- [Medal-Of-Honor-PSX-File-Viewer](https://github.com/AdrianoDiDio/Medal-Of-Honor-PSX-File-Viewer)
+  (GPL-3.0): readers and documentation for the file formats (TSP, BSD, RSC, TAF, TIM, VB, SST),
+  a level viewer with OBJ/PLY export, a model viewer with animations. It covers the files; these
+  documents cover what the game does with them. Its code can't be copied into Valor (GPL-2.0);
+  formats are described here in our own words. Clone it into `build/ext/` to consult it.
+
 ## Tools
 
 Run inside the container (`./dev ...`).

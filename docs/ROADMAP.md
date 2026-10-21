@@ -32,6 +32,26 @@ check every finding.
 
 Tools: `tools/recon/fn.py c ADDR` decompiles with m2c (clone it into `build/m2c`).
 
+### What an engine recreation still needs
+
+The five areas above cover the rules of combat and the AI's decisions. Rebuilding the game from
+them needs, roughly in order of how much they decide the feel:
+
+6. [ ] **Animation**: skeletons, animation data and playback (frames, blending, root motion).
+   Enemies move by their animations' root motion and their hit spheres ride the bones, so this
+   decides both movement and what a shot hits (docs/re/animation.md)
+7. [ ] **Player movement in full**: acceleration, gravity, jumping and falling, crouching, eye
+   height and view bob, the camera, using things, dying (docs/re/movement.md)
+8. [ ] **World objects**: doors, moving and destructible objects, grenades' flight and bounces,
+   the remaining entity types, the random number generator and the tick order (docs/re/objects.md)
+9. [ ] **Sound**: what plays when, 3D volume and panning, music and voice cues (docs/re/audio.md)
+10. [ ] **Asset formats**: the archives, models, world geometry, textures, sound banks, TAF, so a
+    new engine can load the original files (docs/re/formats.md)
+11. [ ] **Front end**: the campaign flow, saves (memory card layout), options, cheat codes,
+    briefings (docs/re/shell.md)
+
+Out of scope for now: the two-player mode (LEVEL2P.BIN), video playback (standard MDEC).
+
 Waiting for the game state they need (presentation, later): a separate HUD layer and then
 native HUD elements, a native sniper scope, a PC-style aim mode (the view keeps turning, the
 game's aim follows it), moving objects interpolated between ticks.
