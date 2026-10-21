@@ -268,7 +268,8 @@ run time), and their requirements:
 When a level starts (SHELL `0x80062108`): slot 6 becomes slot 7, and in slot 7 the third level
 becomes the fourth with the third's carry-over row copied to it, since MSN9 has LVL1, LVL2 and
 LVL4. MSN6 and MSN8 don't exist. Mode 2 (`0x80039D1C`) plays MSN12 (seven levels, the
-bonus/secret levels: mission index 11, the level from `0x80039C74`).
+two-player arenas, run by LEVEL2P.BIN: mission index 11, the level from `0x80039C74`; shell.md).
+There are no single-player bonus levels on the disc.
 
 The **best rating per level** is kept in the level's carry-over row: halfword 13 of
 `g_level_ammo[mission][level]` (`g_game+0x18C + mission·152 + level·36 + 26`), -1 until the level

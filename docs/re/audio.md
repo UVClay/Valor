@@ -24,7 +24,7 @@ does with them is below.
 | `DATA\MSNm\LVLl\Mm_lA.VB` | The same, an alternate mix: same length (±1%), same first and last seconds, different in between (`snd_vb.py stats` on 1:3: per-second RMS of the difference 1000..3600 against 900..8000 for the music) | Streamed instead of the plain file when `0x80038658` is set; SHELL's audio menu (`maudio.sst`, `0x8003D9D8`) points one of its widgets at that word. Which option it is (the menu has music, effects, stereo and a "dia" item) isn't established |
 | `MOVIE\*.STR` | MDEC video with interleaved XA audio | Played by the movie player through the CD mixer (`SpuSetCommonCDMix(1)`, CD volume 0x7FFF at init); not part of the level audio |
 
-MSN12 (the two-player levels, inferred) has a single bank and only 12:5 has a VB.
+MSN12 (the two-player arenas, shell.md) has a single bank and only 12:5 has a VB.
 
 ### The VAB banks
 

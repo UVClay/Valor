@@ -15,6 +15,7 @@ combat, enemies, levels. Each document says how its claims were checked.
 | [movement.md](movement.md) | The player's movement and camera: speeds, crouch, jump, steps and falls, turning, aim mode, use, death |
 | [formats.md](formats.md) | Every file type on the disc (BSD, TSP, TAF, VB, RSC, TIM, STR) and what a new engine needs to load a level |
 | [audio.md](audio.md) | The sound driver and voices, banks, what plays when, 3D volume and panning, music streaming; how soldiers hear |
+| [shell.md](shell.md) | The front end: campaign flow between SHELL and LEVEL, the save format, options, passwords and cheats, medals and unlocks, menus |
 
 `names.txt` holds every named address (functions and data), read by the tools, with the PsyQ
 library names in `build/syms` (from the setup tools) as a fallback.

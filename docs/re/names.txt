@@ -16,14 +16,20 @@
 8001BAA0 InitGeom
 800385A8 g_overlays                 # {name, file, entry} x3
 800385CC g_game                     # persistent game state (survives overlay loads), player.md
+800385D0 g_game_codename            # g_game+4, char[11]
 8003864C g_music_volume             # 0..6
 80038658 g_music_alt                # 1: play mM_La.vb (SHELL audio menu)
 80038660 g_game_mission             # g_game+0x94, 0-based
 80038664 g_game_level               # g_game+0x98, 0-based
+8003869C g_medals                   # g_game+0xD0: bits per mission (1<<slot), 0x100 DWI, 0x200 bronze, 0x400 silver, 0x800 MoH
+800386A0 g_cheats_unlocked          # g_game+0xD4: the secret-codes menu shows these bits
 800386A4 g_cheats                   # bits: 0x10 rapid fire, 0x20 big bullets, 0x40 free throws
 80038758 g_level_ammo               # g_game+0x18C: [mission][4 levels] x 13 halfwords, stride 152/36
 80038D4C g_level_end                # level-end summary written by level_end_carry
 80038D90 g_campaign                 # 12 bytes per slot: mission index, current level, level count (MSN1..5, 7, 8, 9)
+80039C58 g_level_exit               # LEVEL's exit code: 0/3 finished, 1 quit, 2 ?; shell: 4 new game, 5 recorded/loaded
+80039C5C g_cold_boot
+80039C74 g_mp_arena                 # multiplayer arena (menu order); the exe maps it to the MSN12 level
 80039C84 g_rating_level
 80039C88 g_rating_slot
 80039CA8 g_stat_shots
@@ -33,6 +39,9 @@
 
 # --- LEVEL.BIN ---
 80039D90 overlay_base
+8003DC10 leaf_sweep                 # segment vs a leaf's triangles
+8003E3F0 chunk_sweep                # the k-d tree walk of one chunk's collision
+8003EB44 chunk_collision_setup      # TSP collision block -> chunk entry
 8003EF5C world_sweep                # (from, to, hit, ..., surface out, ...): -1 if the segment hits nothing in the level
 8003F1F8 anim_root_motion           # frame's root movement (+0) via +0x340 into +0x1F0; root offset (+4) -> inst+0x98
 8003F454 script_start               # (entity, script, ?, channel)
@@ -69,6 +78,9 @@
 8004301C ammo_add                   # (soldier, slot, amount); plays the weapon's reload sound
 80043140 impact_sound               # 0:0..6 and sparks
 80043AD4 bullet_touch               # touch(bullet, other): exact hit test, effects, target's handler
+80044D18 angles_from_to
+80044E0C gun_points                 # two points on the gun from the model's bones +0xD4/+0xD6
+800451B0 projectile_aim             # start and angles: camera (scoped) or along the barrel; enemies: at the target
 8004532C projectile_create          # +0xF8 damage
 80045A78 bullet_spawn               # bullets are entities at 600-669 units/tick
 80045CA0 rocket_spawn
@@ -121,6 +133,7 @@
 80054238 chunk_not_in_record        # slot's chunk absent from the streaming record's four
 80054298 chunk_stream_evictable     # slots whose chunk the record doesn't list
 80054378 chunk_stream_trigger       # (record): kind-0 0x4D078F23 entered
+8005439C chunk_stream               # trigger 0x4D078F23: load a TSP chunk into a slot
 80054498 tsp_dyn_apply              # writes a dynamic block's current frame into the faces
 80054554 tsp_dyn_clear
 800545D8 tsp_dyn_parse              # TSP dynamic blocks -> slot table (0x288 per slot)
@@ -152,9 +165,17 @@
 8005F068 alarm_from_level           # level_set(4, id)
 8005F28C text_add                   # (text, x, y, scale, r, g, b, ticks, id, ...): 32-byte entries at 0x80099F4C, at most 50
 8005F69C texts_update               # on-screen texts: lifetime, colour fade
+8005FEA0 floor_pick                 # the leaf's triangles: nearest floor, steps of up to 32
+80060034 floor_leaf                 # k-d descent to the leaf; its zone id
+80060138 floor_in_chunk             # + the steep-slope flag
+8006028C floor_search               # over the chunks holding the point
+80060474 floor_find                 # (entity, normal out): the floor height under it; zone id -> +0x390
+800611D0 ladder_think               # player in range: inv+0x70 = top
+80061244 ladder_spawn               # type 0x4C: radius and top from the trigger record
 80061350 spawn_by_type              # (record, spawner): by spawner+0xFC
 800616E4 game_frame                 # input, then per tick: entities_update, entities_collide, texts_update; then draw
 8006210C level_end_carry            # inventory -> weapon table ammo -> g_level_end
+80062298 level_exit                 # (reason): g_level_exit, level_end_carry when finished
 80062358 clear_colour_set           # g_level+0xCE..+0xD0 -> draw environments (unless +0xA0)
 800625BC start_handler              # pause
 80064374 level_entry                # LEVEL.BIN entry point
@@ -180,6 +201,7 @@
 8006D2E4 model_draw                 # place + render; sets +0x298 (drawn once)
 8006D670 brain_alloc                # 0x124 bytes
 8006D6F0 spawn_from_model           # (model, template): spawn_by_type, then the model's script +0x94
+800719C0 explosion_spawn            # type 0x31: fireball hit parts, camera shake, noise
 80072310 enemy_puffs_draw
 80072704 enemy_puffs_update         # weapon block +0x3E8: 5 rising, fading puffs (smoke, inferred)
 800729C0 enemy_drops_draw
@@ -198,6 +220,10 @@
 80075FB4 role_axis                  # (port, role, ?)
 80076008 role_axis_alt              # (port, role_axis_of, role_cfg, ?): pitch from the forward stick
 800760AC look_mode                  # (port): 0x8009E3A0[port], 0 spring, 1 free, 2 free when aiming
+80078BCC capsule_plane_dist
+80078C4C wall_push                  # push a walker out of a plane, horizontally (the PsyQ match "UserFuncExecute" is wrong)
+80078D1C wall_first_hit
+80078E2C walls_gather
 80078F60 walker_slide               # walkers vs the level; sorts nearby walls ahead/left/right for the brain
 80079718 player_stand               # crouch off: speeds, eye 240, sphere -100, eye target -240
 800798AC player_crouch_done         # crouch reached: speeds / 4, eye 80, sphere 0
@@ -216,7 +242,9 @@
 8007CF4C throw_weapon
 8007D5C8 fire_gun
 8007DD4C weapon_draw
+8007E034 aim_update                 # crosshair ray -> aim point, aim friction, the gun steered to the crosshair
 8007F084 center_view
+8007F1E0 ladder_climb               # forward input / 2 -> vertical speed, gravity off
 8007F300 player_controls
 80080240 stat_kill                  # (attacker, n)
 80080304 stat_wounded
@@ -228,6 +256,12 @@
 800824D0 model_render               # skeletal models -> 0x80082948 -> skinning
 80082E90 health_pickup_touch        # +13 / +32 / +64, capped at 128
 800830BC ammo_pickup_touch
+80083D30 record_contains            # (pos, ?, record pair): the record's volume: sphere, cylinder, box
+80083EF0 record_enter               # +0x38 / +0x40 message lists, kind 0 by class
+8008406C record_leave               # +0x3C / +0x44
+800840E0 zones_events               # enter/leave by changed bits
+80084400 zones_mask                 # the zone's records the entity is inside: +0x394
+800845A8 zones_update
 800845DC record_use_send            # send a record's +0x4C message list
 80084670 player_use                 # Use: zone records' use messages
 80084718 skeleton_pose              # skin a drawn model: root = inst+0x98, then skeleton_walk
@@ -262,7 +296,9 @@
 8008AB48 music_stop
 8008B3E8 tsp_walk
 8008BF00 tsp_draw
+8008C514 tsp_parse
 8008C718 tsp_load_async             # streaming: slot -> 0x800AA184 until read
+8008C850 tsp_load                   # (path, chunk)
 8008C8F4 tsp_unload
 8008C9F0 pvs_leaf_find              # camera leaf by bbox; returns mask B, ORs mask A
 8008CBE4 pvs_masks                  # over all chunks -> 0x800AA178 / 0x800AA17C
@@ -271,6 +307,7 @@
 8008E354 entity_bone_point          # (entity, bone, out, offset): a point on a bone in the world
 8008E9DC entity_in_view             # bounding sphere against the view (inferred)
 80090B90 present
+80090DE8 g_chunk_collision          # 0x28 bytes per chunk: rect, counts, tree, indices, vertices, normals, faces
 80090FC8 g_keyon_pending
 80090FCC g_pan_phase                # 0..3, positional voices re-panned on 3
 800910D0 g_voice_enabled            # a byte per SPU voice (bit 0: in use)
@@ -285,6 +322,7 @@
 80097FF0 g_enemy_weapons            # 48-byte entries: type, burst timing, sound
 80098620 g_objective_count
 80098624 g_bPrimaryObjectivesComplete
+80098984 g_chunk_count
 80099AB8 g_dyn_frames               # per dynamic group (< 99): current frame, 0xFF unset
 80099B38 g_script_ops               # 74 x {handler, opcode, size}
 8009A5D0 g_ticks_dropped
@@ -318,6 +356,7 @@
 8009EABC g_skin_cursor              # next free skinned vertex (from 0x800AB148)
 8009EC54 g_model_count
 8009EC58 g_models                   # 0x100 bytes each: +0 hash, +0x94 script, +0xB8 scripts, +0xFC entity type
+8009EC5C g_zone_records             # per zone: count byte, u16 record indices
 800A0128 g_music_irq_flag
 800A012C g_music_left               # bytes of the file still to play
 800A0130 g_spu_alloc
@@ -331,38 +370,59 @@
 
 # --- SHELL.BIN ---
 8003BA40 g_kill_required            # 4 words per campaign slot
-8003DC10 leaf_sweep                 # segment vs a leaf's triangles
-8003E3F0 chunk_sweep                # the k-d tree walk of one chunk's collision
-8003EB44 chunk_collision_setup      # TSP collision block -> chunk entry
-80044D18 angles_from_to
-80044E0C gun_points                 # two points on the gun from the model's bones +0xD4/+0xD6
-800451B0 projectile_aim             # start and angles: camera (scoped) or along the barrel; enemies: at the target
-8005439C chunk_stream               # trigger 0x4D078F23: load a TSP chunk into a slot
-8005FEA0 floor_pick                 # the leaf's triangles: nearest floor, steps of up to 32
-80060034 floor_leaf                 # k-d descent to the leaf; its zone id
-80060138 floor_in_chunk             # + the steep-slope flag
-8006028C floor_search               # over the chunks holding the point
-80060474 floor_find                 # (entity, normal out): the floor height under it; zone id -> +0x390
-800611D0 ladder_think               # player in range: inv+0x70 = top
-80061244 ladder_spawn               # type 0x4C: radius and top from the trigger record
+8003D9D8 audio_menu_init
+8003F6EC brief_input                # last page: g_shell_quit
+80043DF0 ctrl_menu_init
+80045610 card_read_file
+80045790 card_write_save            # SC header, title, icon, then the data at +0x200
+800462CC title_to_sjis              # (inference) ASCII save title -> Shift-JIS
+80048658 password_enter
+800486A8 password_find              # strcmp over g_passwords; CAPTAINDYE/URLINGAMBE conditions
+800487B4 pw_dwi_gallery
+80048830 pw_cheat                   # +0xD4 |= 1 << index
+80048850 pw_gallery                 # slot (index-8) mission block +0x90 = 1
+8004889C pw_mission                 # slot (index-20) first level unlocked
+800488F4 pw_mp_character            # +0x78 |= 1 << (index-28)
+80048918 pw_mp_arena                # +0x7C |= 1 << (index-51)
+8004893C pw_all                     # SMPSMDMILK arms, URLINGAMBE runs handlers 0..57
+80048A00 pw_captaindye              # g_game+0x74 = 1
+80049E90 sst_load                   # screen script records -> screens, buttons, sprites
+8004E664 gallery_init
+8004E9D4 gallery_input
+8004FF60 mission_select_input
+80050C38 level_unlocked             # (menu mission 1..7, level 1..): row +0x20
+80050CAC level_best_rating          # (menu mission, level): best rating + 1
+80057FB8 mp_start                   # level_begin(2), quits the shell
+80059030 title_input
+8005FC28 shell_main                 # the overlay's entry
+8005FE04 shell_init                 # picks the first screen from the play mode and the level exit code
+80060B0C game_defaults              # g_game cleared, options' defaults
+80060C7C campaign_init              # g_campaign: 8 slots
+80060D24 shell_exit                 # prints "Shell game settings after shell quits"
+80061F00 new_game                   # progress reset, MSN1 LVL1 unlocked
 80062108 level_begin                # (mode): campaign slot -> mission/level, MSN9's missing LVL3, clears g_level_end
+800622D8 progress_commit            # (advance): record the level's results, unlock/advance
+80062498 campaign_advance
+800625BC carry_to_next_level        # g_level_end ammo + health -> the slot's next level row
 80062694 career_add                 # the level's counters into g_game's career totals
-800719C0 explosion_spawn            # type 0x31: fireball hit parts, camera shake, noise
+800628A4 medals_award
+8006294C mission_rewards            # two-star cheat unlock, gallery, MP characters/arenas
+80062B48 mission_all_two_stars
+80062C6C medals_check
+80065764 save_prepare               # file name, title, percentage
+80066830 video_menu_init
+80067B38 secret_menu_init
+80067C74 secret_menu_input          # toggles g_cheats bits
+80069EE4 medals_screen_init
+8006B664 postmis_input              # save / continue / replay / war room
+8006E380 load_screen_update         # validates "MOH" at 0 and 0x77C, copies 0x780 bytes to g_game
+8006EB8C load_apply
+8007064C dev_level_start            # (inference) level_begin(3)
 8007344C level_rating               # 0..2 stars: objectives, kills, health > 75%
-80078BCC capsule_plane_dist
-80078C4C wall_push                  # push a walker out of a plane, horizontally (the PsyQ match "UserFuncExecute" is wrong)
-80078D1C wall_first_hit
-80078E2C walls_gather
-8007E034 aim_update                 # crosshair ray -> aim point, aim friction, the gun steered to the crosshair
-8007F1E0 ladder_climb               # forward input / 2 -> vertical speed, gravity off
-80083D30 record_contains            # (pos, ?, record pair): the record's volume: sphere, cylinder, box
-80083EF0 record_enter               # +0x38 / +0x40 message lists, kind 0 by class
-8008406C record_leave               # +0x3C / +0x44
-800840E0 zones_events               # enter/leave by changed bits
-80084400 zones_mask                 # the zone's records the entity is inside: +0x394
-800845A8 zones_update
-8008C514 tsp_parse
-8008C850 tsp_load                   # (path, chunk)
-80090DE8 g_chunk_collision          # 0x28 bytes per chunk: rect, counts, tree, indices, vertices, normals, faces
-80098984 g_chunk_count
-8009EC5C g_zone_records             # per zone: count byte, u16 record indices
+80075F20 codename_input
+8007A30C g_save_request             # 0x94 bytes: name, data, size, title, icon pointers
+8007B680 g_passwords                # 61 x {handler, char[12]}
+8007BA68 g_next_screen
+8007BA6C g_screens                  # screen list, linked through +0x80
+8007BFFD g_shell_quit
+8007C004 g_new_rating               # the level's rating, from level_rating
