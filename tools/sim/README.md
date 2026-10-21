@@ -10,6 +10,7 @@ document, now fixed there. They are test tools, written for clarity, not speed.
 | `move_sim.py` | The player's movement: input to velocity, turning, crouch, jump, gravity, floor search, steps, falls, walls, ladders, aim lean | Every tick exact to the 16.16 bit, free-running (20,000+ ticks, plus scripted runs) |
 | `sst_vm.py` | The behaviour-script VM of soldiers and dogs (74 opcodes, channels, events, waits) | 95 of 95 thinks over 51 tick pairs agree with the next tick in every variable and channel |
 | `brain_sim.py` | Enemies' brain and move: seek turns, paths, points, wall steering, root motion, floor | Positions exact in 69,638 of 69,640 enemy ticks (the misses are script inputs not watched) |
+| `level_vm.py` | Level logic: the level-script VM and built-ins, subscriptions and filters, the deferred queue, record state and activation, zones and triggers, objectives | Every frame exact (21,676) in records, variables, subscriptions, the queue, objectives and level end, but two single frames of zone bits |
 | `combat_sim.py` | Poses and hit spheres, the trigger, reloads, shots, spread, bullet flight, hits, damage | Poses exact; hit spheres 99.9 %; which entity and part each bullet hits 96 % exact, 4 % within a sphere's edge |
 
 ## How they are fed

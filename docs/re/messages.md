@@ -24,10 +24,10 @@ the subscriber, as it was when it subscribed; `sender` (+0x8), `actor` (+0xC) an
 
 | Source | How | sender (+0x8) | actor (+0xC) | sender_obj (+0x14) |
 |---|---|---|---|---|
-| A record's player list: enter `+0x38`, leave `+0x3C`, Use `+0x4C` | broadcast (`0x80083DE8`, `0x80083F64`, `record_use_send` `0x800845DC`) | 0 | the player's soldier | the record (its pair) |
+| A record's player list: enter `+0x38`, leave `+0x3C`, Use `+0x4C` | broadcast (`0x80083DE8`, `0x80083F64`, `record_use_send` `0x800845DC`), the list's messages in order; Use goes by the zone bits of the last tick (levels.md, Triggers) | 0 | the player's soldier | the record (its pair) |
 | A record's character list: enter `+0x40`, leave `+0x44` | broadcast (`0x80083E6C`, `0x80083FE8`) | 0 | the character | the record |
 | Level script `send(m)` (built-in 2) | broadcast | the script's entity (0 in record context) | 0 | the script's record (0 in entity context) |
-| Level script `send_to(e, _, m)` (built-in 12) | broadcast, only to subscriptions made for `e`'s record (subscriber object = `e+0x1C`) | as `send` | 0 | as `send` |
+| Level script `send_to(e, _, m)` (built-in 12) | broadcast, only to subscriptions made for `e`'s record (subscriber object = `e+0x1C`); `e` = 0: to everyone | as `send` | 0 | as `send` |
 | Model script op 0x43 `send_event m` (`0x8005C210`) | broadcast | the entity running it | 0 | 0 |
 | Objective pickup taken (`0x800832C0`) | broadcast | the pickup | 0 | 0 |
 | Alarm raised (`op_alarm` `0x8005C710`, `alarm_from_level` `0x8005F068`): 0x2B | broadcast, once per entity spawned from the record named by the alarm's AI node (`+0x2C`) | that entity | 0 | 0 |
@@ -35,20 +35,21 @@ the subscriber, as it was when it subscribed; `sender` (+0x8), `actor` (+0xC) an
 | Engine, direct (`script_run_message`): 0, 1, 2, 0x1A; model script op 0x48 | runs the handler of one script now, no subscription needed | 0 | 0 | 0 |
 
 A broadcast reaches every subscription of that message whose filter passes (levels.md,
-Subscriptions); the handler is queued and runs after the frame is drawn. A direct run executes
-at once, with `self`/`self_obj` given by the caller.
+Subscriptions), newest subscription first; the handler is queued and runs after the frame is
+drawn (usually the same frame; when the frame ends late, at the end of the next one: levels.md).
+A direct run executes at once, with `self`/`self_obj` given by the caller.
 
 ## The engine's messages (fixed in the code)
 
 | Msg | When | To | Context |
 |---|---|---|---|
 | 0 | **Start.** At level start (`level_start` → `0x80075210`), for every record of kind 1..6, after the states are cleared (`0x80075684`); for the player's soldier; for every entity when it spawns (`0x80074BB8`, `0x80074C54`, `0x80074CE8`) | the record's script `+0x54` (record context: self 0, self_obj the record); the entity's script `+0x64`/`+0x78` (entity context: self the entity, self_obj 0) | direct |
-| 1 | **Hit.** A soldier or character hit by a projectile (types 0x13F0..0x13F9, not flags A 0x4; `enemy_hit_part`); a destructible damaged (`destructible_touch`, after `apply_damage`) | the entity's script | direct, entity context |
-| 2 | **Culled.** An entity with flags A 0x8000 (every soldier; a pickup whose record has `+0x58` bit 0) that has been drawn once and then stayed off screen, not near the player (`0x8006A3BC`), for `+0x294` drawn frames (soldiers: record `+0x68`, 150; pickups `+0x5E`), counted in `+0x290` (`model_draw` → `0x8006A570`), is removed by `entities_draw`; first its record gets 2 | the record's script | direct, record context |
-| 0x1A | **Removed.** Any entity spawned from a record of kind 1..6 being freed (`0x800665FC`, from the soldier, dog and generic destructors): dead, culled or `remove_entity`. Its subscriptions are dropped right after | the entity's script | direct, entity context |
+| 1 | **Hit.** A soldier or character hit by a projectile (types 0x13F0..0x13F9, not flags A 0x4; `enemy_hit_part`), once per hit, also for the hit that kills (the 10% rule's second `apply_damage` of the same hit sends no second one); a destructible damaged (`destructible_touch`, after `apply_damage`; type 0x1777 too) | the entity's script | direct, entity context |
+| 2 | **Culled.** An entity with flags A 0x8000 (every soldier; a pickup whose record has `+0x58` bit 0; record-spawned objects of types 0x1770, 0x1776, 0x1777, 0x1778: 240 of the session's 280 culls were objects, 192 of them 2:1's type 0x1777) that has been drawn once and then stayed off screen, not near the player (`0x8006A3BC`), for `+0x294` drawn frames (soldiers: record `+0x68`, 150; pickups `+0x5E`), counted in `+0x290` (`model_draw` → `0x8006A570`), is removed by `entities_draw` during the drawing pass, before the queue runs; first its record gets 2. The test ignores the dead flag: 2:2's r56/r57 (kind 2, type 0x1777, entity script 98) lay dead for about 1100 vblanks, then were culled and their records re-armed. No dead character was culled in the session: all 66 (52 soldiers, 14 dogs) were removed outside the drawing pass with no message 2, which the record states and subscriptions show | the record's script | direct, record context |
+| 0x1A | **Removed.** Any entity spawned from a record of kind 1..6 being freed (`0x800665FC`, from the soldier, dog and generic destructors): dead, culled, picked up or `remove_entity`. By then `entity_remove` has updated the record's state bits (levels.md), so the handler sees bit 0 clear. Its subscriptions, and every node whose filter entity it is, are dropped right after | the entity's script | direct, entity context |
 | 0x2B | **Alarm** raised (above) | subscribers (scripts 133: filter 3, its own entity) | broadcast |
 | 0x2F, 0x30, 0x31, 0x69, 0x6A | **Objective pickup** taken: pickup kinds 15..19 (records of kind 4 whose `+0x60` is 0x25C50BD4, 0x933987E0, 0x96593A51, 0x4A5B62D4, 0xD352336E); then the pickup is removed. On the disc: 2:1 (0x2F, 0x30), 2:2 (0x30), 3:1 (0x2F, 0x30, 0x31) | the player's script 13, the objective scripts | broadcast |
-| 0x59 | **Timer**: every 20 vblanks (`g_vblank_timer` ≥ 10: subtract 20), 3 per second; the scripts count it for delays | subscribers | broadcast |
+| 0x59 | **Timer**: every 20 vblanks (`g_vblank_timer` ≥ 10: subtract 20), 3 per second, at most one per tick, at the end of the tick after the collisions; a pause resets the counter; the scripts count it for delays | subscribers | broadcast |
 
 Model scripts send (op 0x43, literal operands only on the disc): 0x1B (every level's soldier
 set), 4, 0x1E, 0x33, 0x75 (the papers soldiers of 2:1, 2:2, 3:1), 0x74 (9:4). Op 0x48 (run a
@@ -151,6 +152,19 @@ or model script of the 24 levels.
 - **The level ends** by 0x8D (`level_set(3, 1)`), which the exit volume sends whatever the
   objectives: 0x8C, a larger volume around it, only decides whether the primary objectives
   count as complete (the rating, levels.md).
+
+## Checked against a reimplementation
+
+`tools/sim/level_vm.py` (levels.md, Level logic) drives a reimplementation of the level logic
+with the engine's own messages as this document lists them (0 at start and spawn, 1 per hit, 2
+on a cull, 0x1A on every removal, 0x2B on an alarm, 0x59 from the counter, the objective
+pickups, the zones' enter/leave/Use lists from the player's and the soldiers' positions) and
+compares the 128-entry queue with the original's at every frame of 1:3, 2:1 and 2:2: every
+queued context (code address, subscriber, sender, actor, objects, message, script) and the
+ring indices agree on all 21 676 frames. The messages model scripts send (op 0x43: 0x1B, 4,
+0x33, 0x75 in the session; 34 contexts) are taken from the ring as the engine's input. Two
+things the session showed that weren't in this document: the cull also takes dead objects (2
+above), and the queue isn't always drained by the end of a frame (157 frames, levels.md).
 
 ## Names
 

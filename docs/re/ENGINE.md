@@ -102,7 +102,7 @@ HUD shows.
 ## Checking an engine against the original
 
 `tools/sim/` holds reference reimplementations of the player's movement, the enemies' scripts
-and movement, and combat, written from these documents and checked against the original tick by
+and movement, combat and the level logic, written from these documents and checked against the original tick by
 tick (tools/sim/README.md): the shortest exact statement of each system, and proof the
 documents suffice.
 

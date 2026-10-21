@@ -49,12 +49,14 @@ at vblanks 8000..50000, which hold only 0, 1 and 2):
 
 | Bit | Set | Cleared |
 |---|---|---|
-| 0 (1) | the record has a live entity: `record_activate` (`0x80052D70`), the spawners (`0x80074BB8`, `0x80074C54`, `0x80074CE8`) | `entity_remove` (`0x8006B8F0`), whatever the cause |
-| 1 (2) | its entity **died**: `entity_remove` of an entity with flags A 0x20000000 (dead), for kinds 2, 3 and 6, unless the record's `+0x30` bit 3 (property 17) is set; also the soldier destructor (`0x80056290`) | level start (`records_clear_state` `0x80075684` clears both bits) |
+| 0 (1) | the record has a live entity: `record_activate` (`0x80052D70`, set before the spawn is tried, so it stays set while the spawn waits in the spawn queue), the spawners (`0x80074BB8`, `0x80074C54`, `0x80074CE8`); a ladder (kind 0) when its entity is made (Triggers) | `entity_remove` (`0x8006B8F0`), whatever the cause |
+| 1 (2) | its entity **died**: `entity_remove` of an entity with flags A 0x20000000 (dead), for kinds 2, 3 and 6, unless the record's `+0x30` bit 3 (property 17) is set; and the soldier destructor (`enemy_destroy` `0x80056290`, type 0x1402 only, not the dog's `0x80054D78`) sets it for any dead soldier **whatever `+0x30` bit 3 says** (2:1's r25 has `+0x30` = 0xF and went to 2 when its soldier died) | level start (`records_clear_state` `0x80075684` clears both bits) |
 
 So 0 = not spawned (or culled and free to spawn again), 1 = alive, 2 = killed (3 never lasts:
 the removal clears bit 0 as it sets bit 1). `record_activate` tests bit 0 only: a killed
 record can be activated again; the scripts decide (the model scripts' op 0x34 reads bit 1).
+Every state word of the three levels of the recorded session follows these rules frame by frame
+(`tools/sim/level_vm.py`, Level logic below).
 
 Every record starts with:
 
@@ -184,7 +186,7 @@ behaviour script (+0x94), and message 0 runs its entity script.
 | 0x1774 | `0x800905C0` | `0x8008FDF8` | A large object with a sub-object and two parameter blocks (a vehicle?) |
 | 0x1775 | `0x8005E510` | scripts | Scripted, a collision box, nothing collides with it |
 | 0x1776 | `0x8005E648` | scripts | Scripted and solid, with hit parts (5 in 2:1: doors?) |
-| 0x1777, 0x1779, 0x177A, others | `0x8005E7B0` | (none) | Inert; 0x1779 a box, the rest solid like 0x1770 (bullets ignore 0x1777) |
+| 0x1777, 0x1779, 0x177A, others | `0x8005E7B0` | (none) | Inert; 0x1779 a box, the rest solid like 0x1770. Bullets fly on through 0x1777 but its touch handler takes their damage (combat.md), and its script gets message 1: 1:3's r49 (kind 6, script 84) was shot at vblank 6501 and removed itself |
 
 Live types seen besides these: 1 the player's soldier, 2 the camera, 3, 0x31 (explosions),
 0x4C the ladder (Triggers), 0x65 pickups.
@@ -245,6 +247,23 @@ an existing filter-0 node of the subscriber is turned into the new one. **unregi
 the same way and removes the subscriber's matching nodes (filter 0: all of them for that
 message). All of an entity's nodes are dropped when it is removed (`0x800665FC`).
 
+The details an engine needs to get the same lists in the same order (read in `msg_register`
+`0x8006692C`, `msg_unregister`, the pool `0x80066894`/`0x80066918`, and reproduced node for node,
+addresses included, by `level_vm.py`):
+
+- A node belongs to the subscriber when its entity handle is the subscriber's entity **or** its
+  object is the subscriber's object.
+- "Identical" compares the filter and its values only (filters 1, 2: `+0x14`; 3, 4: the filter
+  entity or the filter object; 5: `+0x14` and the entity or the object), **not the handler**: a
+  second handler of the same message with the same filter is silently not subscribed.
+- New nodes are put at the **head** of the message's list, and sending walks the list from the
+  head, so the newest subscription's context is queued first.
+- The pool is a free list (LIFO): `msg_lists_init` (`0x80066790`, level start) chains the 1024
+  nodes in address order; a freed node is pushed on the front and is the next one taken.
+- Removal (`0x800665FC`) drops every node whose subscriber entity **or filter entity** (`+0xC`)
+  is the removed entity; message 0x1A is run first, and only if the entity's record is not of
+  kind 0.
+
 **Sending** (`msg_send(id, sender entity, sender object, actor, target)`) walks the id's list
 and queues a context for every node whose filter passes and, when a target is given, whose
 subscriber object is the target:
@@ -267,6 +286,22 @@ removed gets none. **Direct runs** (`script_run_message(entity, object, message)
 `0x800664A0`) find the handler for the message in the script and run it at once with
 sender, actor and sender object 0. What each source puts in the context: messages.md.
 
+More precisely (`msg_enqueue` `0x800670E8`, `0x8006A204`):
+
+- The ring holds 127 contexts: a send is dropped when the write index would reach the read
+  index.
+- When queuing, a subscriber entity flagged as being removed (flags A 0x80000) gets nothing; a
+  sender or actor being removed is stored as 0.
+- "Still subscribed" means: the subscriber (its entity if the handle is alive, else its object;
+  neither: no) has **any** node for that message, not necessarily the one that queued it; a
+  context of message 0 always runs.
+- **The queue is not always drained.** After the drawing pass the game runs one message, then
+  runs the queue and the spawn retries over and over until the vblank comes (objects.md); a
+  frame that ends late leaves the rest, which runs at the end of the next frame after that
+  frame's own sends. In the recorded session that happened at the end of 8 of 1:3's 7223 frames,
+  97 of 2:1's 8005 and 52 of 2:2's 6448 (the read index at each frame shows how many ran). An
+  engine that drains the queue after every tick differs only in those frames, by one frame.
+
 ### The VM
 
 `level_vm` (`0x800672E0`): byte opcodes over a stack of 8-byte {type, value} entries
@@ -281,15 +316,15 @@ disassembles the scripts (folded into statements by default; `--check` verifies 
 | 00 | | nop |
 | 01 | | pop |
 | 02 | value (below) | push |
-| 03 | F0..F3 variable | store the top into a variable, pop |
+| 03 | F0..F3 variable | store the top into a variable, pop. Whole byte (selector 9): the value's low byte for types 0x0A/0x0B, the float converted for 0x0E, nothing for other types; a bit (1..8): set if the value is non-zero, else cleared |
 | 04..0F | | binary: **T op N**, T the top (pushed last), N the one below; push the result. 04 ==, 05 &&, 06 \|\|, 08 <, 09 >, 0A <=, 0B >=, 0C +, 0D −, 0E ×, 0F ÷ (read from the integer paths: 08 `slt T, N`, 0D `T - N`, 0F `T / N`). So `ent[0] - 1` pushes 1 then `ent[0]` |
 | 07 | | ! |
 | 10 | u16 (aligned) | pop; jump if zero |
 | 11 | u16 (aligned) | jump |
 | 12 / 13 | u8 / u16 (aligned) | call built-in |
 | 14 | | end |
-| 15 | | push the once-flag (byte 0 of the script's variables) |
-| 16 | | set the once-flag |
+| 15 | | push 1 if the once-flag (byte 0 of the script's variables) is still 0, else 0 (lvs.py's `first_run`) |
+| 16 | | set the once-flag to 1. The flag is the script's, shared by every record and entity running it |
 | 17 | type, value | debug print |
 | others | | "Invalid Opcode", end the script |
 
@@ -329,8 +364,8 @@ arguments in push order, as lvs.py prints them; the routines are named in messag
 | 9 | has_tag | 3 → 1 | (entity, object, value): the record has a tag whose **low byte** is the value |
 | 10 | tags_match | 5 → 1 | two records share a tag of a type (filter 5's test) |
 | 11 | set_home | 2 | the entity's home (`+0x3A4`) from another entity or a record |
-| 12 | send_to | 3 | (target entity, unused, message): broadcast, to subscriptions whose object is the target's record |
-| 13 | level_set | 2 | (what, value): 0 fog near, 1 start the music, 2 primary objectives complete (`g_bPrimaryObjectivesComplete`), 3 end the level (`0x8009C840` \|= 0x24), 4 raise an alarm, or end the one sounding (`alarm_from_level`, `0x8005F068`; audio.md). 5 (used with 1..3 next to texts): **no-op**, there is no case 5 |
+| 12 | send_to | 3 | (target entity, unused, message): broadcast, to subscriptions whose object is the target's record; a target of 0 makes it a plain broadcast |
+| 13 | level_set | 2 | (what, value; the value taken as s16): 0 fog near, 1 start the music, 2 primary objectives complete (`g_bPrimaryObjectivesComplete`), 3 end the level (`0x8009C840` \|= 0x24), 4 raise an alarm, or end the one sounding (`alarm_from_level`, `0x8005F068`; audio.md). 5 (used with 1..3 next to texts): **no-op**, there is no case 5 |
 | 14..17 | objective_add / remove / complete / is_complete | 2, 1, 1, 1 → 1 | (text, id), (id), (id), (id) |
 | 18 | world_anim_step | 1 | step the animated world textures of that group (modes: once, random, loop, reverse) |
 | 19 | sound | 7 (→ 1) | (..., mode): pushes a handle when the mode is 3 (audio.md) |
@@ -366,8 +401,10 @@ on msg 8D:
     level_set(3, 1)               # the level ends
 ```
 
-**Objectives** (`objective_add`, `0x8005372C`: adds, or resets to incomplete; the text from the
-message table `0x80098188`; `objective_remove` `0x8005380C`, `objective_complete`
+**Objectives** (`objective_add`, `0x8005372C`: adds at the end, or for a known id resets it to
+incomplete with the new text in place; the text from the message table `0x80098188`;
+`objective_remove` `0x8005380C` moves the last entry into the removed one's place, and for an
+unknown id still drops the last entry (the count can even go to -1); `objective_complete`
 `0x800538B0`, `objective_is_complete` `0x8005394C`, 1 for an unknown id): ids at `0x8009892C`,
 done flags at `0x800988DC`, texts at `0x80098904`, count at `0x80098620`;
 `g_bPrimaryObjectivesComplete` (`0x80098624`) is what `level_end_carry` and the rating check.
@@ -375,6 +412,39 @@ done flags at `0x800988DC`, texts at `0x80098904`, count at `0x80098620`;
 `texts_update` (`0x8005F69C`), run every tick after the collisions, ages the on-screen texts:
 32-byte entries at `0x80099F4C` (count `0x80099ED0`, at most 50) with a lifetime and a colour
 fade, added by `text_add` (`0x8005F28C`).
+
+### Level start
+
+`level_start` (`0x80061E14`), in this order: every entity but type 8 removed; the message
+system reset (`0x80066290`, then `0x80066108`: empty lists, the node pool chained afresh, the
+queue emptied, the built-in table filled); the spawn queue cleared (`0x80074EA8`); the
+objective count set to 0 (the arrays keep stale entries); the player's soldier gets message 0
+(its script 13, entity context); every record's state bits cleared; message 0 to every record
+of kind 1..6 in table order (`0x80075208`, record context: the objective script, script 38's
+start activations...). Nothing resets the records' variable bytes (`+0x20..+0x27`) or the
+scripts' own bytes: they come from the BSD as loaded. A restart after a death
+(`level_restart` `0x800624AC`, `level_main` `0x800640B4`) runs `level_start` without reloading
+the BSD, so they keep what the scripts wrote (read from the code; the session has no death).
+
+### Checked against a reimplementation
+
+`tools/sim/level_vm.py` reimplements this section, the record states and spawning, the
+triggers and the objectives from these documents, and compares the original's memory with its
+own at every frame of the recorded session's three levels (1:3, 2:1, 2:2; 21 676 frames, one
+`VALOR_WATCH` replay and one dump before and one inside each level). It owns the VM and the
+built-ins, the node pool, sending and the filters, the queue, the record states and variables,
+activation and the spawn queue, the zone bits and the enter/leave/Use lists, kind-0 records,
+objectives and `level_set`; it takes as the engine's events the trace's positions and entity
+list, the zone under each walker (`+0x390`), the pad (Use), the hits (`VALOR_TRACE_DAMAGE`),
+removals (dead, culled, picked up), the 1/3-second counter, alarms and the messages model
+scripts send (op 0x43, recognised in the ring), and where each spawn lands. Exact on every
+frame: every record's state word and variable bytes, every script's own bytes, every
+subscription list (node addresses included), the queued contexts and the ring indices, the
+objectives (ids, texts, flags, count, the primary flag), the level-end flags, the spawn queue,
+the player's and the character slots' variables, and the variables of every record-spawned
+entity in the dumps inside the levels. The only differences are two single frames of zone bits
+(below, Triggers). `set_flags` is not compared: it sets event bits (`+0x40`) that the entity's
+model script consumes in its next think, so a once-per-frame watch never sees them.
 
 ## Objectives by level
 
@@ -468,24 +538,54 @@ sizes `+0x2A`, `+0x2C`, `+0x2E` (x, y, z) turned by the record's angles `+0x18..
 (`0x80083AB8`).
 
 Each floor **zone** (the k-d leaf's id, Collision) lists the records whose volumes reach into
-it (`[0x8009EC5C]`: per zone a byte count, then u16 indices into the level's record table).
-Every tick, the player and the walkers (`zones_update`, `0x800845A8` → `0x80084400`, from
-`entity_move`) test their position against their zone's records: the zone in `+0x390`, a bit per record in
-`+0x394`, last tick's in `+0x398` and `+0x39C`; every bit that changes is an **enter** or a
-**leave** (`0x800840E0`):
+it (`[0x8009EC5C]`: per zone a pointer to a byte holding **255 minus the count**, then from +2
+the u16 indices into the level's record table, sorted). Every tick, the player and the walkers
+test their position against their zone's records (`zones_update`, `0x800845A8` →
+`zones_mask` `0x80084400`, called by `entities_update` right after `entity_move` for entities
+with flags A & 5, and doing anything only with flags A & 0x51): the zone in `+0x390`, a bit per
+entry of the zone's list in `+0x394` (bit k = the k-th index), last tick's zone and bits in
+`+0x398` and `+0x39C`; every bit that changes is an **enter** or a **leave** (`zones_events`
+`0x800840E0`). The position is the integer part (`+0x20E`, `+0x212`, `+0x216`) after the move.
+Which records are tested: for the player, kind-0 records and records with an enter, leave or
+Use list; for a character, records of kind 1..6 with a character enter or leave list.
+
+When the zone is the same as last tick, every changed bit is reported (leaves first, then
+enters). When it changed, `zones_events` walks the old and the new zone's sorted lists
+together and reports a change only for a record **in both lists**; a record in one list only
+is skipped while both lists still have entries, and only the tail of the longer list is
+reported (leaves for the old list's tail, enters for the new one's). So stepping into a volume
+at the very tick the floor zone changes, when that record is not in the old zone's list and
+sorts before the end of it, sends no enter at all (the bit is set, so no later tick sends it
+either); likewise a leave. Read in the disassembly (`0x800842B4..0x80084344`); 2:1 has five such
+skipped changes, none with a subscriber, so the session can't tell them apart.
 
 | | Enter | Leave |
 |---|---|---|
 | The player (flags A 1) | send each message of the list at `+0x38` (a count, then the messages: `send_event(message, 0, record, entity)`) | the list at `+0x3C` |
 | Characters (flags A 0x50) | `+0x40` | `+0x44` |
-| The player pressing Use (`zone_use` `0x80084670` → `record_use_send`) | the list at `+0x4C` of every record it is inside | |
-| Kind-0 records (the player; `record_enter_kind0` `0x80074E10`, `0x80074DC4`) | by class: 0x4D078F23 **streams the world** (`0x80054378` → `0x8005439C`: the record says which TSP chunk to load into which slot, replacing the one there), 0x3011B913 a **ladder** (an entity of type 0x4C, below), 0xD1BA7D1E would end the level (`0x8009C840` \|= 0x24) and 0x271BD574 does nothing, but no record on the disc has either class | 0x3011B913: `0x80061518(0x8877B646)`, which releases the ladder held in `0x8009A5B8` (`0x8006149C`; inferred); nothing is spawned |
+| The player pressing Use (`player_use` `0x80084670`, from `player_update` on action 5 pressed, and from the mounted gun's touch → `record_use_send`) | the list at `+0x4C` of every record of kind 1..6 whose bit is set in `+0x394`: the bits of the last zone update, since the think that reads the pad runs before the move | |
+| Kind-0 records (the player; `record_enter_kind0` `0x80074E10`, `0x80074DC4`) | by class: 0x4D078F23 **streams the world** (`0x80054378` → `0x8005439C`: the record says which TSP chunk to load into which slot, replacing the one there), 0x3011B913 a **ladder** (`record_spawn_type(0x4C)`: an entity of type 0x4C, below, only while the record's bit 0 is clear), 0xD1BA7D1E would end the level (`0x8009C840` \|= 0x24) and 0x271BD574 does nothing, but no record on the disc has either class | 0x3011B913: the ladder is **held** (below); nothing is spawned |
 
-**Ladders**: the ladder entity (type 0x4C, `0x80061244`; one at a time) holds the record's
+**Ladders**: the ladder entity (type 0x4C, `ladder_spawn` `0x80061244`) holds the record's
 radius (`+0x2A`) and top (its y less `+0x2C`). While the player is within the radius and
 below the top, its think (`0x800611D0`) sets the player's `inv+0x70` to the top, and the
 controls climb (`0x8007F1E0`): gravity off, half the forward input as vertical speed, up to
-the top or down to the floor.
+the top or down to the floor. Leaving a ladder's volume does not remove it:
+`0x80074DC4` calls `0x80061518(pair)`, which **holds** that ladder in `0x8009A5B8`, first
+releasing the one held before if it is another (`0x8006149C`: removes the entity whose `+0x1C`
+is the held record, if that record's bit 0 is set, which clears the bit). `ladder_spawn` forgets
+the held ladder if it is the one being made, else releases it. So a ladder stays up until the
+player has left it and then enters (or leaves) another; re-entering a ladder whose entity
+stays makes nothing. Checked on the session: 1:3's one ladder r1 keeps state 1 from its first
+climb to the level's end; in 2:1 r1's bit drops at vblank 23190, the frame r6's ladder is made.
+
+**Two frames differ** in the session, each one tick: the player's bit for 2:1's streaming record r85
+at vblank 29305 (inside it at his traced position, outside for the game) and a soldier's bit for
+2:2's r75 at 53679 (outside at his traced position, inside for the game until a tick later;
+r75 has no character leave list).
+The trace's position is the one at the end of the tick; what moves an entity after
+`zones_update` in those two ticks (the world-contact handler, root motion) was not found.
+Nothing downstream changed.
 
 Only records with lists (or kind 0) are tested. The messages these lists send, and what they
 hold in the handler's context (the record as sender object, the entering entity as actor):
@@ -605,6 +705,9 @@ same gathering also sorts the walls ahead/left/right for steering (enemies.md).
 - Record `+0x50` (a sixth relocated list offset, read by nothing found); the record fields
   behind properties 21, 24, 25, 27, 28 and soldiers' 33..37, 40.
 - `0x8006A3BC`, the "near the player" test that stops the cull countdown (message 2).
+- The Use button: action 5's mask in the action table (`0x800B7790`) is 0x80, but in the
+  recorded session's pad word (`0x80093B7C`) every Use the queue proves shows as 0x08, and 0x80
+  never appears (`level_vm.py` reads Use from 0x08).
 - Effects of most `set_flags` bits on soldiers (`s40`, soldier.md) and on doors and switches
   (their model scripts).
 - The BSD header's +0x544..+0x588 sections and the TAF files (formats.md).
