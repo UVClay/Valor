@@ -11,6 +11,9 @@ combat, enemies, levels. Each document says how its claims were checked.
 | [enemies.md](enemies.md) | Scripts (the bytecode VM), variables and sensors, the brain, firing and aim error |
 | [soldier.md](soldier.md) | The enemy soldier's behaviour scripts read into plain behaviour: alerting, combat, cover, grenades, alarms, 2:1's disguise |
 | [levels.md](levels.md) | Level files, the level header, entity records, spawners |
+| [animation.md](animation.md) | Skeletons, animation frames, playback and blending, root motion, hit spheres from the pose |
+| [movement.md](movement.md) | The player's movement and camera: speeds, crouch, jump, steps and falls, turning, aim mode, use, death |
+| [formats.md](formats.md) | Every file type on the disc (BSD, TSP, TAF, VB, RSC, TIM, STR) and what a new engine needs to load a level |
 
 `names.txt` holds every named address (functions and data), read by the tools, with the PsyQ
 library names in `build/syms` (from the setup tools) as a fallback.
