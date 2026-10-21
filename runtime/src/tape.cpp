@@ -46,7 +46,8 @@ struct Track { std::vector<Event> events; size_t next = 0; };
 Track buttons, sticks, movement, turn, pitch, presents, looks, analog, hashes;
 uint64_t last_frame;
 bool diverged;
-int version = 2;  // replay: the recording's tape version
+int version = 2;        // replay: the recording's tape version
+bool old_copies;        // replay: drawing copies as before 2026-10-20 (tape_copies_touch_devices)
 
 std::filesystem::path record_dir;
 FILE *log_file;
@@ -145,7 +146,7 @@ void copy_card(const std::filesystem::path &from, const std::filesystem::path &t
 
 bool tape_recording() { return mode == RECORD; }
 bool tape_replaying() { return mode == REPLAY; }
-bool tape_copies_touch_devices() { return mode == REPLAY && version < 2; }
+bool tape_copies_touch_devices() { return mode == REPLAY && old_copies; }
 
 void tape_record(const std::filesystem::path &dir) {
     std::filesystem::create_directories(dir);
@@ -230,9 +231,14 @@ void tape_replay(const std::filesystem::path &dir) {
     mode = REPLAY;
     log("replay: %s, vblanks to %llu, %zu frames presented", dir.c_str(), (unsigned long long)last_frame,
         presents.events.size());
-    if (version < 2)
-        log("replay: a version %d recording: drawing copies use the devices as they did then (it holds only "
-            "with a display, which draws them)", version);
+    // Version 1 tapes: every one known was recorded before copies were kept off the devices
+    // (9629c58, 2026-10-20); none were recorded between that and version 2. VALOR_REPLAY_OLD_COPIES=0/1
+    // decides for a tape that isn't so.
+    const char *force = getenv("VALOR_REPLAY_OLD_COPIES");
+    old_copies = force ? atoi(force) != 0 : version < 2;
+    if (old_copies)
+        log("replay: a recording made before 2026-10-20: drawing copies use the devices as they did then (it "
+            "holds only with a display, which draws them)");
 }
 
 void tape_window(int w, int h) {
