@@ -118,6 +118,8 @@ public:
     I run_one();        // msg_run_one
     I run_queue_all();  // msg_run_all (0x800663B8)
     bool spawn_retry_one();
+    void spq_sync();
+    void spq_push(U pair);
     bool spawn_retry();
     void run_message(Ent* ent, I obj, I msg, const std::string& why = "");
     void msg_start(Ent* ent, I obj) { run_message(ent, obj, 0, "start"); }

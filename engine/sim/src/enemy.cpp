@@ -20,6 +20,12 @@ U pose_pool(int i) { return U(0x800C4378 + i * 0x1308); }
 
 I cdiv0(I a, I b) { return b == 0 ? 0 : cdiv(a, b); }
 
+constexpr U G_CHARS_IN_USE = 0x800AB8C8;     // max of the two below: enemy_spawn refuses at 4
+constexpr U G_CHAR_SLOTS_USED = 0x800AB8CC;  // only lowered (char_release with countdown 0)
+constexpr U G_POSES_USED = 0x800AB8D0;       // pose buffers in use
+
+void chars_in_use(Mem& m) { m.w32(G_CHARS_IN_USE, imax(m.s32(G_CHAR_SLOTS_USED), m.s32(G_POSES_USED))); }
+
 int char_alloc(Engine& eng, U& a) {
     Mem& m = eng.m;
     for (int i = 0; i < 5; i++) {
@@ -28,10 +34,46 @@ int char_alloc(Engine& eng, U& a) {
             m.zero(a, 0x280C);
             m.w32(a + 0x280C, -0x43);
             m.w32(a + 0x2810, 0);
+            chars_in_use(m);
             return i;
         }
     }
     return -1;
+}
+
+// 0x8008ED30, from model_instance_init for a character model with bones: the first free pose
+// buffer of five, zeroed; the count of those in use + 1.
+U pose_alloc(Engine& eng) {
+    Mem& m = eng.m;
+    for (int i = 0; i < 5; i++) {
+        U a = pose_pool(i);
+        if (m.u32(a + 0x1304)) {
+            m.w32(a + 0x1300, -0x43);
+            m.w32(a + 0x1304, 0);
+            m.zero(a, 0x1300);
+            m.w32(G_POSES_USED, m.s32(G_POSES_USED) + 1);
+            chars_in_use(m);
+            return a;
+        }
+    }
+    return 0;
+}
+
+// func_8006B234(instance, entity, 2) for a character -> 0x8008ECA0: the pose buffer's countdown 2.
+void pose_release(Engine& eng, U inst) {
+    Mem& m = eng.m;
+    U buf = U(m.u32(inst));
+    for (int i = 0; i < 5; i++)
+        if (pose_pool(i) == buf) {
+            m.w32(buf + 0x1300, 2);
+            return;
+        }
+}
+
+I nbones(Mem& m, U model) {
+    U tbl = U(m.u32(model + 8));
+    U first = tbl ? U(m.u32(tbl + 4)) : 0;
+    return first ? m.u8(first + 1) : 0;
 }
 
 void char_instance_init(Engine& eng, U e, U inst, U model, U pool) {
@@ -91,7 +133,7 @@ U character_create(Engine& eng, U model, I channels) {
         p += U(0x3C * channels);
     }
     m.w32(a + 0x1EC, channels);
-    char_instance_init(eng, a, inst, model, pose_pool(i));
+    char_instance_init(eng, a, inst, model, nbones(m, model) ? pose_alloc(eng) : 0);
     return a;
 }
 
@@ -301,15 +343,34 @@ void scripts(Engine& eng, U e, I hv) {
 
 }  // namespace
 
+// char_pool_update (0x8008EAC8), at the start of every frame: per index, the character slot then
+// the pose buffer, each in use counted down when positive and freed at 0.
 void char_pool_update(Engine& eng) {
     Mem& m = eng.m;
     for (int i = 0; i < 5; i++) {
-        U a = char_slot(i);
-        I c = m.s32(a + 0x280C);
-        if (c > 0) {
-            c--;
-            m.w32(a + 0x280C, c);
-            if (c == 0) m.w32(a + 0x2810, 1);
+        U a = char_slot(i), q = pose_pool(i);
+        if (!m.u32(a + 0x2810)) {
+            I c = m.s32(a + 0x280C);
+            if (c > 0) {
+                c--;
+                m.w32(a + 0x280C, c);
+            }
+            if (c == 0) {
+                m.w32(a + 0x2810, 1);
+                chars_in_use(m);
+            }
+        }
+        if (!m.u32(q + 0x1304)) {
+            I c = m.s32(q + 0x1300);
+            if (c > 0) {
+                c--;
+                m.w32(q + 0x1300, c);
+            }
+            if (c == 0) {
+                m.w32(G_POSES_USED, m.s32(G_POSES_USED) - 1);
+                chars_in_use(m);
+                m.w32(q + 0x1304, 1);
+            }
         }
     }
 }
@@ -322,8 +383,15 @@ U enemy_spawn(Engine& eng, Record& rec) {
         eng.note("soldier model missing");
         return 0;
     }
-    if (m.s32(G_SOLDIER_CAP) <= 0 || m.s32(G_SOLDIER_COUNT) >= m.s32(G_SOLDIER_CAP)) return 0;
-    if (m.s32(model + 0xFC) == DOG) return dog_spawn(eng, rec, model);
+    I cap = m.s32(G_SOLDIER_CAP), n = m.s32(G_SOLDIER_COUNT);
+    if (m.s32(model + 0xFC) == DOG) {
+        // dog_spawn (0x80054E4C): a cap of 0 or the count at the cap refuses
+        if (cap == 0 || n >= cap) return 0;
+        return dog_spawn(eng, rec, model);
+    }
+    // enemy_spawn (0x800563F0): with a cap above 0 the count at the cap refuses; then 4 or more
+    // characters in use (0x800AB8C8); then a cap of 0
+    if ((cap > 0 && n >= cap) || m.s32(G_CHARS_IN_USE) >= 4 || cap == 0) return 0;
     return soldier_spawn(eng, rec, model, tmpl);
 }
 
@@ -385,7 +453,8 @@ void witness_check(Engine& eng) {
 
 void enemy_destroy(Engine& eng, U e) {
     Mem& m = eng.m;
-    m.w32(G_SOLDIER_COUNT, m.s32(G_SOLDIER_COUNT) - 1);
+    m.w32(G_SOLDIER_COUNT, imax(m.s32(G_SOLDIER_COUNT) - 1, 0));
+    if (m.u32(e + 0x100)) pose_release(eng, U(m.u32(e + 0x100)));
     U b = U(m.u32(e + 0x38C));
     if (b) eng.free(b);
     m.w32(e + 0x280C, 2);
@@ -393,8 +462,9 @@ void enemy_destroy(Engine& eng, U e) {
 
 void dog_destroy(Engine& eng, U e) {
     Mem& m = eng.m;
-    m.w32(G_SOLDIER_COUNT, m.s32(G_SOLDIER_COUNT) - 1);
-    m.w32(G_DOG_COUNT, m.s32(G_DOG_COUNT) - 1);
+    m.w32(G_SOLDIER_COUNT, imax(m.s32(G_SOLDIER_COUNT) - 1, 0));
+    m.w32(G_DOG_COUNT, imax(m.s32(G_DOG_COUNT) - 1, 0));
+    if (m.u32(e + 0x100)) pose_release(eng, U(m.u32(e + 0x100)));
     U b = U(m.u32(e + 0x38C));
     if (b) eng.free(b);
     m.w32(e + 0x280C, 2);

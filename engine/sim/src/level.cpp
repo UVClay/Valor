@@ -148,9 +148,7 @@ void LevelLogic::adopt() {
         queue.push_back(c);
         i = (i + 1) % 128;
     }
-    I n = m_.u32(SPQ_COUNT);
-    spawn_q.clear();
-    for (I k = 0; k < n; k++) spawn_q.push_back(U(m_.u32(SPQ + 4 * ((m_.u32(SPQ_HEAD) + k) % 64))));
+    spq_sync();
     ladder_held = U(m_.u32(0x8009A5B8));
 }
 
@@ -198,8 +196,7 @@ void LevelLogic::record_spawn(U pair) {
     U e = record_spawn_entity(eng_, rec);
     if (!e) {
         stats["spawn refused (queued)"]++;
-        if (spawn_q.size() >= 64) spawn_q.pop_front();
-        spawn_q.push_back(pair);
+        spq_push(pair);
         return;
     }
     eng_.link_front(e);
@@ -505,19 +502,51 @@ void LevelLogic::activate(U pair) {
     record_spawn(pair);
 }
 
+// The spawn queue, in RAM as the original keeps it (levels.md, Spawning).
+void LevelLogic::spq_sync() {
+    I n = m_.u32(SPQ_COUNT), h = m_.u32(SPQ_HEAD);
+    spawn_q.clear();
+    for (I k = 0; k < n; k++) spawn_q.push_back(U(m_.u32(SPQ + 4 * ((h + k) % 64))));
+    spq_head = h;
+}
+
+// spawn_queue_push (0x80074F48): a full ring (64) drops its head; the pair at the tail.
+void LevelLogic::spq_push(U pair) {
+    if (m_.u32(SPQ_COUNT) >= 64) {
+        I h = m_.u32(SPQ_HEAD);
+        m_.w32(SPQ + 4 * h, 0);
+        m_.w32(SPQ_HEAD, h + 1);
+        m_.w32(SPQ_COUNT, m_.u32(SPQ_COUNT) - 1);
+    }
+    I t = m_.u32(SPQ_TAIL);
+    m_.w32(SPQ_COUNT, m_.u32(SPQ_COUNT) + 1);
+    m_.w32(SPQ + 4 * t, pair);
+    m_.w32(SPQ_TAIL, t + 1 < 64 ? t + 1 : t - 0x3F);
+    spq_sync();
+}
+
+// spawn_queue_run_one (0x80074F9C): the head popped (an emptied ring restarts at 0) and spawned,
+// which pushes it back at the tail if refused. True if the ring shrank.
 bool LevelLogic::spawn_retry_one() {
-    if (spawn_q.empty()) return false;
-    size_t n = spawn_q.size();
-    U pair = spawn_q.front();
-    spawn_q.pop_front();
-    spq_head = n == 1 ? 0 : (spq_head + 1) % 64;
+    I n = m_.u32(SPQ_COUNT);
+    if (!n) return false;
+    I h = m_.u32(SPQ_HEAD);
+    U pair = U(m_.u32(SPQ + 4 * h));
+    m_.w32(SPQ + 4 * h, 0);
+    m_.w32(SPQ_HEAD, h + 1 < 64 ? h + 1 : h - 0x3F);
+    m_.w32(SPQ_COUNT, n - 1);
+    if (n - 1 == 0) {
+        m_.w32(SPQ_HEAD, 0);
+        m_.w32(SPQ_TAIL, 0);
+    }
+    spq_sync();
     record_spawn(pair);
-    return spawn_q.size() < n;
+    return m_.u32(SPQ_COUNT) < n;
 }
 
 bool LevelLogic::spawn_retry() {
     bool any_ok = false;
-    while (!spawn_q.empty()) {
+    while (m_.u32(SPQ_COUNT)) {
         if (!spawn_retry_one()) break;
         any_ok = true;
     }

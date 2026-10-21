@@ -189,10 +189,24 @@ bool keep_near(Engine& eng, U e) {
     U cam = U(m.u32(0x8009D638));
     U co = U(m.u32(cam + 0x388));
     I far = m.s32(co + 0xC4) > 0xFFFF ? m.s32(co + 0xC4) >> 16 : m.s32(co + 0xC4);
-    I d[3];
-    for (int k = 0; k < 3; k++) d[k] = iabs(S16((m.s32(e + 0x20C + 4 * k) >> 16) - (m.s32(cam + 0x20C + 4 * k) >> 16)));
+    I dv[3], d[3];
+    for (int k = 0; k < 3; k++) dv[k] = S16(m.s16(e + 0x20E + 4 * k) - m.s16(cam + 0x20E + 4 * k)), d[k] = iabs(dv[k]);
     std::sort(d, d + 3);
-    return d[2] + ((d[0] + d[1]) >> 2) <= far;
+    I t = d[2] + ((d[0] + d[1]) >> 2);
+    // make room: a pickup (flags B 0x40000) at 3501 or more while soldiers >= cap - 1 and a spawn
+    // waits, behind the camera's target: marked drawn and not kept (counted out this pass)
+    if ((m.u32(e + 0x10) & 0x40000) && m.s32(G_SOLDIER_COUNT) >= m.s32(G_SOLDIER_CAP) - 1 && m.u32(0x8009E288) && t >= 0xDAD) {
+        I h = m.u32(co + 0xC);
+        U tgt = h ? U(m.u32(G_HANDLES + 4 * (h & 0xFFFF))) : 0;
+        I dot = 0;
+        for (int k = 0; k < 3; k++) dot += dv[k] * m.s16(tgt + 0x344 + 6 * k);
+        if (S32(dot) < 0) {
+            m.w32(e + 0x298, 1);
+            m.w32(e + 0x290, 1);
+            return false;
+        }
+    }
+    return t <= far;
 }
 
 struct DrawnLog {
@@ -362,8 +376,13 @@ void draw_pass(Engine& eng) {
             m.w32(e + 0x290, m.s32(e + 0x294));
         } else {
             m.w32(e + 0x29C, 0);
-            if (m.u32(e + 0x298) && (fa & 0x01000000))
-                if (!keep_near(eng, e)) m.w32(e + 0x290, m.s32(e + 0x290) - 1);
+            // entity_draw_model: out of view with flag 0x01000000: cull_countdown (0x8006A570),
+            // drawn before or not (the make-room case marks it drawn)
+            if (fa & 0x01000000)
+                if (!keep_near(eng, e)) {
+                    m.w32(e + 0x29C, 0);
+                    m.w32(e + 0x290, m.s32(e + 0x290) - 1);
+                }
         }
         if (d && (*d)[2] != m.s32(e + 0x290) && (fa & 0x8000)) eng.note("out-of-sight counter differs from the original's");
         if ((fa & 0x8000) && m.s32(e + 0x290) <= 0 && m.u32(e + 0x298)) {
