@@ -35,7 +35,7 @@ named. Claims come from the disassembly; where an opcode handler was needed it w
 | 0x10 | The same with the second range (`+0xB2`, 3000) |
 | 0xC | \|angle\| from the soldier's heading to the target (4096 per turn) |
 | 0xF | `0x80056F60(self, player)`: a test of the player's gun line against a radius (`+0x2E8`, or brain `+0xC6`): **the player aims at it** (inferred) |
-| 0x11 | 1 if any free, enabled entry of `g_ai_nodes` (`0x8009115C`) with `+0x28` < 60 lies within sight range (meaning: Open) |
+| 0x11 | **Hearing**: 1 if a sound is playing that the soldier can hear (below) |
 
 - **`lookup3e.VVDD R`** (op 0x3E → `0x800579F4`), a probe: VV the destination, DD a direction
   in the soldier's frame (1: -x, 2: +x, 4: +z, 8: -z; from the moves that follow 4 is forward, 8
@@ -115,9 +115,20 @@ wait 10..30 ticks, look (anim 304), walk on. Detection every v0B ticks → 209. 
 soldiers (bit 2) stand in 21/22: random waits of 30..60 ticks and idle anims, with a 5% chance
 per cycle of 2..6 blind bursts (fire 3, anim 27); 44 every 2 ticks → 19; after 12 cycles → 202.
 
-**Detection (44)** returns v4 = 1 when query 0x11 is 1 (44:16), or when the player's flags B
+**Detection (44)** returns v4 = 1 when the soldier hears a sound (query 0x11, 44:16), or when the player's flags B
 0x400 is clear and either the soldier sees the player within 1500 (query 0xB, 44:30) or the
 player is within 1000 in any direction (v7, 44:39). No skill roll.
+
+**Hearing** (query 0x11, `0x8005A574` around `0x8005A9C4`) goes through the sound system's voice
+table (`g_voices`, `0x8009115C`: the 24 SPU voices, 0x34 bytes each; audio.md). A soldier hears a
+voice when it is enabled, a one-shot (`+0xE` = 0), started less than **60 ticks (2 s)** ago,
+positioned in the world (`+0x0` bits 0..1 clear), not made by the soldier itself (the voice's
+source handle at `+0x4`), and within **brain `+0xB0`** of it (1500 in the dumps; 3000 without a
+brain), measured from the sound's position (`+0x2C`) with `dist_approx`. Any such sound counts,
+the player's shots and other soldiers' alike, so gunfire draws every soldier within range for two
+seconds and alerts spread from soldier to soldier. Checked by reading the code; the voice fields
+are from the sound functions that fill them (`0x80041CE8`, `0x80041FC4`, `0x80042250`) and the
+per-tick update `0x8004137C` that ages `+0x28`.
 
 **Alert (209):** stop. Bit 2 → 17 (bit 20 set: 210). Bit 20 already set → 210. Else set bit 20
 and, with the player within 3000: anim 215, then 10% each one of three shouts (sounds 0xD, 0xE,
@@ -398,7 +409,7 @@ numbers). The stubs are filled and ~100 scripts are inserted: 1:3's 195/196/197 
   0x10000000 → 214..218: v11 a role 0..4, v25 a voice 1..6, vA a starting suspicion, 40 with
   skill > 40). The soldier stands or walks its path (220/221) and every tick classifies the
   player (261): seen with the papers (weapon 7) 1; seen with another weapon 2; seen with player
-  `+0x11E` = 8, 3 or 4; unseen near (query 0x11) 5. Class 2 with the player aiming at it blows
+  `+0x11E` = 8, 3 or 4; a sound heard (query 0x11) 5. Class 2 with the player aiming at it blows
   the disguise with probability skill/200 per check, else vA rises by skill-shaped rolls; classes
   3..5 raise vA (5: blown at once for weapons 1, 2, 3, 6, 10). vA picks the behaviour (262):
   < 10 idle, < 40 watch (235), < 70 approach and ask (242), < 90 inspect close (243), ≥ 90 →
@@ -411,8 +422,6 @@ otherwise match.
 
 ## Open
 
-- What query 0x11 tests (`g_ai_nodes` entries with `+0x28` < 60, `0x8006D8AC`/`0x8006D7D0`):
-  it alerts the soldier in 44 and is "unseen but near" in 2:1's papers scripts.
 - The player's flags B 0x400 (blocks detection, turns Panzerfaust shots into fire 3) and
   `+0x11E` = 8; flags B 0x800 as crouching.
 - Bits 1, 2, 3, 7 of `+0xEC`: who sets them (the level?), and v22 > 200 paths.

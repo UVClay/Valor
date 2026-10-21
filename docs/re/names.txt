@@ -146,8 +146,8 @@
 8008BF00 tsp_draw
 8008D0CC frustum_build
 80090B90 present
-800910D0 g_node_enabled             # a byte per AI node
-8009115C g_ai_nodes                 # 24 x 0x34
+800910D0 g_voice_enabled            # a byte per SPU voice (bit 0: in use)
+8009115C g_voices                   # the 24 SPU voices' state, 0x34 each (audio.md)
 80093640 g_weapons                  # 13 x 0x44 weapon definitions, player.md
 800939F4 g_params                   # "PARAMETER DATA": mission, level, mode, music, sound, ...
 80097FCC g_last_vsync
