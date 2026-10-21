@@ -288,7 +288,9 @@ For each entity, in list order, parents first:
    position = the target's bone `+0x34` (`0x8008DABC`, whole units << 16) and no `entity_move`.
 5. Otherwise, unless flag 0x20000: `entity_move` (`0x8006C83C`), then `world_contact(e, flags)`
    (`+0x378`) if anything was hit; player and walkers also `0x800845A8`.
-6. Brain (`+0x38C`, `brain_update`), `0x8006A76C(e)`, `player_weapon_update` for the player's soldier
+6. Brain (`+0x38C`, `brain_update`), `0x8006A76C(e)` (the matrix `+0x340`: RotMatrixYXZ of the
+   angles, the translation `+0x354..+0x35C` = the integer position, then ScaleMatrix by
+   `+0x270..` >> 4), `player_weapon_update` for the player's soldier
    (flag 1), the bounding box (`entity_bounds`, `0x8004D43C`), and the camera's view for type 2
    (`camera_setup`).
 

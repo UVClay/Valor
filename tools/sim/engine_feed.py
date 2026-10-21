@@ -75,7 +75,8 @@ class Feed:
                 m = ROLE.match(line)
                 if m:
                     tick, port, role, src, val = (int(x) for x in m.groups())
-                    self.roles[(level, tick)][(port, role, src)] = val
+                    # the tick's own poll; paused frames poll again under the same tick number
+                    self.roles[(level, tick)].setdefault((port, role, src), val)
                     continue
                 m = MARK.match(line)
                 if m:
@@ -96,7 +97,7 @@ class Feed:
                     continue
                 m = INPUT.match(line)
                 if m:
-                    self.pad[(level, int(m[2]))] = tuple(int(m[k], 16) for k in range(3, 7))
+                    self.pad.setdefault((level, int(m[2])), tuple(int(m[k], 16) for k in range(3, 7)))
 
     def role_alt(self, level, tick, port, role):
         """role_axis_alt's value (traced as source 2: the role's curve on the move stick)."""

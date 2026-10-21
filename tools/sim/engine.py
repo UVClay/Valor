@@ -617,12 +617,21 @@ class Engine:
             camera_setup(self, e)
 
     def matrix(self, e):
-        """0x8006A76C: +0x340 = RotMatrixYXZ of the angles (enemies.md, The brain)."""
+        """0x8006A76C: +0x340 = RotMatrixYXZ of the angles, the translation +0x354 = the integer
+        position (TransMatrix), then ScaleMatrix by the scale +0x270 >> 4 (each column times its
+        axis' scale >> 12; 1.0 leaves it) (enemies.md, The brain)."""
         import brain_sim as bs
         m = self.m
         rot = bs.rot_yxz(s16(m.s32(e + 0x228) >> 16), s16(m.s32(e + 0x22C) >> 16), s16(m.s32(e + 0x230) >> 16))
-        for k in range(9):
-            m.w16(e + 0x340 + 2 * k, rot[k])
+        sc = [m.s32(e + 0x270 + 4 * k) >> 4 for k in range(3)]
+        for i in range(3):
+            for k in range(3):
+                v = rot[3 * i + k]
+                if sc[k] != 0x1000:
+                    v = s16((v * sc[k]) >> 12)
+                m.w16(e + 0x340 + 6 * i + 2 * k, v)
+        for k in range(3):
+            m.w32(e + 0x354 + 4 * k, m.s16(e + 0x20E + 4 * k))
 
     def zones_use(self, e):
         """player_use (0x80084670): the Use lists of the records whose bits are set."""
