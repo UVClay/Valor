@@ -455,6 +455,7 @@ def move(eng, e):
         m.w32(e + 0x258 + 4 * k, st["pos"][k])
         m.w32(e + 0x264 + 4 * k, m.s32(e + 0x228 + 4 * k))
         m.w32(e + 0x228 + 4 * k, s32(m.s32(e + 0x228 + 4 * k) + m.s32(e + 0x234 + 4 * k)))
+    m.w32(e + 0x220, m.u32(e + 0x200))       # entity_move: the local forward speed = +0x200
     ms.entity_move(eng.world.w, st)
     for k in range(3):
         m.w32(e + 0x20C + 4 * k, st["pos"][k])

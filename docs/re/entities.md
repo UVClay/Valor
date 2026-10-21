@@ -289,6 +289,9 @@ For each entity, in list order, parents first:
    0x120 units), falling (flag 0x200000 entities through holes).
 6. Returns contact flags: 0x1 ground, 0x2 wall, 0x80 fell.
 
+For every entity, `entity_move` first copies the forward speed `+0x200` into the local
+velocity's z `+0x220` (the player's included; the flinch reads it the next tick).
+
 The contact word `+0x38` for walkers and the player (the next think reads it, then it is
 cleared): `walker_slide`'s result 2 (free after pushing, or nothing hit after a gather) sets
 0x8000; a slide that left walls (its return > 0) sets 0x8000, zeroes `+0x218`/`+0x220` and
