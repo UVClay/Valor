@@ -69,8 +69,18 @@ func _ready() -> void:
 	world.mesh = game.build_world_mesh()
 	apply_materials(world)
 	add_child(world)
-	# The models the records name, posed by the core; skinned ones are rebuilt every tick.
-	for i in game.spawn_actors():
+	# The models the records name, posed by the core; skinned ones are rebuilt every tick. With
+	# --scene=FILE (engine/tools/scene_from_dump.py), the view and the characters of a RAM dump.
+	game.spawn_actors()
+	if args.has("scene"):
+		var scene: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(args.scene))
+		var pl: Dictionary = scene.player
+		game.place(pl.x, pl.y, pl.z, pl.yaw, pl.pitch)
+		game.remove_skinned_actors()
+		for a in scene.actors:
+			game.add_actor(int(a.model), Vector3(a.pos[0], a.pos[1], a.pos[2]),
+				Vector3i(int(a.angles[0]), int(a.angles[1]), int(a.angles[2])), int(a.anim), int(a.frame))
+	for i in game.get_actor_count():
 		var mi := MeshInstance3D.new()
 		mi.transform = game.get_actor_transform(i)
 		mi.mesh = game.build_actor_mesh(i)

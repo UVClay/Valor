@@ -423,6 +423,9 @@ void gpu_present() {
     for (const auto &d : config.ram_dumps) {
         if (gpu.frames != d.frame) continue;
         std::ofstream(d.path, std::ios::binary).write(reinterpret_cast<const char *>(psx_ram), PSX_RAM_SIZE);
+        // VRAM too, next to it (1024 x 512 halfwords): what the textures look like at that frame.
+        std::ofstream(d.path + ".vram", std::ios::binary)
+            .write(reinterpret_cast<const char *>(gpu.vram.data()), gpu.vram.size() * sizeof(uint16_t));
         log("dumped RAM to %s at frame %llu", d.path.c_str(), (unsigned long long)gpu.frames);
     }
     if (config.stop_at && gpu.frames >= config.stop_at) throw Halt("stopped at --stop-at");

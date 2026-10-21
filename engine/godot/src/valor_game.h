@@ -47,6 +47,10 @@ public:
     Transform3D get_actor_transform(int i) const;
     bool is_actor_skinned(int i) const;
     Ref<ArrayMesh> build_actor_mesh(int i);
+    // A character as a RAM dump has it (engine/tools/scene_from_dump.py): a model, a position (game
+    // units), angles (4096 per turn) and the animation and frame it shows, held there.
+    int add_actor(int64_t model, Vector3 pos, Vector3i angles, int anim, int frame);
+    void remove_skinned_actors();
     Dictionary get_level_info() const;
 
     void place(double x, double y, double z, double yaw, double pitch);
@@ -72,6 +76,9 @@ private:
         const valor::Model* model;
         valor::AnimInstance inst;
         int anim;
+        int32_t pos[3];    // whole units
+        int16_t ang[3];
+        bool frozen = false;  // holds its frame (a scene from a dump)
     };
     valor::Session session_;
     valor::LevelRender render_;

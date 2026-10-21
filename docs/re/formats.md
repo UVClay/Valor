@@ -160,6 +160,14 @@ marked so below (`level_load`). The groups are: +0x4 with +0x3C..+0x83, +0x88..+
 +0xA4..+0xAC; +0xB0 with +0xB4; +0xB8 with +0xBC; +0xC0 with +0xBE; +0xC4; +0xC8; +0xD4 with
 +0xD6..+0xE7 (if < 0); +0xEC..+0xF8 (each -1); +0xFC (-1).
 
+The face table (+0x38) is **not** in +0x8's group: a model keeps its own skinned faces when it
+inherits the animations. 1:3's soldier model 0xCABD3AC1 has +0x8 = -1 and +0xC0 = 0, so it takes
+0xB8534EAA's animations and hit parts, but its +0x38 (0x30) stays its own. Copying +0x38 with the
+group gives it 0xB8534EAA's faces, which are textured from the dog's skin. Checked in the RAM of
+1:3, 2:1 and 2:2 (the dumps a few vblanks into each level): every inheriting model's +0x8 and +0xC0
+are its base's, and its +0x38 and +0x84 its own. A value of 0 there is a real offset (the first
+table), not "inherit" and not "none".
+
 `model_relocate` (`0x80087080`) turns the offsets into pointers. Each offset is body-relative
 unless the table names another base.
 
@@ -214,6 +222,20 @@ each 16-byte face like this:
 The same indices pick the vertex colour. The viewer masks the indices to 8 bits. The code masks
 them to 10 bits (`& 0x3FF`; the colour lookup uses `(w >> 8) & 0xFFC` and `(w >> 18) & 0xFFC`).
 Semi-transparency is per instance (instance +0x68: code 0x36 instead of 0x34), not per face.
+
+**Character textures.** The skinned models' faces use the TAF's TIMs like everything else: the
+skinned draw (`model_draw_skinned`, `0x80080DD4`) copies each face's colours, UVs, CLUT and texture
+page into its POLY_GT3 as they are (no remapping per instance or uniform), and nothing else writes
+VRAM during a level. This was watched in the session's 1:3 with the runtime's VALOR_TRACE_VRAM, which
+logs every CPU-to-VRAM transfer:
+- all 422 uploads (211 TIMs, an image and a CLUT each) come at the level's load;
+- after that there are only 2×1 VRAM copies, which are the frame-buffer swap;
+- a VRAM dump at vblank 5000 (`--dump-ram`, which now writes `FILE.vram` beside the RAM) equals
+  the TAF's TIMs texel for texel.
+
+So 1:3's soldiers' textures are in its TAF. Model 0xCABD3AC1's faces use texture page 0x1C
+(4-bit, x 768, y 256) with CLUTs on rows 498..506; the dog's skin is at (640, 256). A wrong texture
+means a wrong face table (above).
 
 **Instances** (`0x8006A96C`, `render_instance_init`, 0xB0 bytes). Every drawn object gets one:
 models through the entity's `+0x100`, and also each TSP chunk (`tsp_load`, flags 0x16). Static

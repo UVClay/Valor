@@ -29,6 +29,8 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_actor_transform", "i"), &ValorGame::get_actor_transform);
     ClassDB::bind_method(D_METHOD("is_actor_skinned", "i"), &ValorGame::is_actor_skinned);
     ClassDB::bind_method(D_METHOD("build_actor_mesh", "i"), &ValorGame::build_actor_mesh);
+    ClassDB::bind_method(D_METHOD("add_actor", "model", "pos", "angles", "anim", "frame"), &ValorGame::add_actor);
+    ClassDB::bind_method(D_METHOD("remove_skinned_actors"), &ValorGame::remove_skinned_actors);
     ClassDB::bind_method(D_METHOD("get_level_info"), &ValorGame::get_level_info);
     ClassDB::bind_method(D_METHOD("place", "x", "y", "z", "yaw", "pitch"), &ValorGame::place);
     ClassDB::bind_method(D_METHOD("tick", "buttons", "forward", "strafe", "turn", "pitch"), &ValorGame::tick);
@@ -150,7 +152,7 @@ int ValorGame::spawn_actors() {
         if (!r.model || r.cls == 0x8877B646) continue;  // the player start names the player's model
         const valor::Model* m = models_.by_hash(r.model);
         if (!m || (!m->skinned() && m->static_faces.empty())) continue;
-        Actor a{int(i), m, {}, -1};
+        Actor a{int(i), m, {}, -1, {r.pos[0], r.pos[1], r.pos[2]}, {r.ang[0], r.ang[1], r.ang[2]}};
         a.inst.model = m;
         if (m->skinned()) {
             // A walk if the model has one (the soldier's animation 7), else its first animation.
@@ -180,16 +182,37 @@ bool ValorGame::is_actor_skinned(int i) const {
 
 Transform3D ValorGame::get_actor_transform(int i) const {
     if (i < 0 || size_t(i) >= actors_.size()) return Transform3D();
-    const valor::Record& r = session_.records().records[actors_[i].record];
-    // The model turned by RotMatrixYXZ of the record's angles and placed at its position; in
-    // Godot's axes (y and z flipped) the basis is C M C.
+    const Actor& a = actors_[i];
+    // The model turned by RotMatrixYXZ of its angles and placed at its position; in Godot's axes
+    // (y and z flipped) the basis is C M C.
     int16_t m[3][3];
-    valor::rot_yxz(r.ang[0], r.ang[1], r.ang[2], m);
+    valor::rot_yxz(a.ang[0], a.ang[1], a.ang[2], m);
     const float c[3] = {1, -1, -1};
     Basis b;
     for (int row = 0; row < 3; row++)
         for (int col = 0; col < 3; col++) b[row][col] = real_t(c[row] * c[col] * m[row][col] / 4096.0);
-    return Transform3D(b, to_godot(r.pos[0], r.pos[1], r.pos[2]));
+    return Transform3D(b, to_godot(a.pos[0], a.pos[1], a.pos[2]));
+}
+
+int ValorGame::add_actor(int64_t model, Vector3 pos, Vector3i angles, int anim, int frame) {
+    const valor::Model* m = models_.by_hash(uint32_t(model));
+    if (!m) return -1;
+    Actor a{-1, m, {}, anim, {int32_t(pos.x), int32_t(pos.y), int32_t(pos.z)},
+            {int16_t(angles.x), int16_t(angles.y), int16_t(angles.z)}, true};
+    a.inst.model = m;
+    if (m->skinned()) {
+        a.inst.start(anim, frame, frame, 2);
+        a.inst.build(models_);
+    }
+    actors_.push_back(std::move(a));
+    return int(actors_.size()) - 1;
+}
+
+void ValorGame::remove_skinned_actors() {
+    std::vector<Actor> keep;
+    for (Actor& a : actors_)
+        if (!a.model->skinned()) keep.push_back(std::move(a));
+    actors_ = std::move(keep);
 }
 
 Ref<ArrayMesh> ValorGame::build_actor_mesh(int i) {
@@ -276,7 +299,7 @@ void ValorGame::tick(int64_t buttons, int64_t forward, int64_t strafe, int64_t t
     session_.end_frame();
     // The actors' animations, a frame per tick, looping.
     for (Actor& a : actors_) {
-        if (!a.model->skinned()) continue;
+        if (!a.model->skinned() || a.frozen) continue;
         if (!a.inst.advance()) a.inst.start(a.anim, 0, -1, 2);
         a.inst.build(models_);
     }

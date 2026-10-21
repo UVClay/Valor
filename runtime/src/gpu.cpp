@@ -67,6 +67,13 @@ void upload_halfword(uint16_t v) {
     }
 }
 
+// VALOR_TRACE_VRAM: every CPU -> VRAM upload and VRAM -> VRAM copy of the game itself (not of a
+// drawing copy), as "vram FRAME upload X Y W H" and "vram FRAME copy SX SY DX DY W H".
+bool trace_vram() {
+    static bool on = getenv("VALOR_TRACE_VRAM") != nullptr;
+    return on && !gpu_shadow;
+}
+
 void execute(const std::vector<uint32_t> &w) {
     uint32_t op = w[0] >> 24;
     if (op == 0x02) {  // fill rectangle (ignores mask and drawing area)
@@ -84,6 +91,8 @@ void execute(const std::vector<uint32_t> &w) {
         int sx = w[1] & 0x3FF, sy = (w[1] >> 16) & 0x1FF, dx = w[2] & 0x3FF, dy = (w[2] >> 16) & 0x1FF;
         int ww = ((w[3] & 0xFFFF) - 1) % 1024 + 1, hh = (((w[3] >> 16) & 0xFFFF) - 1) % 512 + 1;
         if (gpu_shadow) return hwgl::copy(sx, sy, dx, dy, ww, hh);
+        if (trace_vram())
+            log("vram %llu copy %d %d %d %d %d %d", (unsigned long long)gpu.frames, sx, sy, dx, dy, ww, hh);
         std::vector<uint16_t> tmp(size_t(ww) * hh);
         for (int y = 0; y < hh; y++)
             for (int x = 0; x < ww; x++) tmp[size_t(y) * ww + x] = vram_at(sx + x, sy + y);
@@ -96,6 +105,8 @@ void execute(const std::vector<uint32_t> &w) {
     } else if (op >= 0xA0 && op < 0xC0) {
         begin_rect_transfer(upload, w[1], w[2]);
         uploading = true;
+        if (trace_vram())
+            log("vram %llu upload %d %d %d %d", (unsigned long long)gpu.frames, upload.x, upload.y, upload.w, upload.h);
     } else if (op >= 0xC0 && op < 0xE0) {
         begin_rect_transfer(download, w[1], w[2]);
         downloading = true;
