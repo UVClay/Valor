@@ -41,7 +41,11 @@ check every finding.
 11. [x] **Front end and HUD**: the campaign flow, saves, options, passwords and cheats, death and
     restart, the HUD's state (docs/re/shell.md, hud.md)
 
-docs/re/ENGINE.md ties them together for a rebuild. What's left is listed in each document's
+docs/re/ENGINE.md ties them together for a rebuild. Five systems are proven complete by
+reimplementing them from the documents alone and matching the original tick by tick on the
+recorded session (tools/sim/): the player's movement (every tick exact), the enemies' behaviour
+scripts and their movement (exact but for unwatched inputs), combat (hits and damage), and the
+level logic (every frame but two). What's left is listed in each document's
 "Open" section: mostly confirming script-read behaviour in play and a few unread fields.
 
 Out of scope for now: the two-player mode (LEVEL2P.BIN), video playback (standard MDEC).
