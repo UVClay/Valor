@@ -500,7 +500,16 @@ void Engine::update(U e) {
 void Engine::matrix(U e) {
     int16_t r[3][3];
     rot_yxz(int32_t(S16(m.s32(e + 0x228) >> 16)), int32_t(S16(m.s32(e + 0x22C) >> 16)), int32_t(S16(m.s32(e + 0x230) >> 16)), r);
-    for (int k = 0; k < 9; k++) m.w16(e + 0x340 + 2 * k, r[k / 3][k % 3]);
+    // the translation +0x354 = the integer position (TransMatrix), then ScaleMatrix by the
+    // scale +0x270 >> 4 (each column times its axis' scale >> 12; 1.0 leaves it)
+    I sc[3] = {m.s32(e + 0x270) >> 4, m.s32(e + 0x274) >> 4, m.s32(e + 0x278) >> 4};
+    for (int i = 0; i < 3; i++)
+        for (int k = 0; k < 3; k++) {
+            I v = r[i][k];
+            if (sc[k] != 0x1000) v = S16((v * sc[k]) >> 12);
+            m.w16(e + 0x340 + 6 * i + 2 * k, v);
+        }
+    for (int k = 0; k < 3; k++) m.w32(e + 0x354 + 4 * k, m.s16(e + 0x20E + 4 * k));
 }
 
 void Engine::zones_use(U e) {

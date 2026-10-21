@@ -82,7 +82,7 @@ bool Feed::load(const std::string& root, const std::string& log_path) {
             int port, role, src;
             long long v;
             if (starts(line, "role ") && std::sscanf(line.c_str(), "role %lld: %d %d %d %lld", &tick, &port, &role, &src, &v) == 5) {
-                roles[{key(tick), tick}][{port, role, src}] = v;
+                roles[{key(tick), tick}].insert({{port, role, src}, v});  // the tick's own poll first
                 continue;
             }
             int mm, ml;
@@ -113,7 +113,7 @@ bool Feed::load(const std::string& root, const std::string& log_path) {
             long long v, t;
             unsigned a, b, cc, d;
             if (std::sscanf(line.c_str(), "input %lld %lld: %X %X %X %X", &v, &t, &a, &b, &cc, &d) == 6)
-                pad[{key(t), t}] = {a, b, cc, d};
+                pad.insert({{key(t), t}, {U(a), U(b), U(cc), U(d)}});  // paused frames poll again
         }
     }
     return true;

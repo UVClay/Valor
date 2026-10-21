@@ -1,6 +1,7 @@
 // Spawning from records and the world objects (docs/re/levels.md Spawning, objects.md):
 // tools/sim/engine_objects.py.
 #include "valor/sim/objects.h"
+#include "valor/sim/scripts.h"
 
 #include "valor/sim/audio.h"
 #include "valor/sim/engine.h"
@@ -45,6 +46,46 @@ U record_spawn_entity(Engine& eng, Record& rec) {
         e = enemy_spawn(eng, rec);
     else if (rec.kind == 4)
         e = pickup_spawn_record(eng, rec);
+    return e;
+}
+
+// scripted_think (0x8005E61C): the event matcher, then the channels.
+void scripted_think(Engine& eng, U e) {
+    VM vm(eng, e);
+    vm.run_b();
+    vm.run_a();
+}
+
+// door_spawn (0x8005E648), type 0x1776 (engine_objects.py door_spawn, objects.md).
+U door_spawn(Engine& eng, Record& rec, U model) {
+    Mem& m = eng.m;
+    U r = rec.addr;
+    U e = eng.entity_create(m.s32(model + 0xFC), 0, 0, 0, m.u16(model + 0xBE), 0xA, 6, true);
+    eng.model_swap(e, model, 0x157);
+    m.w32(e + 0x14, 0x88214051);
+    m.w32(e + 0xC, 0x03008400);
+    m.w32(e + 0x10, 0x44030);
+    m.w32(e + 8, m.s32(model + 0xFC));
+    I cv = m.s16(r + 0x5E);
+    I g = m.u8(0x80099ECB);
+    m.w32(e + 0x294, cv);
+    m.w32(e + 0x290, cv);
+    m.w8(0x80099ECB, (g + 1) & 0xFF);
+    m.w32(e + 0x36C, SCRIPTED_THINK);
+    m.w32(e + 0x370, 0x8006A5B4);
+    m.w32(e + 0x384, 0x8006A37C);
+    m.w16(e + 0x2EC, 0);
+    m.w8(e + 0x35, g);
+    m.w32(e + 0x374, 0);
+    m.w32(e + 0x378, 0);
+    I hp = m.u8(r + 0x5C) << 16;
+    m.w32(e + 0xF0, hp);
+    m.w32(e + 0xF4, hp);
+    U mdl = U(m.u32(m.u32(e + 0x100) + 8));
+    I mn[3], mx[3];
+    for (int k = 0; k < 3; k++) mn[k] = m.s16(mdl + 0x44 + 2 * k), mx[k] = m.s16(mdl + 0x7C + 2 * k);
+    object_box(eng, e, mn, mx);
+    m.w16(e + 0x36, 0);
     return e;
 }
 
@@ -95,6 +136,7 @@ U spawn_by_type(Engine& eng, I t, U model, Record& rec) {
         }
         return e;
     }
+    if (t == 0x1776) return door_spawn(eng, rec, model);
     bool known = false;
     for (I k : KNOWN_SPAWNERS) known |= k == t;
     if (t == 0x1777 || t == 0x1779 || t == 0x177A || !known) return object_spawn(eng, rec, model);

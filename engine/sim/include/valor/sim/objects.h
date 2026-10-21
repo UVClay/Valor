@@ -33,6 +33,9 @@ void player_stand_port(Engine& eng, U e, I port);
 U record_spawn_entity(Engine& eng, Record& rec);  // 0 when refused (queued)
 constexpr U G_LADDER_HELD = 0x8009A5B8;
 constexpr U LADDER_THINK = 0x800611D0;
+constexpr U SCRIPTED_THINK = 0x8005E61C;
+void scripted_think(Engine& eng, U e);
+U door_spawn(Engine& eng, Record& rec, U model);
 U ladder_spawn(Engine& eng, U pair, U r);
 void ladder_think(Engine& eng, U e);
 void ladder_release(Engine& eng);

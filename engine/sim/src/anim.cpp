@@ -370,7 +370,17 @@ void draw_pass(Engine& eng) {
                 if ((m.u32(B) & 0x27) == 1) attachment_draw(eng, e, B, m.s32(B + 8));
             }
         }
-        if (drawn_now) {
+        if (m.u32(e + 0x370) == 0x8005E760) {
+            // draw_in_view_counter: drawn once always; in view (the recording's counter back at
+            // its start value: this handler never sets +0x29C) resets it, else cull_countdown
+            m.w32(e + 0x298, 1);
+            if (d && (*d)[2] == m.s32(e + 0x294))
+                m.w32(e + 0x290, m.s32(e + 0x294));
+            else if (!keep_near(eng, e)) {
+                m.w32(e + 0x29C, 0);
+                m.w32(e + 0x290, m.s32(e + 0x290) - 1);
+            }
+        } else if (drawn_now) {
             m.w32(e + 0x298, 1);
             m.w32(e + 0x29C, 1);
             m.w32(e + 0x290, m.s32(e + 0x294));
