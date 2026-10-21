@@ -49,7 +49,7 @@ A variable id is 9 bits:
 | 0x68 | The entity's last sound is still playing: its voice (`+0xFC`, 1..23) is enabled, a one-shot, positional and younger than 120 frames (audio.md) |
 | 0x69 | The alarm entity (`g_alarm`, `0x80097FE0`), 0 if none |
 | 0x6B | The player's flags B & 0x800 |
-| 0x6C | The player's weapon-block bit 1 |
+| 0x6C | The player's weapon-block bit 1 (**crouched**, `player_crouch_done`) |
 | 0x6D | The number of other living soldiers within 3000 units (and 1000 vertically) |
 | 0x6E | A pointer to `0x8009817C` |
 | 0x6F | Height above the player (entity y - player y; y points down) |
@@ -92,15 +92,17 @@ n-1 set makes operand n a variable id, else a literal (`script_operand`, `0x8005
 | 08 | restart N | Restart the channel running it with script N (`0x800589E8`; the channel index is `0x80099EB8`). (sst.py still prints it as `other_script`) |
 | 09, 0B | stop | The program counter stays |
 | 0C | hit_part | Configure a hit part (kind, damage...): melee attacks (`0x8004C64C`) |
-| 0D, 0E, 42 | event | Store an instruction to run when an event matches |
+| 0D, 0E, 42 | event | Store an instruction to run when an event matches (`sop_event`; 0x0D and 0x42 the same, 0x0E into channel 0's table; enemy_types.md, Events) |
 | 0F, 2B | nop | |
 | 10/11 | flags_set/clear | Flags A (imm 0) or B |
+| 12 | leave_ground | Leave the ground (`0x8005908C`; soldiers, dogs, the player's body; catalogue.md) |
 | 13 | set V = X | |
 | 14 | weight | A script's random-pick weight |
 | 15 | remove_handle | Remove the entity with that handle |
 | 16 | wait N | N ticks |
 | 17 | remove_self | |
 | 18/19/1A | vec_a/vec_b/bytes | Small tables on the entity (`+0x2A4`, `+0x2AC`, `+0x2A0`) |
+| 1C | model_variant | Render-instance variant (`0x800594AC`; every character and weapon model) |
 | 1D | jump_script N | Replace this channel's script |
 | 1E, 21 | random | Random rolls into a variable |
 | 1F | property | Set an entity property by number (health, angles, eye height, invulnerability, radius...) |
@@ -114,16 +116,17 @@ n-1 set makes operand n a variable id, else a literal (`script_operand`, `0x8005
 | 32, 33, 3E | lookup / compute | Results of helper functions into variables |
 | 34 | node_eval | Score an AI node for cover (0x7FFF taken, 0x7FFE player within 600, 0x7FFD bad angle, else the angle) |
 | 35/36 | node_write / node_take | Update a node; move to and face it |
-| 37, 3A | route | Route to an entity or a node (`0x80056B00`, `0x80057474`) |
+| 37, 3A | route | The turn toward an entity or a node: a turn kind (0 ahead, 1/2 the sides, 3 behind) and the signed angle into two variables (`0x80056B00`; enemy_types.md) |
 | 38/39 | call N / return | |
 | 3B/3C/3D | start/clear/current script | |
 | 3F/40 | or_flags | Into another entity's `+0x3C`/`+0x38` |
-| 43 | send_event | `0x800662CC` |
+| 41 | instance_6c | Instance `+0x6C` (`0x8005C1B4`; soldiers and dogs; with 0x1C the corpse's blink) |
+| 43 | send_event | Broadcast level message N with the soldier as sender (`0x800662CC` → `msg_send`; 0x1B alerts the sender's tagged group: enemy_types.md, Messages) |
 | 44 | to_spawn | Back to the spawn point and facing |
 | 45 | has_anim | |
 | 46 | follow | Place relative to another entity |
 | 47 | clear_events | |
-| 48 | decal | |
+| 48 | run_message | Run a level-script message on an entity at once (`0x8005C698` → `script_run_message`); used by no model on the disc (catalogue.md) |
 | 49 | alarm | If none is up: spawn the alarm, flag every living soldier (+0x3C 0x100), send event 0x2B to the zone's entities |
 
 ## Firing (`enemy_weapon`, `0x8005163C`)
@@ -156,11 +159,11 @@ A shot is a `bullet_spawn` of type 0x13F4 aimed at the target's position raised 
 eye height, with the damage of the enemy's weapon model (byte `+0x64` of `[[enemy+0x1C]+0x4]`:
 2, 7, 8 or 10 in the dumps). Then **the aim error**: random offsets in ±E are added to the
 bullet's pitch and yaw (angle units, 4096 per turn), E being the brain's `+0xC8`; when the
-player's weapon-block bit 1 is set the pitch offset is ±E/2. E differs per enemy, set by the
+player's weapon-block bit 1 is set (the player crouches) the pitch offset is ±E/2. E differs per enemy, set by the
 level (Spawning): 20 to 100 in the dumps, ±1.8° to ±8.8°.
 
 The brain's `+0xB0` and `+0xB2` (1500 and 3000 for most soldiers) are the ranges `query` tests
-(sight and hearing?).
+(sight, and the second, long sight range of queries 0x10/0x12 and the witness check; hearing uses `+0xB0`).
 
 ## Spawning (`enemy_spawn`, `0x800563F0`)
 
@@ -178,12 +181,12 @@ once (`0x80097FE8` counts them), and none while `0x800AB8C8` is 4 or more.
 | +0x63 | The aim error E (brain `+0xC8`) |
 | +0x65 | Variable 0x26 |
 | +0x66 | Variable 0x0B (30 → 1) |
-| +0x6A | Brain `+0xB6` |
+| +0x6A | Brain `+0xB4` = it × 11: the field of view, a half-angle around the head bone's facing (90 → ±87°) |
 | +0x6C | Brain `+0xB0`: a range (1500 in the dumps) |
 | +0x6E | Variable 0x22 |
 | +0x70 | Brain `+0xB2`: a range (3000; 2800 if under 10), and variables 5, 6, 7 = it, half, a third |
 | +0x68 | Entity `+0x290` and `+0x294` (150) |
-| +0x74 | → a sub-record: count, then hashes: +0x8 the weapon (matched in `g_enemy_weapons`, its index into variable 0xF), +0xC a second model part (unless 0x4CBF0BA5), and with 4 entries variable 0x101 = 1 and a third part 0x61282777 |
+| +0x74 | → a sub-record: count, then hashes: +0x4 the body model, +0x8 the weapon (matched in `g_enemy_weapons`, its index into variable 0xF), +0xC the head gear (unless 0x4CBF0BA5), and with 4 entries the stick grenade (attachment model 0x61282777) and variable 0x101 = 1 (grenades allowed) |
 
 The handlers: think `enemy_think`, `+0x370` `0x8005608C`, hit_part `enemy_hit_part`,
 world_contact `0x80056250`, touch `0x8005291C`, `+0x384` `0x80056288`.
@@ -249,16 +252,19 @@ its normal (`ratan2`) ±90°, away from the side it's turning to.
 
 ### Set up at spawning (`enemy_spawn`)
 
-Sight and hearing ranges from the record (`+0x6C`, `+0x70`), aim error (`+0x63`), `+0xB4` =
+Sight and hearing ranges from the record (`+0x6C`, `+0x70`), aim error (`+0x63`), `+0xB4` (field of view) =
 record `+0x6A` × 11, path mode 2 (back and forth), no slow-down, gait speeds 100, walk speed
 1.0, probe radius 60, collision radius 150 (the record's `+0x68`, 150, goes to entity
 `+0x290`/`+0x294`), no node held.
 
 ## Open
 
-- Who reads entity `+0x38` bits 0x400000/0x800000/0x1000000 (arrived, path ends): events?
-- The gait table (`+0xCC`/`+0xD0`) and what `+0xB4`, `+0x3C8` do.
-- The player's weapon-block bit 1 (crouching?): smaller detection range, half the x error.
-- The variables the scripts use by convention; what the player's flags B 0x400/0x800 and
-  `+0x11E` are.
-- Events (0x0D/0x0E) and `send_event` (`0x800662CC`).
+- The variables the scripts use by convention beyond soldier.md's table; what the player's
+  flags B 0x400/0x800 come from is in soldier.md (level zones).
+- The 0x1407 weapon (kind 2): pistol sound, MG-like animations.
+
+Resolved (enemy_types.md): who reads `+0x38` 0x400000/0x800000/0x1000000 (script events only;
+the words are one-tick pulses cleared after every think); the gait table (`+0xCC`/`+0xD0`, read
+by nothing), `+0xB4` (field of view), `+0x3C8` (radius against solid objects); the player's
+weapon-block bit 1 (crouched: ranges ×0.75, v5..v7 reduced, half pitch error); events 0x0D/0x0E/
+0x42 and `send_event`.

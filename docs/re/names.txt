@@ -112,6 +112,7 @@
 8004A374 bsd_read                   # (path, &entry): sector 0 = size table, then the body
 8004A634 level_read_parameters      # "PARAMETER DATA READ": ammo row -> weapon table, debug dump
 8004AC58 apply_damage               # (victim, damage, attacker, part): health -= damage, death
+8004B6DC sphere_vs_object_planes    # 1 standing on it, 2 against a side
 8004C1B4 damage_from_hit            # (victim, part, attacker, attacker_part): part-kind multiplier
 8004C76C segment_parts              # bullet path vs hit-part spheres (+0x304)
 8004C968 segment_parts_from_prev
@@ -136,7 +137,12 @@
 800503D4 render_pass
 800504F8 render_flip
 80050658 dist2d_approx              # (a, b): |dx| + |dz| - min/2
+80051200 attachment_knock_off
 8005163C enemy_weapon               # bursts, aim error +0x38C->+0xC8
+800523E4 enemy_attachments_op       # v1A/v1B: set, hide, show, drop/throw/lob the grenade, knock off
+8005291C enemy_touch                # push out of solid objects (0x8004B6DC): 1 on top +0x38 |= 2, 2 side +0x3C |= 2
+80052AF4 witness_report             # hit this tick: victim, spot (0x8009817C), up to 5 living soldiers/dogs as witnesses
+80052C38 witness_check              # once per frame: last witness sees the victim (range +0xB2) -> +0x3C 0x10000
 80052D70 record_activate            # level built-in 4: once (bit 0), spawns the record's entity
 80052DC4 level_set                  # level built-in 13: (what, value): 0 fog near, 1 music, 2 primary objectives complete, 3 level end?
 80052F14 lvl_explosion              # level built-in 6
@@ -165,11 +171,20 @@
 80054740 world_anim_step            # level built-in 18: animated world texture groups by id
 80054990 world_anim_set             # level built-in 21
 80054AB8 dog_think
+80054B80 dog_draw
+80054C24 dog_hit_part
+80054D70 dog_remove
+80054E14 dog_world_contact
 80054E4C dog_spawn                  # type 0x1405
+80055528 enemy_ranges_update        # v5/v6/v7 from the brain's +0xB2, reduced while the player crouches
 80055628 enemy_think                # type 0x1402
 80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
 8005608C enemy_draw                 # soldier's +0x370
+80056250 enemy_world_contact        # floor: +0x38 |= 2; wall: +0x3C |= 2
+80056288 enemy_remove               # +0x384: soldier count, record state |= 2 when flags A 0x20000000
 800563F0 enemy_spawn                # from a level spawn record: health, aim error, ranges
+80056AEC enemy_home_changed         # +0x3C |= 0x8000
+80056B00 route_turn_kind            # 0 ahead, 1/2 sides, 3 behind; *out = signed angle
 80056EB4 dist_approx                # (s16 vec[3]): max + (mid + min) / 4
 80057474 brain_node_target          # node -> the point to stand at (+0xA0) and the side waypoint (+0xAC)
 80057C24 path_find                  # path id -> index in g_paths
@@ -177,12 +192,19 @@
 80057D9C script_op_anim             # op 00: anim N (mode in bits 12-15) frames A..B; mode 1 fade, 2 cut
 80058420 op_sound                   # model script op 02
 80058734 sop_fall                   # op 0x04: +0x200, +0x21C, +0x218
+80058C38 op_event_0d                # -> sop_event
+80058C58 op_event_42                # -> sop_event
 80058C78 sop_event                  # ops 0x0D/0x0E/0x42: store an event
 80059B8C sop_turn                   # op 0x25: angles += operands
+8005A0C8 sight_test                 # head-bone facing, FOV brain +0xB4, range, blockers, world sweep
+8005A574 op_query                   # op 0x2E
 8005AB04 brain_release_node         # frees the node brain+0xB6 claimed
 8005ABA0 brain_reset_gait           # speed 1.0, gait 0, no slow-down
 8005ABEC brain_clear_moves          # goals &= ~0x5C03
 8005AC00 op_behaviour               # enemy script op 0x2F
+8005BAC4 op_route                   # op 0x37
+8005BDC4 op_route_node              # op 0x3A
+8005C210 op_send_event              # op 0x43
 8005C710 op_alarm                   # model script op 0x49
 8005C97C set_var                    # (entity, var, value): script variables, enemies.md
 8005CBA8 get_var                    # (var, entity): 0x60-0x7F sensors, else variables/flag bits
@@ -247,6 +269,8 @@
 800670E8 msg_enqueue
 800672E0 level_vm                   # level scripts: byte ops over a typed stack
 8006949C align_up
+800694C8 script_handler_get         # a script's Nth handler {message, offset}
+80069514 lvl_register_msg           # built-in 0
 8006A5B4 entity_draw_model          # pose (unless off screen and seen before) and draw
 8006A910 model_find                 # hash -> index in g_models
 8006A96C model_instance_init        # (inst, model, flags, entity): pose buffers, hit parts from model +0xC0
@@ -263,6 +287,7 @@
 8006D600 entity_find_type_group     # (type, +0x35 group): first live one
 8006D670 brain_alloc                # 0x124 bytes
 8006D6F0 spawn_from_model           # (model, template): spawn_by_type, then the model's script +0x94
+8006D788 entity_home_changed        # soldier -> 0x80056AEC; 0x1774 -> 0x80090938
 8006DA88 handles_free_removed
 80070DEC explosion_burst
 800712A0 particles_update
@@ -404,12 +429,18 @@
 80097FCC g_last_vsync
 80097FE0 g_alarm
 80097FF0 g_enemy_weapons            # 48-byte entries: type, burst timing, sound
+80098164 g_witnesses                # handles of up to 5 witnesses; +0x14 the victim, +0x18 the spot, +0x20 the count
+80098178 g_witness_victim
+8009817C g_witness_spot             # sensor 0x6E; soldier script 201 and dog script 16 run here
+80098184 g_witness_count            # u8
 80098620 g_objective_count
 80098624 g_bPrimaryObjectivesComplete
 80098628 g_msg_line_y               # show_text's line: 120..156, +12 per new message
 8009862C g_msg_last                 # last message shown by show_text
 80098984 g_chunk_count
 80099AB8 g_dyn_frames               # per dynamic group (< 99): current frame, 0xFF unset
+80099B20 g_dog_count
+80099B2C g_range_third_set          # once-flag for 0x800AB930
 80099B38 g_script_ops               # 74 x {handler, opcode, size}
 80099ED0 g_text_count
 80099F4C g_texts                    # 50 x 32 bytes
@@ -465,6 +496,7 @@
 800AA17C g_pvs_a                    # camera leaf's mask A; nodes need +0x14 & this
 800AA184 g_chunk_loading            # slot being streamed (-1: none), skipped by draw/collision
 800AA188 g_explosion_light          # r, g, b, radius, radius^2
+800AB930 g_range_third              # first soldier's +0xB2 / 3: v7 for every standing-player check
 800AB970 g_health_ring_prims        # 32 POLY_F4 per buffer (+0xC00)
 800AD170 g_compass_prims            # POLY_FT4 x 2 buffers
 800AD1C0 g_hit_wedge_prims          # 4 POLY_F3 per buffer (+0x50): right, behind, left, front

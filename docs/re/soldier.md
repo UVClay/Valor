@@ -51,7 +51,9 @@ named. Claims come from the disassembly; where an opcode handler was needed it w
 - **Events** (op 0x0D/0x0E/0x42, matched each tick by `script_run_b`, `0x8003FBFC`): the mask
   says which entity word must have all the bits: printed `on s38&BITS` for `+0x38`, `s3C`, `s40`.
   The stored instruction runs in the registering channel (a stored `goto` moves its program
-  counter, a stored `nop` deletes the record). In `+0x38`: **0x40 hit from in front, 0x20 hit
+  counter, a stored `nop` deletes the record); 0x0D and 0x42 are the same, 0x0E stores into
+  channel 0's table from either channel. The three words are one-tick pulses, cleared after
+  every think; who sets each bit, and the matching rules: enemy_types.md, Events. In `+0x38`: **0x40 hit from in front, 0x20 hit
   from behind** (`damage_from_hit`, `0x8004C324`, by the sign of the soldier's forward vector ·
   (attacker − hit point), `0x8004C108`); 0x400000 arrived, 0x800000/0x1000000 path ends (the
   brain). Bits 0x20..0x100 are cleared each tick while the `+0x48` invulnerability timer runs.
@@ -85,15 +87,18 @@ v22 > 0 → 77; else end → 202.
 | 0x10, 0x22 | Path mode and path id (records `+0x5E`, `+0x6E`); v22's range also picks the walk style |
 | 0x14, 0x15 | Sight results; also a node's score; v15 the brain's remaining distance to a node |
 | 0x16 | Fire state |
-| 0x1A, 0x1B | Words for the hit hook `0x800523E4`: v1A 4 plus bits during grenade throws, 1..3 plus 0x80000000 and v1B a part during deaths (meaning: Open) |
+| 0x1A, 0x1B | Words for the hit hook `0x800523E4`: v1A 4 plus bits during grenade throws, 1..3 plus 0x80000000 and v1B a part during deaths (a bit per attachment plus an action; enemy_types.md, Resolved items) |
 | 0x1C | hit_react: 1 hurt (health ≤ 75%), 2 healthy, 4, 8 (down/dying), 0 |
 | 0x1D, 0x1E, 0x1F, 0x20 | Previous and current node (-1 none); the target (the player); itself |
 | 0x24 | Dodge chance in 1/1001 per decision: 10, 20, 1000 or 100 (record `+0x5C`; 10/20 in the dumps) |
 | 0x25 | Fire decision (script 16): 1 with probability v26/101 |
 | 0x26 | Fire chance in percent (record `+0x65`): 20, 30 or 50 in the dumps |
 
-Flag words at `+0xEC` (`bitN`): bits 1, 2, 3, 7 are only ever read by the soldier scripts, so they
-come from outside (the level?). Their effects: **bit 1** allows grenade throws (35, 111),
+Flag words at `+0xEC` (`bitN`): bits 1, 2, 3, 7 are only read by 1:3's scripts. **Bit 1** comes
+from the spawn: set when the record's template has a fourth entry, the soldier's stick grenade
+(enemy_types.md, Soldier variants); **bit 2** from the level message `s40` 0x8000000 (the start
+script stores `set 0x102 = 1` on it); bit 3 is set by 5:1..5:3's own scripts and bit 7 by
+2:x's (enemy_types.md). Their effects: **bit 1** allows grenade throws (35, 111),
 **bit 2** makes a stationary soldier (skips moving and dodging, 25:6; only takes kind-0x10
 nodes, 91:7; does not react to grenades, 43:0), **bit 3** forces the crouch-and-hide answer to
 being aimed at (25:219). Bit 4: no other soldier within 3000 (44:0). Bit 10: path soldier in
@@ -104,7 +109,8 @@ sound by mission and level).
 ## Idle, patrol, detection
 
 **Idle (202):** registers `s40&0x100` → 209, alarm (`s3C&0x100`) → 195, grenade events (43),
-`s3C&0x10000` → 201 (walk to the point `0x8009817C`, then 209); stops; starts 211 on channel 1
+`s3C&0x10000` → 201 (a comrade was hit in its view: run to the spot `0x8009817C`, then 209;
+enemy_types.md, Witnesses); stops; starts 211 on channel 1
 (idle fidgets: anim 0 56%, 1/207/208 20%, 209/210/211 20%, 212 5%); then every v0B ticks
 calls **detection (44)** and on 1 goes to 209.
 
@@ -154,14 +160,14 @@ Before that 210 sends `send_event 0x1B`, sends a bit-2 soldier to 19, calls 91 (
 search within 1000, below), and a bit-1 soldier at 1500 or more
 throws a grenade with 5/100 chance (roll 1..100 < 6, 210:39) → 35.
 
-**19, engage:** sets v1A (op 0x29 on v1A: Open), calls 196 (empty in 1:3); a rifleman within
+**19, engage:** shows its weapon (v1A = 1 with op 0x29 0x4000000: attachment 0 shown; enemy_types.md), calls 196 (empty in 1:3); a rifleman within
 1000 → 136 (close quarters); else starts the **fire loop 40** on channel 1 and runs the **combat
 loop 25** on channel 0.
 
 ### The fire loops (40, 41)
 
-Channel 1, restarted after every strafe. `on s3C&0x1` → call 39 then resume (39: a sound and a
-weapon-specific anim: a reload, inferred). Per weapon (40; 41, used from 28, is the same with
+Channel 1, restarted after every strafe. `on s3C&0x1` (set by `enemy_weapon` when a burst's last
+shot is fired) → call 39 then resume (39: a sound and a weapon-specific anim between bursts). Per weapon (40; 41, used from 28, is the same with
 small differences):
 
 - **SMG:** fire 0; roll the fire decision (16: `roll < v26`, so 20..50 out of 101); yes → fire 1
@@ -226,8 +232,8 @@ probes 2/1), the rest 145 (anim 22, probe 8); far, 75 and up: the MG 146, else b
 148. The MG's moves use anims 250/252/251 at fire 1.
 
 Each move runs on channel 1 while 135 waits for it; before the step it calls 134: SMG/MG roll the
-fire decision for fire 1, the rifle a fire 2 shot if not already firing. `s3C&0x2` aborts a move
-(meaning: Open); `s3C&0x1` reloads (39). Then fire 0 and back to 25.
+fire decision for fire 1, the rifle a fire 2 shot if not already firing. `s3C&0x2` (bumped into a wall or a solid
+object) aborts a move; `s3C&0x1` (the burst's last shot fired) plays 39. Then fire 0 and back to 25.
 
 ### Long range (27, 28), close quarters (136, 184), kneeling (148..156)
 
@@ -299,7 +305,9 @@ faces the player, anim 261; sets v1A = 4 with op 0x29 bit 0x4000000; anim 261 to
 37 on channel 1: anim 219, **anim 220** with bit 0x2000000 at frame 21, then 0x8000000; waits 20
 ticks, then for 37 to end; then the fire loop 40, wait 50, → 209. The bits read as: take a
 grenade, release, done; 0x20000000 (36) drop it; 0x1000000 the release from cover (98/100)
-(inferred: the hook `0x800523E4` makes the grenade). Hit from the front while holding it
+(the hook `0x800523E4` makes the grenade: v1A's bits pick attachment 2, the grenade, and the
+action: 0x2000000 throw at the player, 0x1000000 lob from cover, 0x20000000 drop;
+enemy_types.md, Resolved items). Hit from the front while holding it
 (35:69): dying, or in part 0, 2 or 6 → drop it (36) and 12 (fleeing it via 9 → 116); else flinch
 (anim 31) and throw anyway. From behind (35:96) the health test is inverted (`> 10`): a healthy
 soldier drops it, a dying one throws (kept as found).
@@ -350,7 +358,7 @@ fire 2; 50% each time to get up), 33% get up (anims 48, 51 → 19). Hits while d
 | odd / even legs | cases 10, 11 | 56 / 54 |
 | other parts | case 7 | 30% 58, else 57 |
 | Rocket (0x13F1) or 0x13F3 | 191 | By part (head 57/295, torso 55, legs 70/294); parts 1, 2, 7, 8: 10%/20% tumbles (299, 300/301), 50% thrown (120), 20% anim 55 |
-| Explosion (0x31) | 120/123 | Thrown (`fall.3` impulse), anim 73/77 until `s3C&0x2`, then 121/122/124/125 (landing) |
+| Explosion (0x31) | 120/123 | Thrown (`fall.3` impulse), anim 73/77 until it hits a wall (`s3C&0x2` → 121/124) or lands (`s38&0x2` → 122/125) |
 | Attacker type 1 | case 1 | 57 |
 | Else, by roll (16% steps) | cases 1..6 | 57, 57, 53 (fire 3), 54, 56, else 30% 297 / 70% 55 |
 
@@ -358,7 +366,9 @@ From behind (3): the player's bazooka → 192; rocket/0x13F3 50% → 191 else 12
 else anim 52. **Death spray:** in cases 3 and 9 and two leg cases of 191 an SMG/MG soldier sets
 fire 3 for the death animation (frames 0..97 of anim 53): bursts along its facing as it falls (a
 Panzerfaust soldier from frame 21 unless killed by an explosive; riflemen never).
-Death cries: bit 16 + script 74. Every death ends in **15, the corpse**: events and goals off,
+Death cries: bit 16 + script 74. Every death ends in **15, the corpse** (a living soldier out of view and beyond the far plane
+long enough is also removed and its record told message 2, so activation scripts can respawn it:
+flags A 0x8000 and the `+0x290` counter, catalogue.md, Despawn): events and goals off,
 wait 15, 19 ticks of ops 0x1C/0x41 (a blink, inferred), health_pct = -1, wait 60, removed: about
 3 s after the death animation.
 
@@ -400,7 +410,8 @@ numbers). The stubs are filled and ~100 scripts are inserted: 1:3's 195/196/197 
   30% anim 284 (a look) and re-check. Hit on the way → 197 (v12 = 8045: never tries again).
   **On an alarm** (`s3C&0x100` → 196 in every idle/patrol script): wait 3, 50% → 298 (stand and
   watch with blind bursts, 1:3's 204), 50% → 175 (search). In 1:3 the same event goes to the
-  empty 195 (Open).
+  empty 195: the alarm sets the bit once (a one-tick pulse), so the soldier just restarts
+  its idle (channel 0 runs off 195 into the weighted 202).
 - **The sentry** (202..213, on `s40&0x400` from the level): detection → 203, the player aiming at
   it within 3000 → 204; both face the player and fire 1 during anim 241 after every 1..4 (+2
   with a skill pass) or 1..2 plays of anim 240, unless the player is within 565 and unseen;
@@ -418,6 +429,11 @@ numbers). The stubs are filled and ~100 scripts are inserted: 1:3's 195/196/197 
   messages `s40` 1/2/4/8 (papers verdicts, inferred): 4 accepted, 8 refused, 1 accepted below
   skill 40, 2 below 80.
 
+Who sends the papers verdicts and the role messages, what bit 7 does and what the classifier's
+`+0x11E` = 8 means (the player's "use the item in hand" body script): enemy_types.md, Level
+differences (the disguise levels). Every other level's additions (seated guards, foxholes, gun
+crews, path advances, workers...) and the `+0x40` level messages that start them are there too.
+
 Health is 4.0 in 2:1 (6.0 in 1:3) and some soldiers have range 2250; the behaviour scripts
 otherwise match.
 
@@ -427,7 +443,9 @@ otherwise match.
   `[+0x388]+0x18`, a count then entries) for each part whose bit is set in its operand: bit
   0x10000000 sets the part's value (`+8`), 0x08000000 clears part flag 1 and sets 0x20,
   0x04000000 the reverse (parts flagged 6 are skipped), and 0x20000000 on part 2, while its flag 1
-  is set, spawns a model of class 0x61282777 at it (inferred: the helmet knocked off, combat.md).
+  is set, drops it: attachment 2 is the stick grenade (model 0x61282777, from the template's fourth
+  entry); other action bits throw or lob it, and no action bit knocks the attachment off
+  (enemy_types.md, Resolved items).
 - **`hit_react`** (`0x80052084`, variable 0x1C) is presentation only: it spawns particles at the
   part hit (`0x800727B4` with counts and speeds from `rand`, or `0x80072244`), the kind (1, 2, 4,
   8) remapped by the byte at `0x80093A05` (inferred: the blood option; 0 turns 1/4/8 into 2).
@@ -446,7 +464,7 @@ player's model script and a level script:
   up and sets 4, message 0xE counts down and sets 8 when the count is back to zero (it starts at
   128; message 0x9D resets it and sets 8).
 - The messages come from kind-1 trigger boxes (class 0xB81C10E3, shape 2) whose player enter and
-  leave lists hold 0xD/0xE or 8/9. 2:3 has nine 0xD/0xE boxes and one 8/9 box; a mission 1
+  leave lists hold 0xD/0xE or 8/9. 2:3 has eight 0xD/0xE boxes (records 70..72, 90, 91, 107..109) and one 8/9 box (64); a mission 1
   level (the replay at vblank 30000) two 0xD/0xE boxes; 1:3 and 3:2 none.
 
 So **0x800 means "in a low zone"** (overlapping zones counted): the player can't stand up there
@@ -466,11 +484,12 @@ showed 0, 7, 13, 8, 10, 9, 16, 12, 1, 15 and 14.
 ## Open
 
 - Which of the player's actions its body scripts 3, 4 and 8 are in 2:1 (`+0x11E`, above).
-- Bits 1, 2, 3, 7 of `+0xEC`: who sets them (the level?), and v22 > 200 paths.
-- `s3C` 0x1 (reload?), 0x2 (abort; explosions' landing), 0x8000, 0x10000; `s40` bits from level
-  messages; `send_event` 0x1B, 0x4, 0x1E, 0x33, 0x75.
-- v1A/v1B's values in detail, ops 0x1C/0x41 on corpses, `fall`/`accel`'s operands, the behaviour goal bit 0x2000.
-- `route` (0x37/0x3A) results in v2/v3 and v23 (165:8).
-- 1:3's alarm event goes to an empty script: does the soldier then loop 195 → 202 while the
-  bit stays set?
+- v22 > 200 paths (78) by level.
+- `send_event` 0x33 and 0x75 in detail (2:x); ops 0x1C/0x41 on corpses, `fall`/`accel`'s operands.
+- The other levels' script sets: enemy_types.md, Level differences.
 - Animation lengths, which bound burst lengths and every "anim" timing above.
+
+Resolved since (enemy_types.md): events and `send_event` 0x1B/0x4/0x1E; `+0xEC` bits 1 and 2; `s3C`
+0x1, 0x2, 0x8000, 0x10000; v1A/v1B (attachments); `route` results (v2 a turn kind 0..3, v3 the
+signed angle; 165's v23 the same angle); the behaviour goal bit 0x2000 (pause/resume the path);
+1:3's alarm going to the empty 195.
