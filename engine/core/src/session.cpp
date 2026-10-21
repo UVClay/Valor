@@ -46,6 +46,7 @@ bool Session::load(const std::string& data_dir, int m, int l, std::string* err) 
     player_.controls.cfg = PadConfig::fresh_card();
     player_.controls.pad.analog = 1;
     player_.spawn(world_, info_);
+    player_.mission = m, player_.level = l;
     record_state_.assign(records_.records.size(), 0);
     held_ladder_ = -1;
     lights_.assign(info_.lights.size(), LightState{});

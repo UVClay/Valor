@@ -4,6 +4,7 @@
 //   coretest MOVES.txt [--data extracted/moh/DATA] [--free] [--all-chunks | --stream [--stream-log LOG]]
 //            [-v N] [--trace OUT.jsonl]
 //   coretest PAD.txt --ram DUMP.bin [--stream-log RUN.log] [-v N]   (pad_mode.cpp: from the pad itself)
+//   coretest --pose M:L DUMP...   (pose_mode.cpp: models, poses, joints, hit parts against RAM)
 //
 // MOVES.txt comes from engine/tools/export_moves.py (the original's per-tick state and the control
 // function's outputs). With --free the core carries its own state from tick to tick (only object
@@ -113,9 +114,11 @@ struct Stat {
 
 }  // namespace
 
-int run_pad(int argc, char** argv);  // pad_mode.cpp: coretest PAD.txt (export_pad.py)
+int run_pad(int argc, char** argv);   // pad_mode.cpp: coretest PAD.txt (export_pad.py)
+int run_pose(int argc, char** argv);  // pose_mode.cpp: coretest --pose M:L DUMP...
 
 int main(int argc, char** argv) {
+    if (argc >= 2 && !std::strcmp(argv[1], "--pose")) return run_pose(argc, argv);
     if (argc >= 2) {
         std::ifstream probe(argv[1]);
         std::string magic;

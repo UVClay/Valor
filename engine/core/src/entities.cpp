@@ -24,6 +24,11 @@ Entity* Entities::create(int32_t type, std::unique_ptr<Behaviour> b) {
 Entity* Entities::adopt(uint32_t h, int32_t type, std::unique_ptr<Behaviour> b) {
     uint32_t slot = h & 0xFFFF;
     if (slot >= kSlots) return nullptr;
+    // A slot still naming another entity (removed, its handle not freed yet): that one is gone.
+    if (Entity* old = handles_[slot]) {
+        old->flags_a |= kFlagARemoved;
+        order_.erase(std::remove(order_.begin(), order_.end(), old), order_.end());
+    }
     auto e = std::make_unique<Entity>();
     e->handle = h;
     e->type = type;
@@ -53,7 +58,8 @@ void Entities::remove(Session& s, Entity* e) {
     if (!e || (e->flags_a & kFlagARemoved)) return;
     e->flags_a |= kFlagARemoved;
     order_.erase(std::remove(order_.begin(), order_.end(), e), order_.end());
-    removed_[e->handle & 0xFFFF] = true;
+    uint32_t slot = e->handle & 0xFFFF;
+    if (slot < kSlots && handles_[slot] == e) removed_[slot] = true;
     e->behaviour->destroy(s, *e);
 }
 

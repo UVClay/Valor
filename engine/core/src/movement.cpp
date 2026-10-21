@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "valor/fixed.h"
+#include "valor/gte.h"
 
 namespace valor {
 
@@ -85,10 +86,12 @@ void entity_move(const World& world, Walker& w) {
     int64_t vx = s16(uint32_t(w.strafe) >> 12);
     int64_t vy = s16(uint32_t(w.vy) >> 12);
     int64_t vz = s16(uint32_t(w.fwd) >> 12);
-    SinCos sc = sincos_angle(w.yaw >> 16);
-    int64_t mx = (sc.c * vx + sc.s * vz) >> 12;
-    int64_t my = (4096 * vy) >> 12;
-    int64_t mz = (-sc.s * vx + sc.c * vz) >> 12;
+    // The local velocity turned by RotMatrixYXZ(0, yaw, roll), a GTE row each, >> 12.
+    int16_t m[3][3];
+    rot_yxz(0, w.yaw >> 16, w.roll >> 16, m);
+    int64_t mx = (m[0][0] * vx + m[0][1] * vy + m[0][2] * vz) >> 12;
+    int64_t my = (m[1][0] * vx + m[1][1] * vy + m[1][2] * vz) >> 12;
+    int64_t mz = (m[2][0] * vx + m[2][1] * vy + m[2][2] * vz) >> 12;
     pos[0] = s32(pos[0] + (mx << 12) + w.push[0]);
     pos[1] = s32(pos[1] + (my << 12) + w.push[1]);
     pos[2] = s32(pos[2] + (mz << 12) + w.push[2]);

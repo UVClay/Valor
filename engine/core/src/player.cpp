@@ -33,10 +33,10 @@ void Player::place(const int32_t pos[3], int32_t yaw, int32_t pitch, bool ground
 }
 
 // The eye target and the drawing distances (crouch_target / stand_target in player_update,
-// player_stand and player_crouch_done). The level 5:4 crouches lower (-150), so the drawing
-// distances aren't touched there.
+// player_stand and player_crouch_done). Level 5:4 crouches lower (-150; the drawing distances
+// aren't touched there).
 void Player::set_eye_target(bool crouched) {
-    inv.eye_target = crouched ? -80 : -240;
+    inv.eye_target = crouched ? (mission == 5 && level == 4 ? -150 : -80) : -240;
 }
 
 // player_stand (0x80079718).
@@ -299,6 +299,7 @@ void Player::update(const PlayerEvents& ev) {
     // Events from systems not ported yet, as they stand at the start of this tick.
     if (ev.set_weapon) inv.slot = ev.slot, inv.weapon = ev.weapon;
     if (ev.set_friction) inv.flags = (inv.flags & ~0x80100000u) | (ev.friction & 0x80100000u);
+    if (ev.set_roll) body[2] = ev.roll;
     if (ev.set_flags_b) w.flags_b = ev.flags_b;
     if (ev.flinch) {
         inv.flinch = 8;
@@ -307,6 +308,10 @@ void Player::update(const PlayerEvents& ev) {
     for (int i = 0; i < 3; i++) w.push[i] = s32(int64_t(w.push[i]) + ev.push[i]);
     if (ev.touch_cleared) w.fwd = 0, w.strafe = 0, local_fwd = 0;
     if (ev.moved) std::copy(ev.pos, ev.pos + 3, w.pos);
+    if (ev.teleport) {
+        std::copy(ev.teleport_pos, ev.teleport_pos + 3, w.pos);
+        std::copy(ev.teleport_pos, ev.teleport_pos + 3, w.old);
+    }
     ticks++;
     if (dead) return;  // player_think_dead: the death camera (not ported) carries him
 
@@ -334,6 +339,15 @@ void Player::update(const PlayerEvents& ev) {
     static const uint8_t aiming[13] = {0, 1, 5, 6, 0, 2, 1, 6, 0, 0, 6, 1, 0};
     static const uint8_t walking[13] = {7, 8, 9, 9, 7, 7, 8, 9, 7, 7, 9, 8, 7};
     inv.stance = inv.weapon < 13 ? ((inv.flags & 0x20) ? aiming[inv.weapon] : walking[inv.weapon]) : 7;
+    // The weapon switch: weapon_draw (0x8007DD4C), when the scripts ask (variable 0x11).
+    if (ev.weapon_draw) {
+        if (inv.flags & 0x200040) {
+            inv.zoom = std::max<uint32_t>(inv.zoom >> 2, 400);
+            inv.flags &= ~0x40u & 0xFFDFFFFFu;
+        }
+        inv.flags &= ~0x20u;
+        inv.slot = ev.draw_slot, inv.weapon = ev.draw_weapon;
+    }
     // Use (zones: Session), reload, the trigger: weapons, not ported.
     // The recoil kick.
     int32_t k = std::min(s32(int64_t(inv.kick) + inv.climb), 0xF0000);
@@ -399,9 +413,10 @@ void Player::update(const PlayerEvents& ev) {
         inv.flags &= ~0x100u;
     }
     if (inv.zoom == 400) inv.zoom_step = 1;
-    // The soldier's scripts run here: weapon_draw swaps the arms model, whose +0xA0 is the
-    // capsule's height (188).
-    if (ev.eye_swap) eye = ev.eye_swap_value;
+    // The soldier's scripts run here: the weapon's arms model comes in, its +0xA0 the capsule's
+    // height (188; 80 when weapon_draw found him crouched). In 5:4, crouching to -150, a model
+    // swapped after the crouch was reached keeps 188, so the height is the event's.
+    if (ev.weapon_draw) eye = ev.draw_eye;
     // The ladder latch: leaving a ladder zeroes the vertical speed.
     inv.prev_flags = inv.flags;
     if (inv.ladder) {
@@ -419,6 +434,7 @@ void Player::update(const PlayerEvents& ev) {
 void Player::move(const World& world) {
     if (dead) return;  // the death camera carries him (flags A 0x20000)
     w.yaw = inv.yaw;
+    w.roll = body[2];
     w.eye = eye >> 16;
     w.gravity = flags_a & 0x20;
     local_fwd = w.fwd;

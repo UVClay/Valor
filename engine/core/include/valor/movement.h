@@ -18,6 +18,7 @@ struct Walker {
     int32_t fwd = 0;     // +0x200 forward speed (local z)
     int32_t strafe = 0;  // +0x218 strafe speed (local x, right)
     int32_t yaw = 0;     // the view yaw inv+0x184, 16.16 with 4096 per turn
+    int32_t roll = 0;    // the body's roll +0x230 (16.16): the move's matrix is (0, yaw, roll)
     int32_t push[3]{};   // +0x1F0: added to this move
     int32_t floor = 0;   // +0x208: the last floor found, 16.16
     int32_t ground = 0;  // +0x284

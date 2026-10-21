@@ -47,10 +47,17 @@ struct PlayerEvents {
     uint8_t weapon = 0;
     bool set_friction = false;  // aim_update's friction bits (inv 0x100000, bit 31), last tick's
     uint32_t friction = 0;
+    bool set_roll = false;  // the body's roll (+0x230) aim_update leaves for the move
+    int32_t roll = 0;
     bool flinch = false;  // player_hit_part started a flinch: 8 ticks of this knockback
     int32_t knock[3]{};
-    bool eye_swap = false;  // weapon_draw swapped the arms model: +0x2D4 from the model (188)
-    int32_t eye_swap_value = 188 << 16;
+    // weapon_draw (0x8007DD4C) this tick, when the soldier's scripts ask for it (variable 0x11):
+    // the slot's weapon in hand, aim mode and zoom dropped, the arms model swapped (the capsule's
+    // height after it: 188 from the model's +0xA0, 80 if weapon_draw found him crouched).
+    bool weapon_draw = false;
+    int8_t draw_slot = 0;
+    uint8_t draw_weapon = 0;
+    int32_t draw_eye = 188 << 16;
     bool dies = false;  // contact 0x4000: health reached 0
     bool set_flags_b = false;  // the trigger boxes' 0x800 (low ceiling) and the rest
     uint32_t flags_b = 0;
@@ -58,6 +65,8 @@ struct PlayerEvents {
     bool touch_cleared = false;  // ... which also cleared the speeds
     bool moved = false;  // an object's touch handler moved him after the move (objects.md, Blocking)
     int32_t pos[3]{};
+    bool teleport = false;  // the level logic put him somewhere (position and +0x3BC both)
+    int32_t teleport_pos[3]{};
 };
 
 class Player {
@@ -72,6 +81,7 @@ public:
     int32_t ang_vel[3]{};      // +0x234
     int32_t body[3]{};         // +0x228: the body's angles (aim_update's in stances 7, 8)
     int32_t eye_offset = -240; // the camera's +0x94
+    int mission = 0, level = 0;  // g_params (0x800939F4): 5:4 crouches lower
     bool riding = false;       // +0x2C: a parent (not ported)
     bool dead = false;
     uint32_t ticks = 0;

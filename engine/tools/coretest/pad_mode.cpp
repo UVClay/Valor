@@ -31,7 +31,7 @@ struct PadTick {
     int64_t tick, vblank;
     int32_t pos[3], yaw, pitch;
     uint32_t flags_b;
-    int32_t health;
+    int32_t health, roll;
     uint32_t pad_now, pad_prev, sticks, analog;
     // The soldier as this tick's update found it: the last tick's end.
     int32_t s_pos[3], s_old[3], s_push[3], s_eye;
@@ -50,20 +50,21 @@ bool read_pad(const char* path, std::string& level, std::vector<PadTick>& out) {
     if (!std::getline(f, line)) return false;
     std::istringstream hs(line);
     hs >> magic >> ver >> level >> dv;
-    if (magic != "valor-pad" || ver != 3) return false;
+    if (magic != "valor-pad" || ver != 4) return false;
     while (std::getline(f, line)) {
         if (line.empty() || line[0] == '#') continue;
         std::istringstream s(line);
         std::vector<int64_t> v;
         int64_t x;
         while (s >> x) v.push_back(x);
-        if (v.size() < 32) return false;
+        if (v.size() < 33) return false;
         PadTick t{};
         size_t i = 0;
         auto nx = [&] { return v[i++]; };
         t.tick = nx(), t.vblank = nx();
         for (auto& p : t.pos) p = int32_t(nx());
         t.yaw = int32_t(nx()), t.pitch = int32_t(nx()), t.flags_b = uint32_t(nx()), t.health = int32_t(nx());
+        t.roll = int32_t(nx());
         t.pad_now = uint32_t(nx()), t.pad_prev = uint32_t(nx()), t.sticks = uint32_t(nx()), t.analog = uint32_t(nx());
         for (auto& p : t.s_pos) p = int32_t(nx());
         for (auto& p : t.s_old) p = int32_t(nx());
@@ -227,6 +228,7 @@ int run_pad(int argc, char** argv) {
         return 2;
     }
     seed(s, ram);
+    s.player().mission = m, s.player().level = l;
     // The original's read times (capture.sh watches cl): each load completes when its slot was
     // released.
     std::vector<int64_t> completions;
@@ -250,6 +252,8 @@ int run_pad(int argc, char** argv) {
 
     std::map<std::string, Stat> stats;
     long calls = 0, calls_ok = 0, axis = 0, axis_ok = 0, shown = 0;
+    bool last_pos_ok = true;
+    long teleports = 0;
     long ladders_made = 0, list_same = 0, foreign_spawns = 0, foreign_removals = 0, own_diff = 0, own_missed = 0;
     int64_t first_bad = -1;
     for (size_t k = 0; k + 1 < T.size(); k++) {
@@ -265,36 +269,42 @@ int run_pad(int argc, char** argv) {
         PlayerEvents ev;
         ev.set_weapon = true, ev.slot = int8_t(t.s_inv54 & 0xFF), ev.weapon = uint8_t(t.s_inv54 >> 8);
         ev.set_friction = true, ev.friction = t.s_inv;
+        ev.set_roll = true, ev.roll = t.roll;  // the body's roll after this tick (aim_update)
         ev.set_flags_b = true, ev.flags_b = (p.w.flags_b & 0x10) | (t.s_flags_b & ~0x10u);
         if (t.s_flinch == 8) {
             ev.flinch = true;
             std::copy(t.s_kn, t.s_kn + 3, ev.knock);
         }
         ev.dies = t.s_contact & 0x4000;
-        if (t.s_push[0] || t.s_push[1] || t.s_push[2]) {
-            std::copy(t.s_push, t.s_push + 3, ev.push);
-            ev.touch_cleared = true;
-            std::fill(p.w.push, p.w.push + 3, 0);
+        // The push as the update finds it: what touch handlers left (the core's own is 0 there).
+        std::fill(p.w.push, p.w.push + 3, 0);
+        std::copy(t.s_push, t.s_push + 3, ev.push);
+        ev.touch_cleared = t.s_push[0] || t.s_push[1] || t.s_push[2];
+        // The level logic (not ported) put him somewhere: a restart's script, or between the
+        // dump and the first tick (the dump is taken before the frame's queued messages run).
+        if (!std::equal(t.s_old, t.s_old + 3, p.w.old) && (k == 0 || last_pos_ok)) {
+            ev.teleport = true;
+            std::copy(t.s_old, t.s_old + 3, ev.teleport_pos);
+            teleports++;
         }
         if (!std::equal(t.s_pos, t.s_pos + 3, t.s_old)) {
             ev.moved = true;
             std::copy(t.s_pos, t.s_pos + 3, ev.pos);
         }
-        // weapon_draw in this tick's scripts swapped the arms model (+0x2D4 from it: 188).
-        if (n.s_eye != t.s_eye && n.s_eye != (80 << 16) && n.s_eye != p.inv.eye_stand)
-            ev.eye_swap = true, ev.eye_swap_value = n.s_eye;
+        // weapon_draw this tick (the scripts' variable 0x11): the weapon in hand changes.
+        if (((n.s_inv54 ^ t.s_inv54) & 0xFFFF) != 0) {
+            ev.weapon_draw = true;
+            ev.draw_slot = int8_t(n.s_inv54 & 0xFF), ev.draw_weapon = uint8_t(n.s_inv54 >> 8);
+            ev.draw_eye = n.s_eye;
+        }
         // The pad, and the analog roles' values the original's role_axis returned.
         Controls& c = p.controls;
         c.pad.now = t.pad_now, c.pad.prev = t.pad_prev, c.pad.analog = uint8_t(t.analog);
         for (int i = 0; i < 4; i++) c.pad.sticks[i] = uint8_t(t.sticks >> (8 * i));
         for (int r = 0; r < 4; r++) c.axis_override[r] = false;
-        for (const Controls::Call& call : t.calls) {
-            if (call.src != 1) continue;
-            Controls probe = c;
-            axis++;
-            if (probe.role_axis(call.role) == call.value) axis_ok++;
-            if (!stick_only && !c.axis_override[call.role]) c.axis_override[call.role] = true, c.axis_value[call.role] = call.value;
-        }
+        for (const Controls::Call& call : t.calls)
+            if (call.src == 1 && !stick_only && !c.axis_override[call.role])
+                c.axis_override[call.role] = true, c.axis_value[call.role] = call.value;
         uint32_t serial_before = s.entities().serial;
         s.tick(ev);
         if (s.entities().serial != serial_before) ladders_made += long((s.entities().serial - serial_before) & 0xFFFF);
@@ -341,6 +351,7 @@ int run_pad(int argc, char** argv) {
         Stat& st = stats[kind];
         st.ticks++;
         bool pos_ok = std::equal(p.w.pos, p.w.pos + 3, n.s_old);
+        last_pos_ok = pos_ok;
         bool yaw_ok = p.inv.yaw == t.yaw, pitch_ok = p.inv.pitch == t.pitch;
         st.pos += pos_ok, st.yaw += yaw_ok, st.pitch += pitch_ok;
         st.state_checked++;
@@ -358,6 +369,22 @@ int run_pad(int argc, char** argv) {
             calls_same = mine[i].role == theirs[i].role && mine[i].value == theirs[i].value;
         calls += long(theirs.size());
         if (calls_same) calls_ok += long(theirs.size());
+        // role_axis's values, call by call (from the sticks with --stick-only; else they are the
+        // original's, an input).
+        std::vector<Controls::Call> my_axes, their_axes;
+        for (const auto& x : c.calls)
+            if (x.src == 1) my_axes.push_back(x);
+        for (const auto& x : t.calls)
+            if (x.src == 1) their_axes.push_back(x);
+        for (size_t i = 0; i < their_axes.size(); i++) {
+            axis++;
+            bool same = i < my_axes.size() && my_axes[i].role == their_axes[i].role && my_axes[i].value == their_axes[i].value;
+            axis_ok += same;
+            if (!same && stick_only && verbose && axis - axis_ok <= 5)
+                std::printf("tick %" PRId64 ": role_axis(%d) core %d, the original %d (sticks %08X, now %08X)\n", t.tick,
+                            their_axes[i].role, i < my_axes.size() ? my_axes[i].value : 0, their_axes[i].value, t.sticks,
+                            t.pad_now);
+        }
         bool ok = pos_ok && yaw_ok && pitch_ok && state_ok && calls_same;
         if (!ok && p.dead) ok = true;  // the death camera carries him: not compared
         if (!ok) {
@@ -368,9 +395,9 @@ int run_pad(int argc, char** argv) {
                             pos_ok ? "" : " pos", yaw_ok ? "" : " yaw", pitch_ok ? "" : " pitch",
                             state_ok ? "" : " state", calls_same ? "" : " roles");
                 if (!pos_ok)
-                    std::printf("   pos core %.4f %.4f %.4f game %.4f %.4f %.4f\n", p.w.pos[0] / 65536.0,
-                                p.w.pos[1] / 65536.0, p.w.pos[2] / 65536.0, n.s_old[0] / 65536.0, n.s_old[1] / 65536.0,
-                                n.s_old[2] / 65536.0);
+                    std::printf("   pos core %.4f %.4f %.4f game %.4f %.4f %.4f (core fwd %d strafe %d vy %d yaw %d)\n",
+                                p.w.pos[0] / 65536.0, p.w.pos[1] / 65536.0, p.w.pos[2] / 65536.0, n.s_old[0] / 65536.0,
+                                n.s_old[1] / 65536.0, n.s_old[2] / 65536.0, p.w.fwd, p.w.strafe, p.w.vy, p.w.yaw);
                 if (!yaw_ok || !pitch_ok)
                     std::printf("   yaw core %.4f game %.4f, pitch core %.4f game %.4f\n", p.inv.yaw / 65536.0,
                                 t.yaw / 65536.0, p.inv.pitch / 65536.0, t.pitch / 65536.0);
@@ -404,5 +431,6 @@ int run_pad(int argc, char** argv) {
                 "removals by systems not ported taken from it; the core's own entities (ladders): %ld made that the "
                 "original didn't, %ld the original made that the core didn't, %ld made in all\n",
                 list_same, total, foreign_spawns, foreign_removals, own_diff, own_missed, ladders_made);
+    std::printf("the level logic placed the player %ld times\n", teleports);
     return first_bad < 0 ? 0 : 1;
 }
