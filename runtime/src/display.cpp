@@ -646,7 +646,7 @@ uint16_t pad_buttons(int port) {
 
 PadSticks pad_sticks(int port) {
     PadSticks s = {0x80, 0x80, 0x80, 0x80};
-    if (port == 0 && config.monkey_seed && gpu.frames >= config.monkey_from) return monkey_state().sticks;
+    if (port == 0 && config.monkey_seed && gpu.frames >= config.monkey_from) return tape_pad_sticks(monkey_state().sticks);
     bool scripted = false;
     if (port == 0)
         for (const auto &st : config.sticks)
