@@ -145,7 +145,31 @@ def pickup_spawn(eng, rec):
 
 
 def level_explosion(eng, sub, sub_obj, kind):
-    eng.note(f"level explosion({kind}) not implemented")
+    """Built-in 6, lvl_explosion (0x80052F14), at the entity or its record's position (kept in
+    0x800AB920): 1 and 6 sparks with smoke (1: and half the time a sound 0..3), 3 a burst of
+    sparks; the explosions proper (0, 2, 4, 5, 7, 8) not yet."""
+    m = eng.m
+    from engine_projectile import particles_spawn
+    e = sub.addr if sub is not None and getattr(sub, "addr", 0) else 0
+    if e:
+        pos = [m.s32(e + 0x20C + 4 * k) for k in range(3)]
+    else:
+        r = m.u32(sub_obj + 4)
+        pos = [s32(m.s16(r + 0x10 + 2 * k) << 16) for k in range(3)]
+        for k in range(3):
+            m.w32(0x800AB920 + 4 * k, pos[k])
+    rd = lambda: eng.rand.draw(0x80052F14)
+    if kind == 3:
+        particles_spawn(eng, pos, 5, ((rd() * 5) >> 15) + 0xF, 0x28, 0x19, 0xF, 0x64, 0x3F4, 0xE0, 0x3E0, 0xFE, 0xF,
+                        0x17FFF, 0, 0)
+    elif kind in (1, 6):
+        n = ((rd() * 3) >> 15) + 2
+        smoke = ((rd() * 4) >> 15) + 6
+        particles_spawn(eng, pos, 1, n, 0x1E, 0x19, 0xF, 0x64, 0x3F4, 0xE0, 0x3E0, 0xFE, 0xF, 0x10000, 1, smoke)
+        if kind == 1 and ((rd() * 100) >> 15) < 0x32:
+            eng.audio.play(0, rd() % 4, e, 0xCCCC, 0, 0x8000, 0x2000, 0, 0, 0, 0)
+    else:
+        eng.note(f"level explosion({kind}) not implemented")
 
 
 def set_home(eng, tgt, src):

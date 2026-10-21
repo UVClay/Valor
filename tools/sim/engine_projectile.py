@@ -104,7 +104,10 @@ def fire_gun(eng, e, inv, fire):
         eng.note("rocket_spawn not implemented")
         rumble = 7
     elif w == 4:
-        eng.note("pellet_spawn not implemented")
+        for i in range(6):
+            shot = pellet_spawn(eng, e, bone_a, bone_b, 0, 0, off_a, off_b, aimed, 0x13F7, 0x2000, 0, mask)
+            if shot and i < 5:
+                m.w16(shot + 0x3CA, w)
         vol = 0x20000
         rumble = 7
     if rumble is not None:
@@ -175,6 +178,31 @@ def bullet_spawn(eng, owner, bone_a, bone_b, a3, a4, off_a, off_b, dmg, spread, 
         m.w32(p + 0x228, s32(m.s32(p + 0x228) + (r1 << 9)))
         m.w32(p + 0x22C, s32(m.s32(p + 0x22C) + (r2 << 9)))
         m.w32(p + 0x230, s32(m.s32(p + 0x230) + ((r3 - half) << 9)))
+    return p
+
+
+def pellet_spawn(eng, owner, bone_a, bone_b, a3, a4, off_a, off_b, aimed, etype, fa, fb, mask):
+    """pellet_spawn (0x80045F14): speed 350 + rand*400 >> 15, damage 2.0, life 15, flags B 0x24 (swept,
+    not nearest first), the tracer, then a spread of 2^13 (three draws: pitch, yaw, roll, << 9)."""
+    m = eng.m
+    speed = (((eng.rand.draw(*FN["pellet"]) * 0x190) >> 15) + 0x15E) << 16
+    p = projectile_create(eng, owner, etype, -1, speed, bone_a, bone_b, a3, 0x20, 0x20000, 0xF, 0, a4, off_a, off_b,
+                          aimed, fa, fb, mask)
+    if p is None:
+        return None
+    o = m.u32(p + 0x388)
+    m.w32(p + 0x37C, BULLET_TOUCH)
+    m.w16(o + 0x38, 0)
+    if m.u32(owner + 0xC) & 1 and m.u32(G_CHEAT_FLAGS) & 0x20:
+        m.w16(o + 0x38, 0xA40)
+    tracer(m, p, 0xE6, 0xB4, 0x46, 0x28, 0x14, 0xA)
+    m.w32(p + 0x10, m.u32(p + 0x10) | 0x24)
+    r1 = (eng.rand.draw(*FN["pellet"]) & 0x3FFF) - 0x2000
+    r2 = (eng.rand.draw(*FN["pellet"]) & 0x3FFF) - 0x2000
+    r3 = eng.rand.draw(*FN["pellet"]) & 0x3FFF
+    m.w32(p + 0x228, s32(m.s32(p + 0x228) + (r1 << 9)))
+    m.w32(p + 0x22C, s32(m.s32(p + 0x22C) + (r2 << 9)))
+    m.w32(p + 0x230, s32(m.s32(p + 0x230) + ((r3 - 0x2000) << 9)))
     return p
 
 
