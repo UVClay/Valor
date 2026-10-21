@@ -5,6 +5,7 @@
 
 #include "valor/sim/audio.h"
 #include "valor/sim/objects.h"
+#include "valor/sim/views.h"
 
 namespace valor::sim {
 
@@ -602,23 +603,20 @@ void Engine::run(I to, const std::function<void(const StateLine&)>& line) {
     }
 }
 
+// The state trace's line, read through the accessor layer (views.h) as a host would.
 StateLine Engine::state_line() const {
     StateLine out;
     out.tick = tick_no, out.vblank = vblank;
-    U sol = U(m.u32(G_SOLDIER));
-    if (sol) {
-        U look = U(m.u32(sol + 0x388));
-        U inv = sol + 0x3CC;
-        I slot = m.u8(inv + 0x54);
+    view::Entity sol = view::soldier(m);
+    if (sol.a) {
+        view::Player p = view::player(m);
         out.has_player = true;
-        out.player = {look ? m.s32(look + 0x184) : 0, look ? m.s32(look + 0x178) : 0, slot, m.u8(inv + 0x55),
-                      m.s16(inv + 0x66 + 2 * slot), m.s16(inv + 0x56 + 2 * slot), m.u32(sol + 0x10)};
+        out.player = {p.a ? p.look_yaw() : 0, p.a ? p.look_pitch() : 0, p.slot() & 0xFF, p.weapon(), p.clip(), p.reserve(), sol.flags_b()};
     }
-    for (U e : m.entities()) {
-        U inst = U(m.u32(e + 0x100));
-        out.ents.push_back({m.u32(e), m.s32(e + 8), m.u32(e + 0xC), m.s32(e + 0x20C), m.s32(e + 0x210), m.s32(e + 0x214),
-                            m.s32(e + 0x228), m.s32(e + 0x22C), m.s32(e + 0x230), m.s32(e + 0xF4), inst ? m.s16(inst + 0x5C) : -1,
-                            inst ? m.s16(inst + 0x5E) : -1});
+    for (const view::Entity& e : view::entities(m)) {
+        view::Instance in = view::instance(e);
+        out.ents.push_back({e.handle(), e.type(), e.flags_a(), e.x(), e.y(), e.z(), e.pitch(), e.yaw(), e.roll(), e.health(),
+                            in.a ? in.anim() : -1, in.a ? in.frame() : -1});
     }
     return out;
 }

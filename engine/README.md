@@ -240,11 +240,11 @@ original's every tick, as `engine.py cmp` does.
 
 | Level | Ticks | Identical to the original | Identical to the Python engine |
 |---|---|---|---|
-| 1:3 | 7,296 | 5,632 (first difference: an impact's sparks at 1658; then 5824) | all (trace lines, and RAM at ticks 1000, 3000, 5000, 5823) |
-| 2:1 | 8,368 | 33 | all |
-| 2:2 | 7,036 | 74 | all |
+| 1:3 | 7,296 | 7,073 (the other 223: impact-spark positions, one hit face at 1658 and 3454) | all |
+| 2:1 | 8,368 | 4,943 (everything to 768) | all |
+| 2:2 | 7,036 | 821 | all |
 
-The 2:1 and 2:2 numbers are the Python engine's own: its work so far has been on 1:3.
+Synced to the Python engine at 5a9fd9b; each number is the Python engine's own at that commit.
 
 ### Why it keeps the original's memory layout
 
@@ -306,24 +306,24 @@ recording, as it takes the rest of its inputs:
 - the vblanks the load took: the vblank timer's 20-vblank message counts them;
 - `rand`'s seed at entry: the dump's seed, stepped back over the build's own draws.
 
-From the disc it matches the seed-dump run exactly: **5,632 of 7,296 ticks identical, first
-difference at 1658**. RAM differs from the seed run by a constant 35,996 words at ticks
+From the disc it matches the seed-dump run exactly: **7,073 of 7,296 ticks identical** (at
+d337b74: 5,632, as the seed run then). RAM differs from the seed run by a constant 35,996 words at ticks
 1000..1003: the unbuilt library and HUD state above, which nothing in the logic reads.
 
-2:1 from the disc matches its seed run too (33 identical, first difference at 35). 2:2 has no
-dump from before its tick 1, so the timer and `rand`'s seed come a tick late from the seed:
-0 identical (74 from the seed dump), first difference at tick 2 for both.
+2:1 from the disc matches its seed run too (4,943). 2:2 has no dump from before its tick 1, so
+the timer and `rand`'s seed come a tick late from the seed: 0 identical (821 from the seed dump),
+first difference at tick 2 for both.
 
-### Clean types for the host
+### Clean types for the host (`sim/include/valor/sim/views.h`)
 
-The Godot side shouldn't see offsets. The plan is an accessor layer over `Mem`: thin read-only
-views (`SoldierView`, `EntityView`, `CameraView`, `PickupView`...) with named, typed fields and
-iteration over the entity list. These are what the GDExtension uses to place and animate actors,
-and what other hosts would use too. Input goes in the same way it does in the recordings: the pad
-words and the control roles' values per tick. The views are generated from one table of
-documented offsets (formats.md, entities.md), so the names have a single source. The typed core
-(`core/`) stays as the verified reference for the player's systems and keeps its coretest modes.
-Over time its types can become the views' types.
+The host doesn't see offsets. The accessor layer is thin read-only views over `Mem`: `Entity`,
+`Instance` (the pose: bone quaternions and joints for skinning), `Player` (the inventory and the
+view), with the entity list, the soldier and the camera. Each structure's fields are one table
+(name, type, offset, what it is) that generates the accessors, so the names have a single source
+(entities.md, animation.md, movement.md). The engine's own state trace is read through them
+(`Engine::state_line`), and the trace numbers above are unchanged by it, so the views are checked
+every run. The Godot extension uses them to place and pose the actors. Input goes in as it does
+in the recordings: the pad words and the control roles' values per tick.
 
 ## What's next
 
