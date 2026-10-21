@@ -492,7 +492,8 @@ def watch_string():
         w += [f"E{i}={b:X}:20", f"H{i}={b + 0xF0:X}:C", f"M{i}={b + 0x20C:X}:30", f"V{i}={b + 0x298:X}:8",
               f"S{i}={b + 0x2D8:X}:18", f"B{i}={b + 0x304:X}:10", f"R{i}={b + 0x340:X}:20",
               f"I{i}={b + 0xFBC + 0x3C:X}:70", f"P{i}={b + 0x106C:X}:4C8", f"X{i}={p:X}:400"]
-    return ";".join(w + ["st=80039CA8:68"])
+    # the action masks: player_pad_config fills them from the layout option once the level runs
+    return ";".join(w + ["st=80039CA8:68", "at=800B7790:24", "ax=800B77E0:24"])
 
 
 def load_log(path, to, frm=0):

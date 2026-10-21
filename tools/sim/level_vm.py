@@ -1541,14 +1541,17 @@ class Run:
                     sim.stats["timer reset (pause)"] += 1
             prev_tmr, prev_f = tmr, F
             # Use: action 5's button pressed this tick (action_pressed: now has it, the last poll
-            # didn't). The action table (0x800B7790) says 0x80, but in this recording the pad
-            # word shows 0x08 at every Use the queue proves (unexplained; see the report).
+            # didn't), the button the controller configuration gives action 5 (0x800B7790 + 5*4:
+            # 0x80 in the default layout, 0x08 in the recorded session's; player.md).
             # The watch sees the last two polls; a press that began on an earlier tick of a
             # multi-tick frame shows in both (then it is put on the frame's first tick).
+            # player_pad_config fills the table from the button layout option once the level runs
+            # (the dump before the first tick still holds the default): read it from the later dump
+            use_bit = (self.later or om).u32(0x800B7790 + 20) & 0xFFFF or USE_BIT
             pad_now, pad_prev = om.u32(PAD_NOW), om.u32(PAD_PREV)
             use_at = None
-            if pad_now & USE_BIT and not last_now & USE_BIT:
-                use_at = len(ticks) - 1 if not pad_prev & USE_BIT else 0
+            if pad_now & use_bit == use_bit and last_now & use_bit != use_bit:
+                use_at = len(ticks) - 1 if pad_prev & use_bit != use_bit else 0
             last_now = pad_now
             for j, k in enumerate(ticks):
                 self.tick(k, om, use_at == j, j < nsend)

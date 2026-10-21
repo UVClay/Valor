@@ -331,7 +331,8 @@ def main():
         watch = ";".join(prefixed(s) for s in ("move", "combat", "level") if s in systems)
         if "brain" in systems:
             watch = ";".join(x for x in (watch, prefixed("find")) if x)
-        env = dict(VALOR_TRACE_STATE=f"{wrel}/trace.jsonl", VALOR_TRACE_SHOTS="1", VALOR_TRACE_DAMAGE="1")
+        env = dict(VALOR_TRACE_STATE=f"{wrel}/trace.jsonl", VALOR_TRACE_SHOTS="1", VALOR_TRACE_DAMAGE="1",
+                   VALOR_TRACE_INPUT="1")
         if watch:
             env["VALOR_WATCH"] = watch
         log("replay 1: the state trace and the simulators' watches")
@@ -350,7 +351,7 @@ def main():
     # brains watched at the addresses replay 1 found; the script VM's tick pairs.
     dumps = {}
     for v0, v1 in segs:
-        dumps[v0] = dict(pre=v0 - 1, seed=min(v0 + 7, v1 - 1), later=min(v0 + 100, v1 - 1))
+        dumps[v0] = dict(pre=v0 - 1, first=v0 + 1, seed=min(v0 + 7, v1 - 1), later=min(v0 + 100, v1 - 1))
     pairs = {}
     if "sst" in systems:
         pairs = {str(v0): sst_pairs(tr, v0, v1, a.sst_pairs) for v0, v1 in segs}
@@ -412,11 +413,14 @@ def main():
         d = {k: (v, path(v)) for k, v in dumps[v0].items()}
         if system == "move":
             v, p = d["seed"]
-            # the dump before the first tick too: a watch logs changes only, so until the seed
-            # the soldier's unchanged words would be the last level's
+            # the dumps before the first tick and after the first frame too: a watch logs changes
+            # only, from a first copy taken after the first frame's ticks (a dump at V is taken
+            # before frame V's), so until the seed a word unchanged since would be stale
             w, q = d["pre"]
+            x, r = d["first"]
             return ["move_sim.py", "check", trace, os.path.join(work, "move.log"), ml, "--from", str(v0),
-                    "--to", str(v1), "--ram", f"{q}@{w}", "--ram", f"{p}@{v}", "--free"]
+                    "--to", str(v1), "--ram", f"{q}@{w}", "--ram", f"{r}@{x}", "--ram", f"{p}@{v}", "--free",
+                    "--input", os.path.join(work, "replay1.log")]
         if system == "combat":
             v, p = d["seed"]
             return ["combat_sim.py", "check", trace, os.path.join(work, "combat.log"), "--seed", f"{v}:{p}",

@@ -583,6 +583,20 @@ def read_trace(path):
     return out
 
 
+ROLE_LINE = re.compile(r"role (\d+): 0 ([01]) [01] (-?\d+)")
+
+
+def read_roles(path):
+    """VALOR_TRACE_INPUT's movement roles per tick: {tick: [forward role, strafe role]}, the last
+    value logged for each (the buttons' first, then the stick's when they gave 0)."""
+    out = {}
+    for line in open(path, errors="replace"):
+        m = ROLE_LINE.search(line)
+        if m:
+            out.setdefault(int(m[1]), [0, 0])[int(m[2])] = int(m[3])
+    return out
+
+
 def ticks(trace_path, watch_path, lo, hi, seeds=()):
     """The ticks with a full state: trace line + watched fields at the end of the tick."""
     tr = read_trace(trace_path)
@@ -626,6 +640,9 @@ def check(args):
     lo = int(args[args.index("--from") + 1]) if "--from" in args else 0
     hi = int(args[args.index("--to") + 1]) if "--to" in args else 1 << 40
     free = "--free" in args
+    # --input LOG: a VALOR_TRACE_INPUT log of the same replay. The movement roles give +0x200
+    # (-forward role) and +0x218 (the strafe role) when the watch reads them cleared.
+    roles = read_roles(args[args.index("--input") + 1]) if "--input" in args else {}
     verbose = "-v" in args
     world = World(level)
     slots = None
@@ -657,6 +674,12 @@ def check(args):
             world.slots = slots
         else:
             world.all_chunks()
+        if p["health"] <= 0 < t["health"]:
+            # the level restarted after the death (shell.md): level_start places the soldier at
+            # the player start; not movement
+            stats["(restart: placed at the start)"]["ticks"] += 1
+            e = None
+            continue
         if p["health"] <= 0 and t["health"] <= 0 and t["cam"] is not None:
             # Dead (movement.md, Death): no move of his own; player_think_dead copies the death
             # camera's position, which moved earlier in the tick (the camera is first in the list).
@@ -727,6 +750,9 @@ def check(args):
         # keyboard or full stick gives (34.863, or 8.716 crouched).
         keys = (0, 0x22DD00, -0x22DD00, 0x8B740, -0x8B740)
         cands = [(e["fwd"], e["strafe"])]
+        rl = roles.get(t["tick"])
+        if rl is not None and not aiming and (t["strafe"] == 0 or t["fwd"] == 0):
+            cands.insert(0, (-rl[0] if t["fwd"] == 0 else e["fwd"], rl[1] if t["strafe"] == 0 else e["strafe"]))
         if not aiming and t["strafe"] == 0:
             cands += [(e["fwd"], v) for v in (last_strafe,) + keys]
         if not aiming:
