@@ -40,6 +40,15 @@ bool game_aiming() {
     return in_ram(p) && (r32(p + 0x10) & 0x10);
 }
 
+int game_crosshair_line() {
+    if (!game_in_level()) return 120;
+    uint32_t p = r32(PLAYER_STATE);
+    if (!in_ram(p)) return 120;
+    // The crosshair's screen line, inv+0x192 (inv = soldier+0x3CC): the aim ray goes through it.
+    int y = int16_t(r32(p + 0x3CC + 0x190) >> 16);
+    return y > 0 && y < 240 ? y : 120;
+}
+
 uint16_t game_action_buttons(GameAction a) {
     if (!game_in_level()) return 0;
     // The game keeps button masks with the pad's two bytes swapped.

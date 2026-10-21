@@ -11,6 +11,9 @@ bool game_in_level();
 bool game_paused();
 // Aim mode (R2 by default): the game draws its own reticle.
 bool game_aiming();
+// The screen line (0..239) the game aims through: shots go where a crosshair here points. It rests
+// at 131, below the view's centre (120).
+int game_crosshair_line();
 
 // The game's actions (its per-port action button table, 0x800B7790).
 enum GameAction {

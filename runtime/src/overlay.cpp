@@ -244,7 +244,7 @@ void draw_crosshair() {
     if (!view.world || view.h <= 0) return;
     if (game_aiming() || game_paused()) return;  // aim mode draws the game's own reticle
     float px = float(view.h) / 240.0f;
-    float cx = float(view.x) + float(view.w) * 0.5f, cy = float(view.y) + float(view.h) * 0.5f;
+    float cx = float(view.x) + float(view.w) * 0.5f, cy = float(view.y) + float(game_crosshair_line()) * px;
     float arm = float(config.crosshair_size) * px, thick = std::max(1.0f, std::round(px));
     ImDrawList *dl = ImGui::GetBackgroundDrawList();
     ImU32 white = IM_COL32(255, 255, 255, 255);
