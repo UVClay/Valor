@@ -54,6 +54,7 @@ def instance_set(eng, inst, h, flags):
         return 0
     m.w32(inst + 4, flags)
     m.w32(inst + 8, model)
+    m.w32(inst + 0x2C, m.u32(model + 0x88))      # the model's static vertices
     return 1
 
 
@@ -427,6 +428,8 @@ def pickup_spawn(eng, rec, kind_hash, model_hash, owner):
         y = rec["pos"][1]
         if abs(y - f) < 0x37:
             rec["pos"][1] = f
+            if rec.get("addr"):
+                m.w16(rec["addr"] + 0x12, f)     # the record's own y is changed
             m.w32(p + 0x210, s32(f << 16))
     m.w16(p + 0x2EC, 0)
     m.w16(p + 0x36, 0)
@@ -447,6 +450,7 @@ def pickup_spawn(eng, rec, kind_hash, model_hash, owner):
     m.w32(o + 4, model_hash)
     m.w32(o + 8, 0x384)
     m.w32(o + 0xC, rec.get("w", -1) if rec["flags30"] & 8 else -1)
+
     init = m.u32(t + 0xC)
     if init == 0x80083058:
         m.w32(o + 0x14, {0: 0xD0000, 1: 0x200000, 2: 0x400000}.get(kind, m.u32(o + 0x14)))

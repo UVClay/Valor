@@ -172,6 +172,12 @@ class EVM(sv.VM):
         mask, imm = (w >> 16) & 0xFF, w & 0xFFFF
         O = lambda n, v: self.operand(n, mask, v)
         W = lambda k: m.s32(pc + 4 * k)
+        if op == 0x02:
+            # op_sound (0x80058420): the five words go to script_operand whole (sst_vm.py keeps
+            # only their low bytes)
+            self.calls.append((ch, op, "sound", [O(1, imm & 0xFF)] + [O(k + 2, W(k + 1)) for k in range(5)]
+                               + [(imm >> 8) & 0xFF]))
+            return pc + 0x18
         if op in (0x33, 0x37, 0x3A, 0x3E, 0x34, 0x35, 0x36, 0x46):
             from engine_world_ops import world_op
             self.ch, self.ctx, self.yielded = ch, ctx, 0

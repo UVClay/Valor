@@ -304,7 +304,7 @@ def apply_damage(eng, victim, dmg, attacker):
         m.w32(victim + 0xF4, 0)
     fa = m.u32(victim + 0xC)
     if fa & 1:
-        eng.note("hit_indicator (the player's wound wedge) not implemented")
+        # hit_indicator (0x80060FC4): the HUD's wound wedge timers, drawing only
         inv = m.u32(victim + 0x388)
         m.w32(G_STAT_WOUNDED, m.u32(G_STAT_WOUNDED) + 1)
         m.w32(inv + 0x144, m.u32(inv + 0x144) + 1)
@@ -494,7 +494,11 @@ def player_hit_part(eng, e, p, o, op):
         m.w32(inv + 0x84, s32(f[1] * 0x60))
         m.w16(inv + 0x154, 8)
         m.w32(inv + 0x88, s32(f[2] * 0x60))
-        eng.note("camera_shake not implemented")
+        cam = eng.resolve(m.u32(inv + 0xA0))
+        if cam:
+            co = m.u32(cam + 0x388)           # camera_shake (0x80046C50): amplitude, count
+            m.w16(co + 0xCC, 0x14)
+            m.w16(co + 0xCE, 0xA)
         if ((eng.rand.draw(*FN["player_hit"]) * 100) >> 15) < 0x1E:
             snd = 0x1B if ((eng.rand.draw(*FN["player_hit"]) * 100) >> 15) >= 0x33 else 0x1C
             eng.audio.play(0, snd, e, 0x20000, 0, 0x8000, 0x1000, 0, 0, 0, 0)
@@ -562,11 +566,118 @@ def register(eng):
     eng.handlers[("touch", 0x8007C030)] = lambda e, o: player_touch(eng, e, o)
 
 
+G_ENEMY_WEAPONS = 0x80097FF0
+
+
 def enemy_weapon(eng, e):
-    """enemy_weapon (0x8005163C): not yet."""
+    """enemy_weapon (0x8005163C), by the fire state (weapon block +0x11, variable 0x16): 0 idle
+    (the burst and pause counters run down), 2 one shot at the player's middle, 1/3/4 bursts
+    (+0x12 pause, +0x13 rounds left, +0x14 between rounds): 1 and 4 at the player (1 only
+    within ±0x15E of the heading), 3 along the gun. Enemy bullets: type 0x13F4, damage the
+    record's +0x64, from the weapon's two vertices, pulled back, with the aim error +0xC8."""
     m = eng.m
-    if m.u8(m.u32(e + 0x388) + 0x11):
-        eng.note("enemy_weapon firing not implemented")
+    from engine_feed import FN
+    from engine import G_SOLDIER
+    rd = lambda: eng.rand.draw(*FN["enemy_weapon"])
+    obj = m.u32(e + 0x388)
+    player = m.u32(G_SOLDIER)
+    kind = m.s32(e + 0x4C + 4 * 0xF) & 0xFF
+    w = G_ENEMY_WEAPONS + 0x30 * kind
+    tmpl = m.u32(m.u32(e + 0x1C) + 4)
+    E = m.s16(m.u32(e + 0x38C) + 0xC8)
+    state = m.u8(obj + 0x11)
+    crouched = bool(m.u32(m.u32(player + 0x388)) & 2)
+
+    def spread(p, sp):
+        a = m.s32(p + sp)
+        m.w32(p + sp, s32(a - (E << 16)) if E * 2 == 0 else s32(a + ((((rd() * 2 * E) >> 15) - E) << 16)))
+
+    def shoot(target):
+        if m.s32(w + 4) == 0x1773:
+            eng.note("enemy rocket (rocket_spawn) not implemented")
+            return None
+        from engine_projectile import bullet_spawn
+        p = bullet_spawn(eng, e, m.s32(w + 8), m.s32(w + 0xC), target, obj + 0x1C, 0, 0, m.u8(tmpl + 0x64) << 16,
+                         0, 0, 0x13F4, 0x800, 0, 0x08000401)
+        if p:
+            pull_back_enemy(m, p, e)
+        return p
+
+    def middle():
+        return [m.s16(player + 0x20E), s16(s32(m.s32(player + 0x210) - (m.s32(player + 0x2D4) >> 1)) >> 16),
+                m.s16(player + 0x216)]
+
+    if state == 0:
+        v = m.u8(obj + 0x14)
+        m.w8(obj + 0x14, v - 1 if v else 0)
+        if m.u8(obj + 0x13) == 0 and m.u8(obj + 0x12):
+            m.w8(obj + 0x12, m.u8(obj + 0x12) - 1)
+    elif state == 2:
+        p = shoot(middle())
+        if p:
+            if crouched:
+                a = m.s32(p + 0x228)
+                d = (E >> 1) if E == 0 else ((-E) >> 1) + ((rd() * E) >> 15)
+                m.w32(p + 0x228, s32(a + (d << 16)))
+            else:
+                spread(p, 0x228)
+            spread(p, 0x22C)
+        m.w16(obj + 0xB68 + 2, 1)
+        m.w8(obj + 0x11, 0)
+    elif state in (1, 3, 4):
+        if m.u8(obj + 0x12) == 0:
+            v = m.u8(w + 0x20) + ((rd() * m.s32(w + 0x24)) >> 15 if m.s32(w + 0x24) else 0)
+            m.w8(obj + 0x12, v)
+            v = m.u8(w + 0x18) + ((rd() * m.s32(w + 0x1C)) >> 15 if m.s32(w + 0x1C) else 0)
+            m.w8(obj + 0x13, v)
+            m.w8(obj + 0x14, 0)
+        elif m.u8(obj + 0x14):
+            m.w8(obj + 0x14, m.u8(obj + 0x14) - 1)
+        elif not m.u8(obj + 0x13):
+            m.w8(obj + 0x12, m.u8(obj + 0x12) - 1)
+        else:
+            v = m.u8(w + 0x10) + ((rd() * m.s32(w + 0x14)) >> 15 if m.s32(w + 0x14) else 0)
+            m.w8(obj + 0x14, v)
+            from engine_sense import angle_to
+            if abs(angle_to(m, e, player)) < 0x15E or state in (3, 4):
+                if state == 3:
+                    shoot(None)
+                else:
+                    p = shoot(middle())
+                    if p:
+                        if crouched:
+                            m.w32(p + 0x228, s32(m.s32(p + 0x228) + ((((rd() * 0x28) >> 15) - 0x14) << 16)))
+                            m.w32(p + 0x22C, s32(m.s32(p + 0x22C) + ((((rd() * 0xB4) >> 15) - 0x5A) << 16)))
+                        else:
+                            spread(p, 0x228)
+                            spread(p, 0x22C)
+                m.w16(obj + 0xB68 + 2, 1)
+                snd = m.s32(w + 0x28)
+                if snd >= 0:
+                    bank = m.s32(w + 0x2C)
+                    if bank < 0:
+                        bank = m.u16(m.u32(m.u32(e + 0x100) + 8) + 0xC8)
+                    cls = 3 if m.s32(w + 4) == 0x1773 else 0
+                    eng.audio.play(s16(bank), snd, e, 0x10000, 0, 0x10000, 0x1800, 0, 0, cls, 0)
+                left = (m.u8(obj + 0x13) - 1) & 0xFF
+                m.w8(obj + 0x13, left)
+                if not left:
+                    m.w32(e + 0x3C, m.u32(e + 0x3C) | 1)
+    m.w8(obj + 0x10, m.u8(obj + 0x11))
+
+
+def pull_back_enemy(m, p, shooter):
+    """0x800514E8: an enemy's bullet starts pulled back along its forward column by d - d/4 (d the
+    horizontal cheap distance from the shooter), flagged object +0x38 0x2000."""
+    dx = abs(s16(m.s16(p + 0x20E) - m.s16(shooter + 0x20E)))
+    dz = abs(s16(m.s16(p + 0x216) - m.s16(shooter + 0x216)))
+    a, b = (dx, dz) if dx >= dz else (dz, dx)
+    t = a + (b >> 2)
+    t -= t >> 2
+    for k, o in enumerate((0x344, 0x34A, 0x350)):
+        m.w32(p + 0x20C + 4 * k, s32(m.s32(p + 0x20C + 4 * k) + (((-m.s16(p + o) * t) >> 12) << 16)))
+    o = m.u32(p + 0x388)
+    m.w16(o + 0x38, m.u16(o + 0x38) | 0x2000)
 
 
 def enemy_aim_hook(eng, e):

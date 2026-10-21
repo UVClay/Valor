@@ -349,8 +349,46 @@ def _world_value(vm, op, var):
 
 
 def aimed_at(eng, e):
-    eng.note("query 0xF (the player aims at it) not implemented")
-    return 0
+    """Query 0xF (0x80056F38 -> 0x80056F60): the player's gun points at the entity: the line
+    through the player's sphere centre along the gun (bone +0xD6 of the body model: the offset
+    +0xE0 turned by the bone's quaternion, from its joint, and 100 further along z, both through
+    the soldier's matrix and integer translation, + the eye offset; without joints the weapon
+    table's two bones) passes within the entity's radius (+0x2E8, else the brain's +0xC6) of its
+    sphere centre (GTE outer product, sf=1)."""
+    import engine_gte as gt
+    m = eng.m
+    pl = m.u32(G_SOLDIER)
+    r = m.u16(e + 0x2E8)
+    if not r and m.u32(e + 0x38C):
+        r = m.u16(m.u32(e + 0x38C) + 0xC6)
+    inst = m.u32(pl + 0x100)
+    if m.u32(inst + 0x84):
+        model = m.u32(inst + 8)
+        bone = m.s16(model + 0xD6)
+        q = tuple(m.s16(m.u32(inst + 0x88) + 8 * bone + 2 * k) for k in range(4))
+        R = cs.quat_matrix(q)
+        j = [m.s16(m.u32(inst + 0x94) + 8 * bone + 2 * k) for k in range(3)]
+        off = [m.s16(model + 0xE0 + 2 * k) for k in range(3)]
+        mac, _ = gt.mul(R, off, j, 12)
+        p1 = [s16(x) for x in mac]
+        p2 = [p1[0], p1[1], s16(p1[2] + 100)]
+        E = ent_matrix(m, pl)
+        T = [m.s32(pl + 0x354 + 4 * k) for k in range(3)]
+        eye = m.u16(m.u32(m.u32(G_PLAYER) + 0x388) + 0x94)
+        a, _ = gt.mul(E, p1, T, 12)
+        b, _ = gt.mul(E, p2, T, 12)
+        a = [s16(x) for x in a]
+        b = [s16(x) for x in b]
+        a[1] = s16(a[1] + eye)
+        b[1] = s16(b[1] + eye)
+    else:
+        w = m.u8(m.u32(pl + 0x388) + 0x55)
+        a = model_bone_point(eng, pl, m.s16(0x80093640 + 0x44 * w + 0xC))
+        b = model_bone_point(eng, pl, m.s16(0x80093640 + 0x44 * w + 0xE))
+    u = gt.vector_normal([s16(b[k] - a[k]) for k in range(3)])
+    d = [s16(m.s16(e + 0x2E0 + 2 * k) - m.s16(pl + 0x2E0 + 2 * k)) for k in range(3)]
+    _, c = gt.op(u, d, 12)
+    return int(r * r >= c[0] * c[0] + c[1] * c[1] + c[2] * c[2])
 
 
 def sensor(vm, vid):

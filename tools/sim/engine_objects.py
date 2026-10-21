@@ -111,8 +111,27 @@ def cull(eng, e, rec):
 
 
 def pickup_spawn(eng, rec):
-    eng.note("pickup spawn not implemented", f"r{rec.idx}")
-    return None
+    """record_spawn_pickup (0x80074CE8): pickup_spawn (0x800833A0) of the kind hash at record
+    +0x60 with its default model; then placed (0x80074AD8: the record's angles and position,
+    the y as pickup_spawn may have snapped it in the record), the matrix and the model's
+    behaviour script (+0x94) started and run once. The caller links it and sends message 0."""
+    m = eng.m
+    import engine_attach as at
+    r = rec.addr
+    rd = dict(pos=[m.s16(r + 0x10 + 2 * k) for k in range(3)], ang=[m.s16(r + 0x18 + 2 * k) for k in range(3)],
+              flags58=m.u32(r + 0x58), cull=m.s16(r + 0x5E), count=m.u8(r + 0x5C), flags30=m.u32(r + 0x30),
+              w=m.s16(r + 0x36), addr=r)
+    e = at.pickup_spawn(eng, rd, m.u32(r + 0x60), 0xFFFFFFFF, 0)
+    if e is None:
+        return None
+    for k in range(3):
+        m.w32(e + 0x20C + 4 * k, m.s16(r + 0x10 + 2 * k) << 16)
+        m.w32(e + 0x3BC + 4 * k, m.s16(r + 0x10 + 2 * k) << 16)
+        m.w32(e + 0x258 + 4 * k, m.s16(r + 0x10 + 2 * k) << 16)
+        m.w32(e + 0x228 + 4 * k, m.s16(r + 0x18 + 2 * k) << 16)
+    from engine_enemy import start_scripts
+    start_scripts(eng, e)
+    return e
 
 
 def level_explosion(eng, sub, sub_obj, kind):

@@ -37,6 +37,7 @@ def register(eng):
     eng.think[CASING_THINK] = lambda e: casing_think(eng, e)
     eng.think[IMPACT_THINK] = lambda e: impact_effect_think(eng, e)
     eng.think[PARTICLES_THINK] = lambda e: particles_think(eng, e)
+    eng.think[0x80082E88] = lambda e: None      # the pickup's think is empty
     eng.handlers[("world_contact", PROJECTILE_WORLD_CONTACT)] = lambda e, res: projectile_world_contact(eng, e, res)
     eng.handlers[("touch", BULLET_TOUCH)] = lambda e, o: bullet_touch(eng, e, o)
     eng.handlers[("hit_part", PROJECTILE_HIT_PART)] = lambda e, p, o, op: projectile_hit_part(eng, e, p, o, op)
@@ -277,12 +278,64 @@ def parts_box(m, e):
         m.w16(e + 0x30E + 2 * k, hi[k])
 
 
-def projectile_aim(eng, owner, p, bone_a, bone_b, a6, a11, off_a, off_b, aimed):
-    """projectile_aim (0x800451B0)."""
+def projectile_aim(eng, owner, p, bone_a, bone_b, target, attach, off_a, off_b, aimed):
+    """projectile_aim (0x800451B0): aimed at the aim point; the player's scope; otherwise from the
+    gun's two points (gun_points 0x80044E0C), toward a target point if given, else along the gun
+    (0x80044F10)."""
     m = eng.m
     if aimed:
         return projectile_aim_at_point(eng, owner, p)
-    eng.note("projectile_aim unaimed (gun points, scope) not implemented")
+    if m.u32(owner + 0xC) & 1 and m.u32(m.u32(owner + 0x388)) & 0x100:
+        eng.note("scoped shot (copy_camera_pos) not implemented")
+        return
+    t = m.s32(p + 8)
+    if t in (0x13F3, 0x13F1):
+        eng.note("grenade/rocket aim not implemented")
+        return
+    pa, pb = gun_points(eng, owner, bone_a, bone_b, attach, off_a, off_b)
+    for k in range(3):
+        m.w32(p + 0x20C + 4 * k, s32(pb[k] << 16))
+    if target:
+        pitch, yaw = cs.angles_from_to([m.s32(p + 0x20C + 4 * k) for k in range(3)],
+                                       [s32(target[k] << 16) for k in range(3)])
+        m.w32(p + 0x230, 0)
+    else:
+        pitch, yaw = cs.angles_from_to([s32(x << 16) for x in pa], [s32(x << 16) for x in pb])
+    m.w32(p + 0x228, s32(pitch << 16))
+    m.w32(p + 0x22C, s32(yaw << 16))
+
+
+def gun_points(eng, owner, bone_a, bone_b, attach, off_a, off_b):
+    """gun_points (0x80044E0C): with an attachment, its model's vertices bone_a, bone_b
+    (0x8008E38C); otherwise points on the owner's bones (model_bone_point)."""
+    if attach:
+        return attachment_point(eng, attach, bone_a), attachment_point(eng, attach, bone_b)
+    from engine_sense import model_bone_point
+    m = eng.m
+    oa = tuple(m.s16(off_a + 2 * k) for k in range(3)) if off_a else None
+    ob = tuple(m.s16(off_b + 2 * k) for k in range(3)) if off_b else None
+    return model_bone_point(eng, owner, bone_a, oa), model_bone_point(eng, owner, bone_b, ob)
+
+
+def attachment_point(eng, B, idx):
+    """0x8008E38C: vertex idx of the attachment's model (instance +0x2C, the model's +0x88)
+    through its drawn matrix while attached on a bone (+8 set, flag 1), else through RotMatrixYXZ
+    of its angles scaled by its scale >> 4 and moved to its integer position (0x8008D918);
+    RotTrans, the low halves kept."""
+    import brain_sim as bs
+    m = eng.m
+    vt = m.u32(B + 0x94 + 0x2C)
+    v = [m.s16(vt + 8 * idx + 2 * k) for k in range(3)]
+    if m.s32(B + 8) and m.u32(B) & 1:
+        R = [[m.s16(B + 0x74 + 6 * i + 2 * k) for k in range(3)] for i in range(3)]
+        t = [m.s32(B + 0x88 + 4 * k) for k in range(3)]
+    else:
+        r = bs.rot_yxz(m.s16(B + 0x62), m.s16(B + 0x66), m.s16(B + 0x6A))
+        sc = [m.s32(B + 0x24 + 4 * k) >> 4 for k in range(3)]
+        R = [[s16((r[3 * i + k] * sc[k]) >> 12) for k in range(3)] for i in range(3)]
+        t = [m.s16(B + 0x3E + 4 * k) for k in range(3)]
+    mac, _ = gt.mul(R, v, t, 12)
+    return [s16(x) for x in mac]
 
 
 def projectile_aim_at_point(eng, owner, p):

@@ -68,6 +68,12 @@ def entity_bounds(eng, e):
         j = (joints or {}).get(bone, (0, 0, 0))
         w = cs.to_world(M, t, list(j))
     else:
+        if m.u32(e + 0xC) & 1:
+            # the player's sphere turns with the yaw and roll only, scaled (0x8008D918)
+            import brain_sim as bs
+            r = bs.rot_yxz(0, m.s16(e + 0x22E), m.s16(e + 0x232))
+            sc = [m.s32(e + 0x270 + 4 * k) >> 4 for k in range(3)]
+            M = [[s16((r[3 * i + k] * sc[k]) >> 12) for k in range(3)] for i in range(3)]
         w = cs.to_world(M, t, [m.s16(e + 0x2D8 + 2 * k) for k in range(3)])
     for k in range(3):
         m.w16(e + 0x2E0 + 2 * k, w[k])

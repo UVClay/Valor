@@ -23,6 +23,7 @@ layout, apply as they are.
 """
 import json
 import os
+import re
 import struct
 import sys
 from collections import Counter, defaultdict
@@ -638,7 +639,33 @@ def level_lines(trace, feed, level):
     return [d for d in trace if lo <= d["vblank"] < hi]
 
 
+FRAMES_LOG = os.path.join(ROOT, "build", "engine", "frames.log")
+FRAME_WATCH = re.compile(r"^watch (\d+) fc\+4: ([0-9A-F]+) -> ([0-9A-F]+)")
+
+
 def frames_of(lines):
+    """The frames of the level's ticks, (vblank, [ticks]). From a watch of the frame and tick
+    counters (`VALOR_WATCH="fc=8009A5D8:8"`, build/engine/frames.log: one line per frame, the
+    tick counter's change giving the ticks it ran) when there is one; the trace's per-tick
+    vblank is not the frame (a frame's second tick can be stamped a vblank later)."""
+    if os.path.exists(FRAMES_LOG) and lines:
+        want = {d["tick"] for d in lines}
+        lo = lines[0]["vblank"] - 2
+        hi = lines[-1]["vblank"] + 2
+        out = []
+        for line in open(FRAMES_LOG, errors="replace"):
+            mm = FRAME_WATCH.match(line)
+            if not mm:
+                continue
+            vb = int(mm[1])
+            if not lo <= vb <= hi:
+                continue
+            a, b = int(mm[2], 16), int(mm[3], 16)
+            ticks = [t for t in range(a + 1, b + 1) if t in want]
+            if ticks:
+                out.append((vb, ticks))
+        if out and sum(len(t) for _, t in out) == len(want):
+            return out
     out = []
     for d in lines:
         if out and out[-1][0] == d["vblank"]:
