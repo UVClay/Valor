@@ -373,7 +373,10 @@ enemy_types.md, Resolved items). Hit from the front while holding it
 soldier drops it, a dying one throws (kept as found).
 
 **Reacting** (43, registered by most combat scripts unless bit 2): `s3C` bits set on the soldier
-(by the grenade, inferred): 0x40 → **116 flee**: flee goal from the grenade (type 0x13F3) and walk
+(by the grenade's first rolling tick, `projectile_world_contact` `0x80043284`: every living
+soldier or dog within 1200 gets 0x40; the nearest also gets 0x80 if it is a dog, or a soldier
+within 1000 with fewer than 3 warned; with 3 or more warned the nearest soldier gets 0x20;
+enemy_types.md, the dog's Grenades): 0x40 → **116 flee**: flee goal from the grenade (type 0x13F3) and walk
 until it is gone or 2000 away → 210. 0x80 → **117 return it**: run at it; 50%: stop within 160,
 anim 217 (a kick: grenade `+0x3C` |= 1 at frame 17); 50%: stop within 100, anim 218 (pick up: |=
 2), turn to the player (118), anim 220 (throw: |= 4); hit meanwhile: |= 8 (dropped) and 12/13.

@@ -204,6 +204,14 @@ the player's (`0x8007C1D0`) handle a hit:
    1/65536 of a 6.0 soldier (the damage trace prints 0.000, not dead), and the rule kills him
    (3 times in the session, each exactly so).
 
+**Spent attack parts.** Damage between two hit parts is refused when either part is kind 8
+(`damage_from_hit`). An attack part that lands a hit, on an entity with flags B 0x20000 (the
+dog), is turned to kind 8 by `0x8004A868`, and `parts_touch` (`0x8004C990`) reports only the
+first touching pair. So a dog mid-bite that touches an explosion bites the blast first (the
+damage trace shows the blast as the victim, 2.0), its mouth part is spent, and the blast does
+it no damage for all its ticks: watched with a fetched grenade going off in a biting dog's
+mouth (enemy_types.md, the dog's Grenades). A dog not attacking dies from the 4.0.
+
 Hits from the same type as the victim (soldier on soldier), or from a projectile whose shooter
 had flags A 0x4, skip the head and 10% rules and the statistics (the first branch of
 `enemy_hit_part`).
