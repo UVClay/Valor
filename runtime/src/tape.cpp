@@ -26,6 +26,8 @@
 #include <string>
 #include <vector>
 
+#include <unistd.h>
+
 #include "game.h"
 #include "gpu.h"
 #include "hw.h"
@@ -190,9 +192,12 @@ void tape_replay(const std::filesystem::path &dir) {
     if (!f) fatal("no recording at %s", dir.c_str());
     settings_load(dir / "settings.ini");
     config.fullscreen = false;
-    // A copy of the card, so the recording stays as it was.
-    config.memcard = std::filesystem::exists(dir / "card.mcd") ? "build/replay-card.mcd" : "build/replay-card";
-    config.memcard_import = "build/replay-import.mcd";
+    // A copy of the card, so the recording stays as it was: one per replay (replays run side by
+    // side would otherwise share it, and one's saves would change another's game).
+    std::filesystem::path copies = std::filesystem::temp_directory_path() / ("valor-replay-" + std::to_string(getpid()));
+    std::filesystem::create_directories(copies);
+    config.memcard = copies / (std::filesystem::exists(dir / "card.mcd") ? "card.mcd" : "card");
+    config.memcard_import = copies / "import.mcd";
     std::filesystem::remove_all(config.memcard);
     std::filesystem::remove_all(config.memcard_import);
     if (std::filesystem::exists(dir / "card.mcd")) copy_card(dir / "card.mcd", config.memcard);
