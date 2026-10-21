@@ -55,10 +55,40 @@ def world_op(vm, op, pc, w, mask, imm, O, W):
         return pc + 8
     if op == 0x46:      # 0x8005C398: follow
         return follow(vm, pc, O, W, imm)
-    if op == 0x36:
-        eng.note(f"script op {op:X} not implemented")
-        return None
+    if op == 0x36:      # 0x8005B8EC: node_take
+        return node_take(vm, pc, O, W)
     return None
+
+
+def node_take(vm, pc, O, W):
+    """Op 36 (0x8005B8EC): take a node. Operands: the node, a variable, how. For a node in the
+    world's table (0x34-byte records, the world object's +8, count +0xC): a node with +4 set
+    halves the brain's radii into +0x2E8 and +0x3C8; how 0 or 1: x and z on the brain's node
+    point (+0xA0, +0xA4); how 0 or 2: the heading from the node's +0x1E, else how 4: ratan2 of
+    its +0x24, +0x28, into +0x22C and the variable; flags B |= 0x80."""
+    import combat_sim as cs
+    m, e = vm.m, vm.e
+    obj = m.u32(m.u32(0x8009D648) + 0x388)
+    node, var, how = O(1, W(1)) & 0xFFFFFFFF, O(2, W(2)), O(3, W(3)) & 0xFFFFFFFF
+    if node < m.u32(obj + 0xC):
+        n = m.u32(obj + 8) + 0x34 * node
+        br = m.u32(e + 0x38C)
+        if m.s32(n + 4):
+            m.w16(e + 0x2E8, s16(s32(m.u16(br + 0xC6) << 16) >> 17))
+            m.w16(e + 0x3C8, s16(s32(m.u16(br + 0xCA) << 16) >> 17))
+        if how == 0 or how & 1:
+            m.w32(e + 0x20C, s32(m.s16(br + 0xA0) << 16))
+            m.w32(e + 0x214, s32(m.s16(br + 0xA4) << 16))
+        a = None
+        if how == 0 or how & 2:
+            a = s32(m.s16(n + 0x1E) << 16)
+        elif how & 4:
+            a = s32(cs.ratan2(m.s16(n + 0x24), m.s16(n + 0x28)) << 16)
+        if a is not None:
+            m.w32(e + 0x22C, a)
+            vm.set_var(var, a)
+        m.w32(e + 0x10, m.u32(e + 0x10) | 0x80)
+    return pc + 0x10
 
 
 def follow(vm, pc, O, W, imm):
