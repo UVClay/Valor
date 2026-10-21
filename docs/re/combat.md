@@ -180,6 +180,5 @@ particles (`0x80070DEC`), shakes the camera if the player is within 3000 units (
 
 ## Open
 
-- The fireballs' size and growth over the explosion's life, and the callers' N, spread and
-  damage per weapon.
+- (The fireballs' size, growth and damage per caller: objects.md.)
 - The results screen's medals (SHELL.BIN, `m_medals`); the rating itself is in levels.md.

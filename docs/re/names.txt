@@ -5,6 +5,7 @@
 80013AE4 skeleton_walk              # (bone, parent matrix, out table, inst): vertices + joints (inst+0x94)
 80013E58 quat_matrix                # quaternion -> GTE rotation (transposed form)
 8001552C rand
+8001555C srand                      # (seed) -> 0x800CA2A4; one caller, the shell's start-up
 80015B28 printf                     # debug output (strings like "MISSION:%d\n")
 80015DB8 VSync
 80016B60 ResetGraph
@@ -29,6 +30,7 @@
 80038D90 g_campaign                 # 12 bytes per slot: mission index, current level, level count (MSN1..5, 7, 8, 9)
 80039C58 g_level_exit               # LEVEL's exit code: 0/3 finished, 1 quit, 2 ?; shell: 4 new game, 5 recorded/loaded
 80039C5C g_cold_boot
+80039C68 g_menu_input_count         # +1 per menu button edge in the shell; the srand seed
 80039C74 g_mp_arena                 # multiplayer arena (menu order); the exe maps it to the MSN12 level
 80039C84 g_rating_level
 80039C88 g_rating_slot
@@ -77,15 +79,22 @@
 80042DF8 explosion_sound            # 0:9/10, two or three layers
 8004301C ammo_add                   # (soldier, slot, amount); plays the weapon's reload sound
 80043140 impact_sound               # 0:0..6 and sparks
+80043284 projectile_world_contact   # bounce, roll, warn soldiers, reflect; rockets explode
 80043AD4 bullet_touch               # touch(bullet, other): exact hit test, effects, target's handler
+80044014 grenade_hit_part           # projectile hit part: damage, explode (bit 0x100)
+80044120 grenade_soldier_bits       # +0x3C bits from soldiers: kick, pick up, throw back, drop
+80044470 projectile_think           # life, fuse, gravity, rolling, explosion at fuse 0
 80044D18 angles_from_to
 80044E0C gun_points                 # two points on the gun from the model's bones +0xD4/+0xD6
 800451B0 projectile_aim             # start and angles: camera (scoped) or along the barrel; enemies: at the target
 8004532C projectile_create          # +0xF8 damage
+80045808 grenade_spawn              # (thrower, model, bone a, bone b, fuse, speed, target, ...)
 80045A78 bullet_spawn               # bullets are entities at 600-669 units/tick
 80045CA0 rocket_spawn
 80045F14 pellet_spawn
 800460F4 weapon_reload              # (soldier): clip from reserve; 0 if nothing to do
+80046A88 prop1771_think
+80046B2C prop1771_spawn
 80046C50 camera_shake               # (camera, amplitude, count): y += amp, amp = -amp/2 per tick
 80046C64 camera_ease                # camera_obj current points toward targets, >> obj+0x10
 80046DD4 camera_draw                # camera's +0x370: poses and skins its model
@@ -112,6 +121,7 @@
 8004DE3C input_poll                 # reads the controllers (was game_tick: it's run per tick, but only polls)
 800503D4 render_pass
 800504F8 render_flip
+80050658 dist2d_approx              # (a, b): |dx| + |dz| - min/2
 8005163C enemy_weapon               # bursts, aim error +0x38C->+0xC8
 80052D70 record_activate            # level built-in 4: once (bit 0), spawns the record's entity
 80052DC4 level_set                  # level built-in 13: (what, value): 0 fog near, 1 music, 2 primary objectives complete, 3 level end?
@@ -120,6 +130,7 @@
 80053444 lvl_sound_stop             # level built-in 20 -> voice_stop
 80053464 show_text                  # level built-in 8: a message-table text on screen
 8005351C record_has_tag             # level built-in 9
+8005359C record_tags_match          # filter 5 of register_msg
 8005372C objective_add
 8005380C objective_remove
 800538B0 objective_complete
@@ -139,6 +150,8 @@
 800545D8 tsp_dyn_parse              # TSP dynamic blocks -> slot table (0x288 per slot)
 80054740 world_anim_step            # level built-in 18: animated world texture groups by id
 80054990 world_anim_set             # level built-in 21
+80054AB8 dog_think
+80054E4C dog_spawn                  # type 0x1405
 80055628 enemy_think                # type 0x1402
 80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
 8005608C enemy_draw                 # soldier's +0x370
@@ -149,6 +162,9 @@
 80057C8C path_nearest_point         # (e, path): index of the nearest point
 80057D9C script_op_anim             # op 00: anim N (mode in bits 12-15) frames A..B; mode 1 fade, 2 cut
 80058420 op_sound                   # model script op 02
+80058734 sop_fall                   # op 0x04: +0x200, +0x21C, +0x218
+80058C78 sop_event                  # ops 0x0D/0x0E/0x42: store an event
+80059B8C sop_turn                   # op 0x25: angles += operands
 8005AB04 brain_release_node         # frees the node brain+0xB6 claimed
 8005ABA0 brain_reset_gait           # speed 1.0, gait 0, no slow-down
 8005ABEC brain_clear_moves          # goals &= ~0x5C03
@@ -159,7 +175,11 @@
 8005D148 script_operand             # (n, mask, value, entity): variable or literal
 8005D18C script_step
 8005D32C destructible_touch         # type 0x1770: damage, message 1 at 0 health, objects-destroyed count
+8005D678 destructible_spawn         # types 0x1770, 0x1778
 8005DA24 mounted_gun_think          # MG emplacement operated by the player
+8005E2AC mounted_gun_spawn
+8005E61C scripted_think             # type 0x1776: script_run_b, script_run_a
+8005E648 door_spawn                 # type 0x1776
 8005EA54 alarm_spawn
 8005EDF8 alarm_think
 8005F068 alarm_from_level           # level_set(4, id)
@@ -183,13 +203,18 @@
 80066000 script_var_addr            # (entity, object, index): entity variables at record+0x20
 8006602C script_of                  # (entity, object): the script id from the record (+0x64, or +0x78 for kind 3)
 800662CC send_event
+80066318 msg_run_one
+800663B8 msg_run_all
 800664A0 script_run_message         # (entity, object, message): runs that handler
+80066EA0 msg_send                   # subscriptions -> the queue
 80066EA8 msg_filter_dispatch        # message subscriptions by filter type (1: has_tag, 5: tags_match)
+800670E8 msg_enqueue
 800672E0 level_vm                   # level scripts: byte ops over a typed stack
 8006949C align_up
 8006A5B4 entity_draw_model          # pose (unless off screen and seen before) and draw
 8006A910 model_find                 # hash -> index in g_models
 8006A96C model_instance_init        # (inst, model, flags, entity): pose buffers, hit parts from model +0xC0
+8006B834 entity_link_front          # after the camera
 8006B854 entity_link                # appends to g_entities
 8006B89C entity_unlink
 8006B8F0 entity_remove
@@ -201,11 +226,19 @@
 8006D2E4 model_draw                 # place + render; sets +0x298 (drawn once)
 8006D670 brain_alloc                # 0x124 bytes
 8006D6F0 spawn_from_model           # (model, template): spawn_by_type, then the model's script +0x94
+8006DA88 handles_free_removed
+80070DEC explosion_burst
+800712A0 particles_update
+800715D4 explosion_think
 800719C0 explosion_spawn            # type 0x31: fireball hit parts, camera shake, noise
 80072310 enemy_puffs_draw
 80072704 enemy_puffs_update         # weapon block +0x3E8: 5 rising, fading puffs (smoke, inferred)
 800729C0 enemy_drops_draw
 800730D4 enemy_drops_update         # weapon block +0x49C: falling particles that lie on the floor (blood, inferred)
+80073BA8 particles_spawn            # type 0x31 particle entity, no collision
+80074EE8 spawn_queue_push
+80074F9C spawn_queue_run_one
+80075034 spawn_queue_run_all
 8007505C record_spawn               # by kind: template (+0x60/+0x74) -> model -> entity; kind 4 a pickup
 80075118 entity_leave_ground        # +0x284 = 0
 8007529C entity_records_register    # the BSD entity table
@@ -306,7 +339,13 @@
 8008DABC model_bone_point
 8008E354 entity_bone_point          # (entity, bone, out, offset): a point on a bone in the world
 8008E9DC entity_in_view             # bounding sphere against the view (inferred)
+8008FDF8 obj1774_think
+800905C0 obj1774_spawn
+80090A30 frame_idle_job             # one message + one round-robin job
+80090AEC frame_idle_loop
+80090B80 frame_wait_vblank          # idle jobs until the vblank; computes g_ticks_dropped
 80090B90 present
+80090D38 vblank_handler
 80090DE8 g_chunk_collision          # 0x28 bytes per chunk: rect, counts, tree, indices, vertices, normals, faces
 80090FC8 g_keyon_pending
 80090FCC g_pan_phase                # 0..3, positional voices re-panned on 3
@@ -325,6 +364,7 @@
 80098984 g_chunk_count
 80099AB8 g_dyn_frames               # per dynamic group (< 99): current frame, 0xFF unset
 80099B38 g_script_ops               # 74 x {handler, opcode, size}
+8009A5C0 g_vblank_timer             # +1 per vblank; game_frame sends message 0x59 per 20
 8009A5D0 g_ticks_dropped
 8009A5D4 g_catchup_ticks
 8009A5D8 g_frame_count              # +1 per game_frame (displayed frame)
@@ -342,10 +382,12 @@
 8009D638 g_player                   # camera entity; obj at +0x388
 8009D648 g_world                    # the level as an entity: its +0xC is the "world" collision bit
 8009D64C g_entities                 # entity list head, linked through +0x4
+8009D650 g_last_explosion
 8009D654 g_soldier                  # the player's soldier; inventory at +0x3CC, player.md
 8009D678 g_handles                  # handle (low 16 bits) -> entity
 8009E28C g_path_count
 8009E290 g_paths                    # 8 bytes each: {id, count, points (0x14 bytes each, s16 x y z first)}
+8009E294 g_spawn_queue              # 64 records; count 0x8009E288
 8009E398 g_aim_pitch_from_move      # per port: forward stick drives pitch when aiming
 8009E3A0 g_look_mode                # per port, see look_mode
 8009E3AC g_axis_curve               # 128-byte stick response curve
@@ -364,9 +406,12 @@
 800AA178 g_pvs_b                    # camera leaf's mask B; nodes need +0x10 & this
 800AA17C g_pvs_a                    # camera leaf's mask A; nodes need +0x14 & this
 800AA184 g_chunk_loading            # slot being streamed (-1: none), skipped by draw/collision
+800AA188 g_explosion_light          # r, g, b, radius, radius^2
 800AD260 g_vm_stack                 # 8-byte {type, value}, top index 0x8009D5A8
+800B6460 g_msg_queue                # 128 x 32 bytes
 800B74B0 g_role_axes                # analog role config, port*0xA0 + role*0x28
 800B75F0 g_role_buttons             # digital role config, port*0xD0 + role*0x34
+800CA2A4 g_rand_seed
 
 # --- SHELL.BIN ---
 8003BA40 g_kill_required            # 4 words per campaign slot

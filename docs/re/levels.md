@@ -95,7 +95,7 @@ built-in 4: once per record, bit 0 of its state word): by its kind (`+0xC`, `0x8
 |---|---|---|---|
 | 0x1402 | `enemy_spawn` (`0x800563F0`) | `enemy_think` | Soldier (7 models in 2:1/2:2, 2 in 1:3) |
 | 0x1405 | `0x80054E4C` | `0x80054AB8` | Another character: soldier-like flags, 5 hit parts, contact damage |
-| 0x1770 | `0x8005D678` | (none) | **Destructible**: solid, health from the record's `+0x5C`; damaged by bullets, explosions (type 0x31) and melee (`0x8005D32C`); at 0 health its script gets message 1 (e.g. 1:3's script 84: animate, explode, sound, remove) and `0x80039D10` counts it (career stat `+0x1C`: objects destroyed); record `+0x68` set: `0x800838AC` (a drop?) |
+| 0x1770 | `0x8005D678` | (none) | **Destructible**: solid, health from the record's `+0x5C`; damaged by bullets, explosions (type 0x31) and melee (`0x8005D32C`); its script gets message 1 on every hit, and its script decides what happens at 0 health (objects.md; e.g. 1:3's script 84: animate, explode, sound, remove); a destroyed one is counted by `0x80039D10` (career stat `+0x1C`: objects destroyed); record `+0x68` set: `0x800838AC` (a drop?) |
 | 0x1778 | `0x8005D678` | (none) | The same model kind without collision (scenery) |
 | 0x1771 | `0x80046B2C` | `0x80046A88` | Scripted, spinning by variables 3..5, removed when variable 6 < variable 2 (a timed effect?) |
 | 0x1772 | `0x8005E2AC` | `mounted_gun_think` | Mounted gun, with a brain (ranges 3000) |
