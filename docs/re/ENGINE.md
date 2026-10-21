@@ -13,7 +13,7 @@ with the details; nothing here is new, only arranged in the order an engine need
 | Positions | 16.16 fixed point (entity `+0x20C`), integer part mirrored at `+0x354` (entities.md) |
 | Angles | 4096 per turn, stored 16.16 (entity `+0x228`: pitch, yaw, roll) |
 | Time | The game logic runs in **ticks of 1/30 s**. The console's vblank is 1/60 s; recordings and dumps count vblanks |
-| Health, damage | 16.16; weapons do flat damage per hit, and a damaging hit on a soldier's head kills outright unless one of two helmet models is knocked off, 50% of the time (combat.md) |
+| Health, damage | 16.16; weapons do flat damage per hit, a soldier left under 10% of his maximum health dies, and a damaging hit on a soldier's head kills outright unless one of two helmet models is knocked off, 50% of the time (combat.md) |
 | Random numbers | One PsyQ `rand` (LCG) shared by gameplay, sound and effects; matching its sequence isn't practical, match the distributions (objects.md) |
 
 ## The tick
@@ -22,8 +22,9 @@ objects.md, "The frame and the tick", has the full order. In short, every tick:
 
 1. Input is read (a fresh read for each tick).
 2. Every entity thinks and moves, in list order: the camera first, then entities spawned from
-   records (newest first), the world, the player's soldier, projectiles last (so a bullet moves
-   in the tick it was fired).
+   records (newest first), the world, the player's soldier, projectiles last. The walk reads each
+   entity's `next` before its think: an enemy's bullet moves in the tick it was fired, the
+   player's waits at the muzzle until the next tick unless another projectile was alive.
 3. Then all contacts and hits are resolved (entities.md, combat.md).
 4. On-screen texts update; a periodic message 0x59 goes out about three times a second.
 

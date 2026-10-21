@@ -178,8 +178,11 @@ mode (bits 12-15); the operand word holds A (low half) and B (high half).
 2. Animation = N, frame = A, +0x60 = max(A, 3).
 3. The channel's frame target (context +0x18) = B; B = -1 means the last frame (count - 1);
    B = A gives target -1 (the frame shows for one tick).
-4. Mode (only when the script runs normally, not from an event handler: `script_step`'s 5th
-   argument 0):
+4. Mode (whenever `script_step`'s 5th argument, kept at `0x80099EB0`, is 0, which is always:
+   both callers, `script_run_a` and the event matcher `script_run_b` for both channels, pass 0
+   (`sw $zero, 0x10($sp)` before `jal script_step` at `0x8003FB68` and `0x8003FF38`), so event
+   handlers' animations fade and cut like any other; an earlier version of this document said
+   handlers skipped this):
    - **1, cross-fade**: copy the pose on screen (+0x88's quaternions) to +0x8C and the root
      offset +0x98 to +0xA0; blend counter = 4; +0x40 = -1.
    - **2, cut**: blend counter = 0.
@@ -270,13 +273,28 @@ from the entity's draw (`entity_draw_model`, `0x8006A5B4`) or the camera's (`0x8
 the game runs two or more ticks in a frame, only the last tick's frame is ever posed.
 
 1. No animation (-1): nothing (the cache is set to -1).
-2. Not blending (counter 0): if the animation or frame changed, the frame's quaternions
-   (`anim_frame_pose`, below) go into +0x90's buffer, +0x88 points at it.
-3. Blending (counter c > 0, and a pose existed): the target is the new animation at frame +0x40
-   if ≥ 0, else +0x60 (the range's first frame, at least 3); the result is the pose saved at the
-   start (+0x8C) interpolated toward the target at **t = (4 - c)/4**: c = 4 shows the saved pose
-   as is, 3, 2, 1 show ¼, ½, ¾ of the way, and at 0 the pose is the current frame again. The
-   root offset (+0x98) is interpolated linearly from +0xA0 the same way.
+2. Not blending (counter 0): if the animation or frame differs from the cache (+0x62/+0x64), the
+   frame's quaternions (`anim_frame_pose`, below) go into +0x90's buffer, +0x88 points at it,
+   and the cache takes the animation and frame. If they match, nothing is rebuilt.
+3. Blending (counter c > 0, and a pose existed: cache animation not -1): the target is the new
+   animation at frame +0x40 if ≥ 0, else +0x60 (the range's first frame, at least 3); the
+   result is the pose saved at the start (+0x8C) interpolated toward the target at
+   **t = (4 - c)/4**: c = 4 shows the saved pose as is (+0x88 = +0x8C), 3, 2, 1 show ¼, ½, ¾ of
+   the way, and at 0 the pose is the current frame again. The root offset (+0x98) is
+   interpolated from +0xA0 the same way, per component: c = 3: A + (T - A) >> 2; c = 2:
+   A + (T - A) >> 1; c = 1: T - (T - A) >> 2. **The cache takes the target frame**, not the
+   current one, so a fade whose counter reaches 0 on its target frame (a mode-0 range after it
+   took one off early) keeps showing the ¾ pose one more frame: the cache matches, nothing is
+   rebuilt (182 such draws in the session below).
+4. A fade started with no pose yet (cache animation -1): `pose_build` itself sets the blend
+   counter to 0 and builds the current frame (the VM only sets it to 4). With +0x88 still 0
+   (never posed) the frame is built into +0x90 and the cache is left alone.
+
+Checked tick by tick over the replay of 1:3, 2:1 and 2:2 (`tools/sim/combat_sim.py check`: the
+five character slots' instances and pose buffers watched every frame, the pose recomputed from
+the animation data in RAM as the previous frame's draw saw the instance): every pose built
+matches RAM exactly: 12914 plain frames (key or interpolated), 2511 fade steps, 1021 fade starts
+showing the saved pose, 182 kept by the cache, and the cache itself in all 16628.
 
 So a mode-1 animation started at frame 0 is shown as: the old pose (tick 0), ¼, ½, ¾ toward
 its frame 3 (ticks 1-3, while its frames 1..3 play underneath: root movement included), then
@@ -313,6 +331,14 @@ From the root bone with an identity rotation and the root offset (+0x98) as posi
 - its vertices are turned and moved by that matrix into the skinned-vertex buffer;
 - its first child is walked with this bone's matrix, its next sibling with the parent's;
 - the joint (the bone's position) is stored in the instance's joints (+0x94).
+
+The fixed point, exactly: the root's position is the root offset << 19; a bone's offset (3×s16)
+goes into the GTE as offset × 16 and is multiplied by the parent's rotation (4096 = 1) without
+a shift, then << 3, so positions are in units of 2^-19; the joint is (2·P + 0x80000) >> 20 per
+component (rounded). A bone whose index is beyond the frame's bone count ends the walk of its
+whole sibling chain, not only its own subtree. Checked: the joints of every draw in the replay
+of 1:3, 2:1 and 2:2 recomputed from the pose in RAM this way match RAM exactly (14651 draws;
+`tools/sim/combat_sim.py`).
 
 The model's placement in the world (entity position and the matrix `+0x340`) is applied after,
 when drawing.
@@ -365,19 +391,48 @@ think and move, before the collision pass), for entities with hit parts. A part 
 |---|---|
 | +0x08 | Kind (combat.md: damage scale, 7 never hit, 5 attack) |
 | +0x18 | The instance |
-| +0x1C, +0x1E | Bones a and b; 0xFFFF: a fixed point; 0xFFFE: a fixed point raised by the player's eye height (player weapon block `+0x94`) |
+| +0x1C, +0x1E | Bones a and b; 0xFFFF: a fixed point; 0xFFFE: a fixed point whose y gets the camera object's `+0x94` added (`[[g_player]+0x388]+0x94`, g_player the camera `0x8009D638`, read at `0x8004CF70`: -240 standing, the player's parts in d1720 put it there) |
 | +0x20 | Centre in the world (3×s32), the result |
 | +0x34 | Radius (also used for the bounding box) |
 | +0x38 | Radius² (the hit test) |
 | +0x40 | Offset (3×s16) |
 
 Centre, in model space: **(joint[a] + joint[b]) / 2 + R(a) × offset**, R(a) bone a's rotation
-(skipped when the offset is 0); a fixed point is just the offset. Then into the world by the
-entity's matrix `+0x340` and position. The bounding box `+0x308..+0x312` is rebuilt from the
-centres ± radii. The entity's own sphere (`+0x2E0`) is placed on bone `+0x2EA` the same way
-(`0x8008E354` → `0x8008DABC`), or at the local point `+0x2D8` when that is -1. Checked: the 17
-part centres of the soldier at `0x800BA31C` (mid_14000) recomputed from its joints, quaternions
-and offsets match RAM within one unit.
+(skipped when the offset is 0 or the instance has no pose pointer +0x88); a fixed point is just
+the offset. Then into the world by the entity's matrix `+0x340` and position. Exactly, per
+component and in this order:
+
+- R(a) from the pose's quaternion {x, y, z, w} (+0x88, 8 bytes per bone), each element its own
+  GTE product >> 12: [[(2x² + 2w²) >> 12 - 4096, (2xy + 2zw) >> 12, (2xz - 2yw) >> 12],
+  [(2xy - 2zw) >> 12, (2y² + 2w²) >> 12 - 4096, (2yz + 2xw) >> 12], [(2xz + 2yw) >> 12,
+  (2yz - 2xw) >> 12, 2·((z² >> 12) + (w² >> 12)) - 4096]] (the transpose of the textbook matrix);
+- the turned offset (R(a) · offset) >> 12, stored as s16;
+- plus (joint[a] + joint[b]) >> 1 (s16 joints, an arithmetic shift);
+- into the world: (M · c) >> 12 + the integer position (`+0x354`), M = `+0x340`, which is
+  `RotMatrixYXZ` of the integer parts of the angles `+0x228..+0x230` (PsyQ's, with its own
+  roundings; checked equal in all 34352 frames below).
+
+The entity's own sphere (`+0x2E0`, 3×s16, radius `+0x2E8`) is placed on bone `+0x2EA` the same
+way (the joint, no offset; `0x8008E354` → `0x8008DABC`), or, when that is -1, at the local point
+`+0x2D8` through the same matrix: the dog's (type 0x1405) is -1 with (0, -50, 0), radius 125;
+a soldier's is bone 0, radius 150.
+
+**The bounding box is never rebuilt.** `entity_bounds` sets `+0x308..+0x30C` to -0x7FFF and
+`+0x30E..+0x312` to 0x7FFF, then `entity_parts_update` keeps the smaller of the box's minimum and
+each centre - radius, the larger of the maximum and centre + radius (`0x8004D328..0x8004D3FC`):
+the box stays the whole world. Watched: the five slots' boxes only ever held 0 or ±0x7FFF over
+the session. A test against it always passes.
+
+Checked every frame of the replay of 1:3, 2:1 and 2:2 (`tools/sim/combat_sim.py check`: the
+five character slots' parts, joints, pose and matrix watched; the parts recomputed from the
+joints and pose in RAM and the entity's angles and position): 34310 of 34352 frames give every
+centre exactly, and the collision sphere 34316. The others: a soldier pushed back in the
+collision pass after its parts were placed (2:2, vblanks 53467..53704, 35 frames: parts 2 to 57 units ahead
+of where the push left it; the push is inferred from the error being along the soldier's path
+while an object 110 units away was touching it), two frames at the 2:2 start and one in 2:1
+(37 units, the same kind), and a never-drawn soldier whose part 3 is one unit off for 5 frames
+(unexplained). So a reimplementation places the parts after think and move and doesn't move
+them for the collision pass's pushes.
 
 The 1:3 soldier's parts (radius): 0 head: bone 13 + 15 along it (20); 1, 2 hands: 21, 17 (20);
 3, 4 between collarbone and elbow, 10 to the side: 18-20, 14-16 (20); 5, 6 elbows 20, 16 (20);
@@ -817,6 +872,9 @@ Notes for a reimplementation:
 - entities.md: `+0x270` is filled from the model's scale (+0xA4..+0xAC; 1.0 everywhere seen),
   not angles (inferred from `model_instance_init`; the matrix build `0x8008D918` takes it as its
   third argument).
+- entities.md: the bounding box `+0x308..+0x312` is not rebuilt from the bones each tick: it
+  is always ±0x7FFF (Hit spheres, above). And the entity's sphere sits on bone `+0x2EA` or, at
+  -1 (dogs), on the local point `+0x2D8`.
 
 ## Open
 

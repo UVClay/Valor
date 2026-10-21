@@ -17,7 +17,7 @@ entity's "object" pointer: for the soldier, the weapon block lives inside the en
 | soldier+0xF0 | 16.16 | Maximum health? (128.0 at every level start) |
 | soldier+0xF4 | 16.16 | Health (128.0 at level start; saved by `level_end_carry`) |
 | soldier+0x152 | u8 | Noise group passed to `0x8004D8DC` when firing (alerts enemies) |
-| soldier+0x1C8 | s32 | Stance (0..9, a jump table in `fire_gun` picks accuracy from it) |
+| soldier+0x1C8 | s32 | Stance (0..9; in `fire_gun` it picks whether a shot is aimed at the aim point: 0, 1, 7, 8 yes; combat.md) |
 
 ### Weapon block (`inv = soldier+0x3CC`)
 
@@ -112,16 +112,29 @@ elif (latched (inv+0x44) > 0 ? fire held : fire pressed):  soldier+0x3C |= 2
 ```
 
 The bit becomes the fire variable (variable 1) and `player_weapon_update` calls `fire_gun` **in
-the same tick** (measured: the press tick's bullet is logged on that tick). Firing sets
-`latched = refire_count = |weapon +0x04|`. So:
+the same tick** (measured: the press tick's bullet is logged on that tick), **unless the
+soldier's weapon script is busy**: its script number (`soldier+0x11E`, the one that also sets
+the weapon block's busy flag 0x800000) is 2, 9 (reload), 10 (lower), 13 or 16 (raise). Firing
+sets `latched = refire_count = |weapon +0x04|` (an s16; the halfword at +0x06 is something
+else). "Pressed" is the fire button's mask (`0x800B7790`, port × 9 + action) down now and not
+at the previous poll (`0x80093B7C`, `0x80093B84`); the game polls again for each extra tick of
+a frame, so only a frame's first tick can see a press. So:
 
 - **Every gun with a positive delay is automatic when held**, the Garand and pistols too: one
   shot every **delay + 1 ticks** (measured for all of 1, 4, 5, 6, 8, 9, 11, 12: 5, 26, 51, 3,
   13, 13, 4, 21 ticks). The first shot of a weapon needs a press (`latched` starts at 0).
 - A negative delay (bazooka -15) latches a negative value: **one press per shot** (measured:
   holding fire through the reload fired one rocket).
-- A press while a reload, draw or other busy script runs is lost, and so is a hold that began
-  then (measured: fire held from inside the Thompson's first reload never fired).
+- A press while a reload, draw or other busy script runs is lost. A hold fires as soon as the
+  script ends if the weapon has fired before (`latched` > 0); if not, it needs a new press
+  (measured: fire held from inside the Thompson's first reload never fired).
+
+Checked tick by tick over the replay of 1:3, 2:1 and 2:2 (`tools/sim/combat_sim.py check`,
+stepping this rule from the refire state the watch shows at the end of the previous frame,
+with the frame's pad and the soldier's script number): a shot exactly when predicted in 16975
+of 16977 ticks; the other 2 are in frames of several ticks where the reload script ended
+inside the frame, where the watch can't show at which tick. 220 shots in all (Garand, Thompson,
+shotgun, silenced pistol, sniper rifle).
 
 ### Reload
 
@@ -130,8 +143,9 @@ drops by as much), then starts the soldier's script 9, the reload animation. Fir
 until it ends: the script's frame count (`soldier+0x11C` when it starts) + 1 ticks. It runs:
 
 - by itself when the clip is empty and the refire countdown has run out (measured: the tick the
-  countdown reaches 0, e.g. 20 ticks after the Garand's 8th round);
-- on Use (action 5) unless the weapon has flag 1, if the clip isn't full and there is reserve;
+  countdown reaches 0, e.g. 20 ticks after the Garand's 8th round; every one in the session);
+- on Use (action 5) unless the weapon has flag 1, if the clip isn't full (`g_weapons[w]+0x0A`)
+  and there is reserve, and no weapon script runs (checked: every Use press of the session);
 - when a slot is drawn with an empty clip (the clip "fills the first time it's drawn").
 
 A weapon switch during a reload cuts the animation (the rounds already moved; measured, weapon 6).
@@ -174,7 +188,10 @@ where the run went to a reload instead. Spread in angle units (4096 per turn): �
 
 Measured: 8 Garand rounds 0.2 units from the line to the aim point (rounding only); a scoped
 shot left from the camera at the view yaw, 0.62° below the view (the look point's 0.57° plus
-rounding). Aimed at the aim point, a bullet's collision mask loses bits 0x08000200 until
+rounding). Exactly, over the replay of 1:3, 2:1 and 2:2 (`tools/sim/combat_sim.py check`, the
+weapon block watched each frame): every aimed projectile starts at `inv+0x198` (416), every
+unspread round's angles are `angles_from_to(inv+0x198, inv+0x1A4)` to the angle unit (108,
+combat.md has the formula), and 3 scoped rounds start at the camera. Aimed at the aim point, a bullet's collision mask loses bits 0x08000200 until
 `distance / speed + 1` ticks have passed (`0x80045084` stores the full mask in `obj+0x3C`, the
 countdown in `obj+0x40`; `projectile_think` restores it).
 
@@ -192,7 +209,11 @@ after 20 rounds, near the 15.0 cap; it settles 0.5 per tick after release.
 
 **Bullets**: speed 600..669 per tick (rand % 70), pellets 350..749 (rand·400 >> 15),
 `bullet_spawn` damage the table's +0x2C (weapon 12 passes 2.5 itself, pellets 2.0 each, the
-rocket 30.0). The first tick moves them in the tick they're fired (objects.md).
+rocket 30.0). They move by `+0x200` along their angles each tick, in 1/16-unit steps, for 15
+ticks (combat.md, Bullets). **The player's projectiles don't move in the tick they're fired**
+(objects.md says they do): the entity loop has already read the soldier's `next`, null when the
+soldier is last, so the new projectile is first moved the next tick and sits at `+0x198` for
+one tick (416 of 421 in the replay; the other 5 had an entity after the soldier).
 
 ### The scope (sniper, aiming)
 

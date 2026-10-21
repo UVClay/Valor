@@ -147,8 +147,12 @@ spawned entity, ..., the oldest; the world entity (type 3, `g_world`); the playe
 4. The **player's soldier** (think `player_update` `0x8007A6B0`: controls, aim; then
    `player_weapon_update` from the entity update: firing and throwing). Its zone test (trigger
    volumes, `zones_update` `0x800845A8`) runs right after its move.
-5. **Projectiles**, oldest first, including those fired this tick by anyone: a bullet fired
-   this tick moves its first 600 units in the same tick. An entity created by a projectile's
+5. **Projectiles**, oldest first, including those fired this tick ahead of the loop: the walk
+   reads an entity's `next` before its think, so a bullet appended at the list's end moves in
+   its firing tick only when the loop hasn't passed the end yet. An enemy's bullet (enemies come
+   before the player) moves its first stretch at once; **the player's stays at the muzzle for its
+   firing tick** unless another projectile was already alive (416 of 421 shots in the replay,
+   `tools/sim/combat_sim.py`, combat.md). An entity created by a projectile's
    think (an explosion) is linked after the camera, so it already passed: it gets its first
    think next tick, but it is in the list for this tick's collision pass.
 
