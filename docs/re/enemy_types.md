@@ -268,11 +268,31 @@ the bites.
 arrived (`s38` 0x400000) → stand facing the player (anim 0), or back to the path (15) if it
 has one; detection or the player within v5 of home → 17.
 
-**Grenades (35):** a grenade rolling near (`s3C` 0x80: for dogs always the "come and return it"
-bit, objects.md): turn, run at it (seek with slow-down radius 900); within 400 attach to it
-(`follow`), anim 24, set the grenade's `+0x3C` 0x2 (picked up) at frame 3, back to the chase.
-Gone meanwhile (`s38` 0x10, the seek target removed) → 19. It never throws it back (a
-soldier's 0x4 throw is not sent): the grenade stays attached until it explodes (inferred).
+**Grenades (35):** a grenade rolling near (`s3C` 0x80): turn, run at it (seek with slow-down
+radius 900); within 400 attach to it (`follow`), anim 24, set the grenade's `+0x3C` 0x2 (picked
+up) at frame 3, back to the chase. Gone meanwhile (`s38` 0x10, the seek target removed) → 19.
+It never throws it back (a soldier's 0x4 throw is not sent): **the grenade stays in its mouth
+until it explodes** (watched, below).
+
+Who is warned (`projectile_world_contact` `0x80043284`, once per grenade: the first tick it
+rolls, obj bits 0x400 with 0x4000, which it then clears): every living soldier and dog
+(type 0x1402/0x1405, flags A without 0x20080000) within **1200** (`dist2d_approx`) gets `s3C`
+0x40 (flee); the nearest of them also gets 0x80 (return it) if it is a **dog** (any distance
+within the 1200), or a soldier with fewer than 3 warned and within 1000; with 3 or more warned
+the nearest soldier gets 0x20 (smother) instead. So a dog nearest to a rolling grenade always
+goes for it.
+
+**The dog survives its own grenade while biting.** Damage between two parts
+(`damage_from_hit` `0x8004C1B4`) is refused when either part is kind **8**, and an attacker
+with flags B 0x20000 (the dog: 0x68000) has its attack parts (kinds 5, 6, 9) turned to kind 8
+by `0x8004A868` once one of them lands. `parts_touch` (`0x8004C990`) reports only the first
+touching pair (the first part of the first entity against the first of the second), and the
+dog's part 0 is its mouth: the attack part while it leaps or bites, the one next to the
+grenade. The blast (newer, earlier in the list) is handled first: the dog's bite "lands" on
+the blast (the blast takes 2.0, `VALOR_TRACE_DAMAGE` prints it as the victim), part 0 becomes
+kind 8, and from then on every pair the blast meets is that spent part: no damage for all 9
+ticks. A dog whose part 0 is an ordinary part (kind 1: running, going home) takes the 4.0 and
+dies, thrown (29/30).
 
 **Hit (27 front, 28 behind):** stop (24); above 10% health: v13 = 1, a yelp (37: sound 0 or 1),
 anim 12 (front) or 14 (behind), back to the chase (19). At 10% or less: killed by an explosion
@@ -319,7 +339,23 @@ in the character slots, every script change, the variables and positions logged 
   loop at the edge of v5; it broke when the player came nearer.
 - Dogs' barks (sounds 4/5) are heard by soldiers: seven 1:3 soldiers were alerted by a bark
   196..540 away with the player beyond their sight (soldier.md, Hearing).
-- Not seen: the hit-comrade run (16) and the grenade fetch (35).
+- Not seen: the hit-comrade run (16).
+- **The grenade fetch (35)**, watched in warped 1:3 runs (`build/dogfetch/`: player teleported
+  to (-1047, 453, 4023) on the first `player_update`, where the first dog spawns at once and
+  chases; god mode; grenades drawn with three weapon presses; one throw at vblank 9300,
+  `VALOR_WATCH` on the character slots, their `+0x38` words and the first projectile after the
+  player): the grenade landed and began rolling 699 from the dog (vblank 9328: the dog's `s3C`
+  0xC0, the grenade's obj bits 0x434B → 0x0742); the dog entered **35 the next tick** (9330),
+  ran at it (anim 3) and started anim 24 at 380 from it (9362); at frame 3 (9368) the grenade
+  followed its mouth, its bounce bit cleared (0x340 → 0x140), **fuse back to 90, life 120**;
+  **back to the chase (19) 28 ticks after the warning** (9386) with the grenade in its mouth
+  (a frame: `build/dogfetch/shots2/frame009410.png`), then leapt (21) and bit (22) as usual,
+  carrying it. The fuse ran out at 9546, the blast 180 from the dog mid-bite: the dog took
+  nothing (the spent-part rule above; the same in two more throws, charged 10 and 22 ticks,
+  blasts at 9562 and 9638, the dog biting each time). Without god mode, a soldier's shot had
+  moved the player to the leash's edge: the dog picked the grenade up, chased one tick, then
+  **went home (20) carrying it**, and the blast killed it there (4.0 of its 4.0, 9548), thrown
+  (30 → 32 → corpse 36). The player, 400..2000 away, was never within the blast's 300-unit kill.
 
 ## The mounted gun and its gunner (0x1772)
 
