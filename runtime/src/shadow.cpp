@@ -24,6 +24,7 @@
 #include "interp.h"
 #include "runtime.h"
 #include "shadow.h"
+#include "tape.h"
 
 namespace psx {
 
@@ -347,7 +348,11 @@ bool shadow_active() { return active; }
 // The latest copy is what the game shows: it hasn't shown anything else since (a 2D screen) but
 // the frame its own pass drew (shown at a vblank after it), and its ticks keep coming (slowly, as
 // when a mission ends).
-bool shadow_fresh() { return have_snapshot && hw::gpu.flips <= pass_flips + 1 && hw::gpu.frames <= snapshot_frame + 60; }
+// (Replaying a recording made before, as then: a copy at most 4 vblanks old, see tape.h.)
+bool shadow_fresh() {
+    if (tape_copies_touch_devices()) return have_snapshot && hw::gpu.frames <= snapshot_frame + 4;
+    return have_snapshot && hw::gpu.flips <= pass_flips + 1 && hw::gpu.frames <= snapshot_frame + 60;
+}
 
 bool shadow_render(double vblank_time, int &x, int &y) {
     if (!have_snapshot || active) return false;

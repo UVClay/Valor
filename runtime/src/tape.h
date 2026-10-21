@@ -20,6 +20,12 @@ void tape_session_start();
 void tape_replay(const std::filesystem::path &dir);
 bool tape_recording();
 bool tape_replaying();
+// Replaying a recording made before drawing copies were kept off the devices (tape version 1,
+// before 2026-10-20): its copies, as then, use every device and run while the tick is at most 4
+// vblanks old. The drawing pass sets the sound voices' volumes for its camera, and the game reads
+// them back, so a copy turned by mouse look changed the game: the replay must do the same (with
+// OpenGL: a replay without a display draws no copies).
+bool tape_copies_touch_devices();
 
 // What the game reads: recorded (live value passed through) or replayed (live value ignored).
 uint16_t tape_pad_buttons(uint16_t live);

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "shadow.h"
+#include "tape.h"
 #include "hw.h"
 #include "runtime.h"
 
@@ -35,8 +36,11 @@ static void trace_once(const char *kind, uint32_t phys, int size, uint32_t value
 // A drawing copy (shadow.cpp) runs the game's code, BIOS calls included: it may use the GPU (which
 // keeps its own state for it), but no other device. Its writes are dropped and its reads find
 // nothing (no interrupt pending, no data waiting), so the real devices never see it. (The drawing
-// pass sets the sound voices' volumes for the camera: a copy did that again for its own.)
-static bool copy_device(uint32_t phys) { return shadow_active() && phys != 0x1F801810 && phys != 0x1F801814; }
+// pass sets the sound voices' volumes for the camera: a copy did that again for its own.) Replaying
+// a recording made before, they still do (tape.h).
+static bool copy_device(uint32_t phys) {
+    return shadow_active() && phys != 0x1F801810 && phys != 0x1F801814 && !tape_copies_touch_devices();
+}
 
 uint32_t io_read(Cpu *c, uint32_t phys, int size) {
     (void)c;

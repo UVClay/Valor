@@ -48,9 +48,13 @@ Out of scope for now: the two-player mode (LEVEL2P.BIN), video playback (standar
 
 Checking against recordings: replays now hold with or without a display (the widescreen
 projection and the near-polygon hook follow the recorded settings, not whether OpenGL is up).
-The 2026-10-19 session replays exactly through 1:3, 2:1 and 2:2, then differs from vblank 61980
-(10 s into 2:3) in every kind of run; not the display, the settings (unchanged in the session),
-the SPU or the CD timing (both on emulated time). Open.
+The 2026-10-19 session differed from vblank 61980 (10 s into 2:3, a fast mouse flick): it was
+recorded before drawing copies were kept off the sound chip (9629c58), and its copies, turned
+ahead by the mouse look, set the voices' volumes for their own camera, which the game reads back.
+Recordings now say which: version 1 tapes replay with copies that use the devices as they did
+then (needs OpenGL, which draws the copies), and the session replays exactly to its end; new
+recordings are version 2. Caveat: version 1 tapes recorded between 9629c58 and the version bump
+had isolated copies already, and now replay as old ones (re-record them).
 
 Waiting for the game state they need (presentation, later): a separate HUD layer and then
 native HUD elements, a native sniper scope, a PC-style aim mode (the view keeps turning, the

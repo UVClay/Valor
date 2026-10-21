@@ -13,6 +13,8 @@
 //   h F HASH               RAM hash once a second: a replay checks it runs the same game
 //   mark F mission M L     a mission started (1-based)
 //   mark F user N          Tab (or F9) was pressed
+// The first line is "valor-tape VERSION": 2 since drawing copies (shadow.cpp) are kept off the
+// devices; a version 1 recording is replayed with copies that use them, as they did then.
 // It also keeps log.txt, everything logged while recording, and on a crash ram.bin and
 // scratch.bin (main RAM and the scratchpad).
 #include "tape.h"
@@ -44,6 +46,7 @@ struct Track { std::vector<Event> events; size_t next = 0; };
 Track buttons, sticks, movement, turn, pitch, presents, looks, analog, hashes;
 uint64_t last_frame;
 bool diverged;
+int version = 2;  // replay: the recording's tape version
 
 std::filesystem::path record_dir;
 FILE *log_file;
@@ -142,6 +145,7 @@ void copy_card(const std::filesystem::path &from, const std::filesystem::path &t
 
 bool tape_recording() { return mode == RECORD; }
 bool tape_replaying() { return mode == REPLAY; }
+bool tape_copies_touch_devices() { return mode == REPLAY && version < 2; }
 
 void tape_record(const std::filesystem::path &dir) {
     std::filesystem::create_directories(dir);
@@ -152,7 +156,7 @@ void tape_record(const std::filesystem::path &dir) {
     else if (std::filesystem::exists(config.memcard_import)) copy_card(config.memcard_import, dir / "import.mcd");
     out = fopen((dir / "input.tape").c_str(), "w");
     if (!out) fatal("can't write %s", (dir / "input.tape").c_str());
-    fprintf(out, "valor-tape 1\n");
+    fprintf(out, "valor-tape 2\n");
     record_dir = dir;
     log_file = fopen((dir / "log.txt").c_str(), "w");
     log_to(log_file);
@@ -197,8 +201,10 @@ void tape_replay(const std::filesystem::path &dir) {
     char line[256];
     while (fgets(line, sizeof line, f)) {
         unsigned call, addr, value;
-        int w, h;
-        if (sscanf(line, "poke %X %X %u", &call, &addr, &value) == 3) {
+        int w, h, v;
+        if (sscanf(line, "valor-tape %d", &v) == 1) {
+            version = v;
+        } else if (sscanf(line, "poke %X %X %u", &call, &addr, &value) == 3) {
             config.pokes.push_back({call, addr, value, false});
         } else if (!strncmp(line, "mark ", 5)) {
             unsigned long long frame;
@@ -224,6 +230,9 @@ void tape_replay(const std::filesystem::path &dir) {
     mode = REPLAY;
     log("replay: %s, vblanks to %llu, %zu frames presented", dir.c_str(), (unsigned long long)last_frame,
         presents.events.size());
+    if (version < 2)
+        log("replay: a version %d recording: drawing copies use the devices as they did then (it holds only "
+            "with a display, which draws them)", version);
 }
 
 void tape_window(int w, int h) {
