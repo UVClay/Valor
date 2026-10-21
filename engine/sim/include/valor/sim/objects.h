@@ -26,6 +26,12 @@ bool has_handler(const char* kind, U fn);
 void place(Engine& eng, U e, Record& rec);
 U model_by_hash(Engine& eng, U h);
 U record_spawn_entity(Engine& eng, Record& rec);  // 0 when refused (queued)
+constexpr U G_LADDER_HELD = 0x8009A5B8;
+constexpr U LADDER_THINK = 0x800611D0;
+U ladder_spawn(Engine& eng, U pair, U r);
+void ladder_think(Engine& eng, U e);
+void ladder_release(Engine& eng);
+void place_record(Mem& m, U e, U r);
 U spawn_by_type(Engine& eng, I t, U model, Record& rec);
 void cull(Engine& eng, U e, Record& rec);
 U pickup_spawn_record(Engine& eng, Record& rec);

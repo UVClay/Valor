@@ -106,6 +106,60 @@ U spawn_by_type(Engine& eng, I t, U model, Record& rec) {
     return e;
 }
 
+U ladder_spawn(Engine& eng, U pair, U r) {
+    Mem& m = eng.m;
+    if (m.u32(G_LADDER_HELD) == pair)
+        m.w32(G_LADDER_HELD, 0);
+    else
+        ladder_release(eng);
+    U e = eng.entity_create(0x4C, 8, 0, 0, 0);
+    m.w32(e + 8, 0x4C);
+    m.w32(e + 0x10, 0x203);
+    m.w32(e + 0x36C, LADDER_THINK);
+    m.w32(e + 0x384, 0x8006A318);
+    U o = U(m.u32(e + 0x388));
+    for (U k : {0x14u, 0x370u, 0x374u, 0x378u}) m.w32(e + k, 0);
+    m.w32(e + 0xC, m.u32(e + 0xC) | 0x20000);
+    place_record(m, e, r);
+    m.w32(o, m.s16(r + 0x2A));
+    m.w32(o + 4, S32(m.s32(e + 0x210) - (m.s16(r + 0x2C) << 16)));
+    return e;
+}
+
+void ladder_think(Engine& eng, U e) {
+    Mem& m = eng.m;
+    U p = U(m.u32(G_SOLDIER));
+    U o = U(m.u32(e + 0x388));
+    I dx = iabs(S32(m.s32(e + 0x20C) - m.s32(p + 0x20C))), dz = iabs(S32(m.s32(e + 0x214) - m.s32(p + 0x214)));
+    I d = (dx >> 16) + (dz >> 16) - (imin(dx, dz) >> 17);
+    if (m.s32(o) >= d) {
+        I top = m.s32(o + 4);
+        if (m.s32(p + 0x210) >= top) m.w32(m.u32(p + 0x388) + 0x70, top);
+    }
+}
+
+void ladder_release(Engine& eng) {
+    Mem& m = eng.m;
+    U pair = U(m.u32(G_LADDER_HELD));
+    if (!pair) return;
+    m.w32(G_LADDER_HELD, 0);
+    if (!(m.u32(pair) & 1)) return;
+    for (U e : m.entities())
+        if (m.u32(e + 0x1C) == pair) {
+            eng.remove(e, "ladder released");
+            return;
+        }
+}
+
+void place_record(Mem& m, U e, U r) {
+    for (int k = 0; k < 3; k++) {
+        m.w32(e + 0x228 + 4 * k, S32(m.s16(r + 0x18 + 2 * k) << 16));
+        m.w32(e + 0x20C + 4 * k, S32(m.s16(r + 0x10 + 2 * k) << 16));
+        m.w32(e + 0x258 + 4 * k, m.u32(e + 0x20C + 4 * k));
+        m.w32(e + 0x3BC + 4 * k, m.u32(e + 0x20C + 4 * k));
+    }
+}
+
 void cull(Engine& eng, U e, Record& rec) {
     Mem& m = eng.m;
     if (m.u32(rec.addr + 0x58) & 1) {

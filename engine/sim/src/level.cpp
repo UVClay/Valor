@@ -650,33 +650,31 @@ void LevelLogic::record_leave(Ent* ent, Record& r) {
 }
 
 void LevelLogic::kind0_enter(Ent*, Record& r) {
-    if (r.cls == 0xD1BA7D1E)
-        m_.w32(LEVEL_FLAGS, m_.u32(LEVEL_FLAGS) | 0x24);
-    else if (r.cls == 0x3011B913) {
-        I st = m_.u32(r.pair);
-        if (!(st & 1)) {
-            if (ladder_held == r.pair)
-                ladder_held = 0;
-            else
-                ladder_release();
-            m_.w32(r.pair, m_.u32(r.pair) | 1);
-        }
+    if (r.cls == 0x3011B913) {
+        record_spawn_type(r.pair);
+        return;
     }
+    if (r.cls == 0xD1BA7D1E) m_.w32(LEVEL_FLAGS, m_.u32(LEVEL_FLAGS) | 0x24);
+}
+
+// record_spawn_type(0x4C, pair) (0x80074BB8): only while the record's bit 0 is clear; the entity
+// linked at the front, bit 0, +0x1C, message 0 to its script if the record has one, placed.
+void LevelLogic::record_spawn_type(U pair) {
+    if (m_.u32(pair) & 1) return;
+    U r = U(m_.u32(pair + 4));
+    U e = ladder_spawn(eng_, pair, r);
+    eng_.link_front(e);
+    m_.w32(pair, m_.u32(pair) | 1);
+    m_.w32(e + 0x1C, pair);
+    Ent* ent = bind(e);
+    if (m_.u32(r + 0xC)) msg_start(ent, 0);
+    place_record(m_, e, r);
 }
 
 void LevelLogic::kind0_leave(Ent*, Record& r) {
-    if (r.cls == 0x3011B913 && ladder_held != r.pair) {
-        if (ladder_held) ladder_release();
-        ladder_held = r.pair;
-    }
-}
-
-void LevelLogic::ladder_release() {
-    U p = ladder_held;
-    ladder_held = 0;
-    if (p && (m_.u32(p) & 1)) {
-        stats["ladder released"]++;
-        m_.w32(p, m_.u32(p) & ~I(1));
+    if (r.cls == 0x3011B913 && m_.u32(G_LADDER_HELD) != r.pair) {
+        if (m_.u32(G_LADDER_HELD)) ladder_release(eng_);
+        m_.w32(G_LADDER_HELD, r.pair);
     }
 }
 

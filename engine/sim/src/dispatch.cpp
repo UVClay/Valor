@@ -19,6 +19,7 @@ bool run_think(Engine& eng, U fn, U e) {
         case IMPACT_THINK: impact_effect_think(eng, e); return true;
         case PARTICLES_THINK: particles_think(eng, e); return true;
         case 0x80082E88: return true;  // the pickup's think is empty
+        case LADDER_THINK: ladder_think(eng, e); return true;
         default: return false;
     }
 }

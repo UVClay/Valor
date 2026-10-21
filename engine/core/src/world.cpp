@@ -553,4 +553,46 @@ bool wall_plane_crosses(const int32_t c[3], int32_t r, int32_t h, const V3s& n, 
     return plane_crosses(c, r, h, n, d);
 }
 
+// 0x8003DABC -> 0x8003D938 with flags 0: in the leaf under (x, z), the up-facing triangle holding
+// it whose height + 16 is nearest y (the first of equals).
+static int32_t nearest_floor(const CollChunk& ch, int32_t x, int32_t y, int32_t z) {
+    int32_t xmin = ch.rect[0], zmin = ch.rect[1];
+    const CollNode* n = &ch.nodes[0];
+    while (n->a >= 0) {
+        if (n->b >= 0) {
+            int32_t sp = s16(xmin + n->split);
+            if (x >= sp)
+                xmin = sp, n = &ch.nodes[size_t(n->b)];
+            else
+                n = &ch.nodes[size_t(n->a)];
+        } else {
+            int32_t sp = s16(zmin + n->split);
+            if (z < sp)
+                n = &ch.nodes[size_t(n->a)];
+            else
+                zmin = sp, n = &ch.nodes[size_t(~n->b)];
+        }
+    }
+    size_t count = size_t(~n->a), start = size_t(uint16_t(n->b));
+    int32_t best = kNoFloor, dist = 0x7FFF;
+    for (size_t i = start; i < start + count && i < ch.idx.size(); i++) {
+        const CollFace& f = ch.faces[ch.idx[i]];
+        if (!tri_holds(ch, f, x, z)) continue;
+        int32_t h = plane_height(ch, f, x, z);
+        int32_t d = int32_t(iabs(int64_t(h) + 0x10 - y));
+        if (d < dist) best = h, dist = d;
+    }
+    return best;
+}
+
+int32_t World::point_floor(const int32_t p[3]) const {
+    int32_t best = kNoFloor;
+    for (const CollChunk* ch : slots) {
+        if (!ch || !in_rect(ch->rect, p[0], p[2])) continue;
+        int32_t h = nearest_floor(*ch, p[0], p[1], p[2]);
+        if (best < h) best = h;
+    }
+    return best;
+}
+
 }  // namespace valor

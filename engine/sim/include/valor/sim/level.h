@@ -163,7 +163,7 @@ private:
     void record_leave(Ent* ent, Record& r);
     void kind0_enter(Ent* ent, Record& r);
     void kind0_leave(Ent* ent, Record& r);
-    void ladder_release();
+    void record_spawn_type(U pair);
     void objective_add(I oid, I text);
     void objective_remove(I oid);
     I objective_find(I oid);

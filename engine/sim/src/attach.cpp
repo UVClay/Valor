@@ -119,8 +119,8 @@ I wrap_angle(I v) {
 
 namespace {
 I point_floor(Engine& eng, U p) {
-    I pos[3] = {eng.m.s32(p), eng.m.s32(p + 4), eng.m.s32(p + 8)};
-    return eng.world.floor(pos).height;
+    int32_t q[3] = {int32_t(eng.m.s16(p + 2)), int32_t(eng.m.s16(p + 6)), int32_t(eng.m.s16(p + 10))};
+    return eng.world.w.point_floor(q);
 }
 
 }  // namespace

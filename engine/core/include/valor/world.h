@@ -65,6 +65,9 @@ public:
 
     // floor_find (0x800603DC): the floor under a 16.16 position.
     Floor floor_find(const int32_t pos[3]) const;
+    // func_8003EE30 at an integer point: over the loaded chunks holding (x, z), the leaf's
+    // up-facing triangle whose height + 16 is nearest y; between chunks the largest height.
+    int32_t point_floor(const int32_t p[3]) const;
 
     // world_sweep (0x8003EF5C): the segment from -> to (whole units) against the loaded chunks'
     // triangles crossed front to back: the nearest hit point in the chunk with the smallest t

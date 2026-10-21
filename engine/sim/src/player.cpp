@@ -329,6 +329,39 @@ void aiming_controls(Engine& eng, U e, U inv, U co, I stance) {
     m.w32(inv + 0x1CC, stance);
 }
 
+// ladder_climb (0x8007F1E0): half the forward role (its button value, else the stick's): up leaves
+// the ground, inv flags | 4; down while above the floor, at most the distance to it, | 8.
+I ladder_climb(Engine& eng, U e, U inv) {
+    Mem& m = eng.m;
+    m.w32(e + 0x21C, 0);
+    m.w32(e + 0x200, 0);
+    m.w32(e + 0xC, m.u32(e + 0xC) & ~I(0x20));
+    I v = 0;
+    auto it = eng.feed.roles.find({eng.level, eng.tick_no});
+    if (it != eng.feed.roles.end()) {
+        auto a = it->second.find({0, 0, 0});
+        v = (a == it->second.end() ? 0 : a->second) >> 1;
+        if (v == 0) {
+            auto b = it->second.find({0, 0, 1});
+            v = (b == it->second.end() ? 0 : b->second) >> 1;
+        }
+    }
+    if (v < 0) {
+        m.w32(e + 0x284, 0);
+        m.w32(e + 0x21C, v);
+        m.w32(inv, m.u32(inv) | 4);
+        return 1;
+    }
+    I y = m.s32(e + 0x210), floor = m.s32(e + 0x208);
+    if (v > 0 && y < floor) {
+        m.w32(e + 0x21C, imin(v, floor - y));
+        m.w32(inv, m.u32(inv) | 8);
+        return 1;
+    }
+    m.w32(e + 0x21C, 0);
+    return 0;
+}
+
 void controls(Engine& eng, U e, U inv) {
     Mem& m = eng.m;
     U co = U(m.u32(m.u32(G_PLAYER) + 0x388));
@@ -341,8 +374,9 @@ void controls(Engine& eng, U e, U inv) {
             m.w32(e + 0xC, m.u32(e + 0xC) | 0x20);
             m.w32(e + 0x10, m.u32(e + 0x10) & ~I(0x10));
         }
-        if (m.s32(inv + 0x70)) eng.note("ladder_climb not implemented");
-        m.w32(e + 0x200, -eng.role(0));
+        I climbed = 0;
+        if (m.s32(inv + 0x70)) climbed = ladder_climb(eng, e, inv);
+        if (!climbed) m.w32(e + 0x200, -eng.role(0));
         m.w32(e + 0x218, eng.role(1));
     } else {
         if (!(m.u32(inv + 4) & 0x20)) {

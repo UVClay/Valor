@@ -98,6 +98,8 @@ bool Engine::load(const std::string& seed_path, std::string* err) {
     std::copy(data.begin(), data.begin() + std::min(data.size(), m.d.size()), m.d.begin());
     std::string data_dir = root + "/extracted/moh/DATA";
     if (!gte.load(data_dir, err)) return false;
+    // the recording's projection (its settings.ini: 21:9, FOV 110), which aim_update's RTPS reads
+    gte.set_projection(21.0 / 9.0, 110.0);
     L.load(m, level);
     if (!world.load(*this, data_dir, root + "/build/engine/timing.log", mission_n, level_n)) {
         *err = "the level's collision";

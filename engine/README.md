@@ -25,6 +25,7 @@ system ported here is checked tick by tick against a replay of it.
 | `core/src/anim.cpp` | A model instance's animation state: op 00's start (continue, cross-fade, cut), the frame advance, `pose_build`'s cache and fade |
 | `core/src/render_data.cpp` | Presentation data: TSP render tree, faces, vertex colours, animated light colours, TAF TIMs placed in a 1024×512 VRAM, texture pages decoded through a CLUT |
 | `core/src/trace.cpp` | Traces in the `VALOR_TRACE_STATE` format (runtime/src/watch.cpp) |
+| `sim/` | `valor_sim`: the whole closed-loop engine, ported from `tools/sim/engine*.py`, on the original's memory layout (see The engine below). |
 | `tools/coretest/` | Steps the core on a replay's inputs and compares every tick with the original: the movement on the control function's outputs (`coretest.cpp`), the player from the pad (`pad_mode.cpp`), the poses against RAM dumps (`pose_mode.cpp`) |
 | `tools/capture.sh` | Replays a recording through the original and keeps the state trace, the input trace (the pad, every role call, the soldier as each update finds it), the watched fields and RAM dumps |
 | `tools/export_pad.py` | Writes a capture as coretest's pad input |
@@ -214,6 +215,69 @@ For every soldier and dog in a RAM dump, the core checks three things against RA
 On all the session's dumps (`tools/sim/check.py`'s, 1:3, 2:1 and 2:2) it gives exactly the counts
 `combat_sim.py pose` gives. The misses there are dumps that caught an instance moved on since its
 last draw. `combat_sim.py check` follows them tick by tick and finds every pose exact.
+
+## The engine (`sim/`)
+
+```sh
+build/gd/cmake/coretest --engine 1:3 [--to TICK] [--max N] [--out TRACE.jsonl] [--dump TICK:PATH]
+```
+
+`valor_sim` is the C++ port of the closed-loop Python engine (`tools/sim/engine*.py` and the
+simulators it composes: `level_vm.py`, `sst_vm.py`, `brain_sim.py`, parts of `combat_sim.py` and
+`move_sim.py`). It covers every system the Python engine has:
+- the level logic (the level-script VM, subscriptions, the message queue, triggers, spawning,
+  objectives) and the vblank wait's idle work;
+- the model-script VM with its world reads and effects, and the soldiers' and dogs' brains, moves
+  and thinks;
+- the player's update, the camera, aim_update;
+- firing, bullets, the contact phase and damage, pickups, attachments, objects' boxes;
+- the draw pass's poses and out-of-sight counters, and the sound system's voice table.
+
+It runs from the level's seed dump on the recording's outside inputs (`build/engine/`: the pad
+and role values, the random draws by function, the frame structure, the CD's chunk timing, which
+models the renderer drew, the idle work). `coretest --engine` compares its state trace with the
+original's every tick, as `engine.py cmp` does.
+
+| Level | Ticks | Identical to the original | Identical to the Python engine |
+|---|---|---|---|
+| 1:3 | 7,296 | 5,632 (first difference: an impact's sparks at 1658; then 5824) | all (trace lines, and RAM at ticks 1000, 3000, 5000, 5823) |
+| 2:1 | 8,368 | 33 | all |
+| 2:2 | 7,036 | 74 | all |
+
+The 2:1 and 2:2 numbers are the Python engine's own: its work so far has been on 1:3.
+
+### Why it keeps the original's memory layout
+
+The engine's state is an 8 MB image laid out as the original's RAM (`sim/include/valor/sim/common.h`,
+`Mem`). Entities, their objects, brains, the script channels and event tables, the level's records
+and scripts live at the addresses the game used, and the code reads and writes them at the
+documented offsets (`m.s32(e + 0x20C)`), line for line as the Python does.
+
+That's deliberate:
+- **The rules carry over unchanged.** `docs/re` and `tools/sim` state the rules against that
+  layout. A port that kept the layout is a transliteration, checkable line by line. A port to new
+  types would mean re-deriving each rule's data flow first.
+- **Two engines that must agree byte for byte.** The C++ and Python engines can be dumped at any
+  tick and compared word for word (`--dump`). That's how this port was checked, and it makes every
+  later Python fix a small, verifiable diff to apply here.
+- **Values hide in the layout.** Scripts store addresses in variables, event records are copied
+  instructions, handles and pointers are compared, and pose buffers are shared. A typed model
+  would have to reproduce all of that anyway to stay exact.
+
+Its starting state is still the seed dump of a level just started. Building that state from the
+disc files (the level load: the BSD's models, records and scripts placed in memory, the level
+start's spawns) is the next step on this side, so the engine can run without a dump.
+
+### Clean types for the host
+
+The Godot side shouldn't see offsets. The plan is an accessor layer over `Mem`: thin read-only
+views (`SoldierView`, `EntityView`, `CameraView`, `PickupView`...) with named, typed fields and
+iteration over the entity list. These are what the GDExtension uses to place and animate actors,
+and what other hosts would use too. Input goes in the same way it does in the recordings: the pad
+words and the control roles' values per tick. The views are generated from one table of
+documented offsets (formats.md, entities.md), so the names have a single source. The typed core
+(`core/`) stays as the verified reference for the player's systems and keeps its coretest modes.
+Over time its types can become the views' types.
 
 ## What's next
 
