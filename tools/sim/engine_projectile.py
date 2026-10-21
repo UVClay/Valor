@@ -836,15 +836,46 @@ def casing_think(eng, e):
 # ---------------------------------------------------------------- hits on entities
 
 def bullet_touch(eng, e, other):
-    """bullet_touch (0x80043AD4): the exact test needs plane shapes (+0x2EE), which characters
-    don't have: 0 for them."""
+    """bullet_touch (0x80043AD4): not its shooter nor another projectile; with flags B 4 the path
+    against the object's planes (0x8004B624; characters have none: 0). A hit on anything but type
+    0x1777: the projectile moved to the hit point, +0x364 = the reversed normal; explosive rounds
+    explode; on a target with flags B 0x4000 the impact sound and sparks; a soldier's ricochet
+    sound; removed. Then (flags B 4) the target's own touch. 0x1777 lets it fly on."""
     m = eng.m
     o = m.u32(e + 0x388)
     if handle_same(eng, o + 0x54, other) or m.s32(other + 8) in PROJECTILE_TYPES:
         return 0
-    if m.u16(other + 0x2EE):
-        eng.note("bullet_touch against plane shapes not implemented", f"type {m.s32(other + 8):X}")
-    return 0
+    if not m.u32(e + 0x10) & 4:
+        eng.note("bullet_touch without a sweep (sphere_vs_object_planes) not implemented")
+        return 0
+    from engine_planes import projectile_planes
+    hit = projectile_planes(eng, e, other)
+    if hit is None:
+        return 0
+    res = 0
+    if m.s32(other + 8) != 0x1777:
+        res = 1
+        point, normal, _ = hit
+        for k in range(3):
+            m.w32(e + 0x20C + 4 * k, s32(point[k] << 16))
+            m.w16(e + 0x364 + 2 * k, s16(-normal[k]))
+        if m.u16(o + 0x38) & 0x100:
+            eng.note("explosive round's hit on an object not implemented")
+            eng.remove(e, "explosive round")
+            return 1
+        if m.u32(other + 0x10) & 0x4000:
+            impact_sound(eng, e)
+            n = ((eng.rand.draw(*FN["hit"]) * 3) >> 15) + 2
+            smoke = ((eng.rand.draw(*FN["hit"]) * 4) >> 15) + 6
+            particles_spawn(eng, [m.s32(e + 0x20C + 4 * k) for k in range(3)], 1, n, 0x1E, 0x19, 0xF, 0x64,
+                            0x3F4, 0xE0, 0x3E0, 0xFE, 0xF, 0x10000, 1, smoke)
+        if m.s32(other + 8) == 0x1402:
+            snd = (eng.rand.draw(*FN["hit"]) >> 15) + 0xC
+            eng.audio.play(0, snd, e, 0x20000, 0, 0x10000, 0x4CCD, 0, 0, 0, 0)
+        eng.remove(e, "bullet hit an object")
+    from engine_combat import call
+    call(eng, "touch", m.u32(other + 0x37C), other, e)
+    return res
 
 
 def projectile_hit_part(eng, e, part, other, opart):

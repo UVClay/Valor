@@ -185,6 +185,8 @@ class Engine:
         engine_combat.register(self)
         import engine_attach
         engine_attach.register(self)
+        import engine_planes
+        engine_planes.register(self)
         self.logic.adopt()
 
     # -- notes: what the engine left out, kept to report

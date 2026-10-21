@@ -85,18 +85,28 @@ def spawn_by_type(eng, t, model, rec):
             m.w32(e + 0xC, 0x13028000)
             m.w32(e + 0x10, 0x40213)
             m.w16(e + 0x2EE, 0)
-            eng.note("scenery shape (0x8005D238) not built")
+            from engine_planes import box_sphere
+            box_sphere(m, e, [m.s16(model + 0x44 + 2 * k) for k in range(3)],
+                       [m.s16(model + 0x7C + 2 * k) for k in range(3)])
         else:
             m.w32(e + 0x10, 0x44011)
             m.w32(e + 0xC, 0x13028400)
             m.w32(e + 0x14, 0x88214051)
             m.w32(e + 0x37C, 0x8005D32C)
-            eng.note("destructible shape (0x8004A8F8) not built")
+            from engine_planes import object_box
+            object_box(eng, e, [m.s16(model + 0x44 + 2 * k) for k in range(3)],
+                       [m.s16(model + 0x7C + 2 * k) for k in range(3)])
         return e
+    if t in (0x1777, 0x1779, 0x177A) or t not in KNOWN_SPAWNERS:
+        from engine_planes import object_spawn
+        return object_spawn(eng, rec, model)
     eng.note(f"spawn of type {t:X} not implemented", f"r{rec.idx}")
     e = eng.entity_create(t, model=model)
     place(eng, e, rec)
     return e
+
+
+KNOWN_SPAWNERS = (0x1402, 0x1405, 0x1770, 0x1778, 0x1771, 0x1772, 0x1774, 0x1775, 0x1776)
 
 
 def cull(eng, e, rec):
