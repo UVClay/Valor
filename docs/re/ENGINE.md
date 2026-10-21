@@ -101,6 +101,11 @@ HUD shows.
 
 ## Checking an engine against the original
 
+`tools/sim/` holds reference reimplementations of the player's movement, the enemies' scripts
+and movement, and combat, written from these documents and checked against the original tick by
+tick (tools/sim/README.md): the shortest exact statement of each system, and proof the
+documents suffice.
+
 The recompilation is the reference. A recording (`./play --record`) replays exactly
 (`./play --replay`, with or without a display), and `VALOR_WATCH`, `VALOR_TRACE_DAMAGE`,
 `VALOR_TRACE_SHOTS` and `--dump-ram` show any value at any tick (README.md, Tools). Feeding the
