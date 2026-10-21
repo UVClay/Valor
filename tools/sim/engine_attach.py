@@ -168,8 +168,8 @@ def knock_off(eng, B, player, speed, vy, ticks, drag, gravity, bounces, spin, ac
     else:
         sp = speed >> 16
         if act & 0x80000000:
-            vx = (((rd() * 2 * sp) >> 15) - sp) if sp * 2 else -sp
-            vz = (((rd() * 2 * sp) >> 15) - sp) if sp * 2 else -sp
+            vx = ((s32(rd() * 2 * sp) >> 15) - sp) if sp * 2 else -sp
+            vz = ((s32(rd() * 2 * sp) >> 15) - sp) if sp * 2 else -sp
             v = (s32(vx << 16), vy, s32(vz << 16))
         else:
             v = (s32(((m.s16(player + 0x344) * sp) >> 12) << 16), vy,
@@ -179,7 +179,8 @@ def knock_off(eng, B, player, speed, vy, ticks, drag, gravity, bounces, spin, ac
     m.w32(B + 0x38, v[2])
     if not act & 0x20000000:
         for o in (0x54, 0x58, 0x5C):
-            m.w32(B + o, s32(-spin + ((rd() * 2 * spin) >> 15)) if spin * 2 else s32(-spin))
+            # the product is a 32-bit mult's low word: it wraps for spins of 2.0 (0x20000)
+            m.w32(B + o, s32(-spin + (s32(rd() * 2 * spin) >> 15)) if spin * 2 else s32(-spin))
     m.w32(B + 4, ticks)
     m.w32(B + 0x1C, drag)
     m.w32(B + 0x20, gravity)

@@ -876,7 +876,8 @@ knock-off speed (16.16; -1: keep the motion it had), +0x14 its vertical speed, +
   with action bit 31 (the deaths' 0x80000000), x and z = (rand·2s >> 15) - s each (two draws),
   otherwise along the player's forward column (x = (`+0x344`·s >> 12) << 16, z with `+0x350`);
   vertical = the template's +0x14. Unless 0x20000000, spin x, y, z = -k + (rand·2k >> 15) (three
-  draws). Fall ticks, drag, gravity from the template, bounces made 0, allowed = template +4.
+  draws; the product is the low word of a 32-bit `mult`, so with k = 2.0 (0x20000) a draw of
+  16384 or more wraps: 1:3's tick 1066 draws 993, 16521, 11936 give -123128, -129976, -166656). Fall ticks, drag, gravity from the template, bounces made 0, allowed = template +4.
 - **Each think** (`0x80055198`, after `enemy_weapon`): a falling one steps (`0x80050E34`: the
   previous position kept; ticks - 1, at 0: y = the floor under it - 15, angles wrapped to ±0x800,
   flags (| 0x14) & ~2; else angles += spin, x and z += velocity ∓ drag, y += vertical; no floor
