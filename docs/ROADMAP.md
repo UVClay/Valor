@@ -52,6 +52,12 @@ them needs, roughly in order of how much they decide the feel:
 
 Out of scope for now: the two-player mode (LEVEL2P.BIN), video playback (standard MDEC).
 
+Checking against recordings: replays now hold with or without a display (the widescreen
+projection and the near-polygon hook follow the recorded settings, not whether OpenGL is up).
+The 2026-10-19 session replays exactly through 1:3, 2:1 and 2:2, then differs from vblank 61980
+(10 s into 2:3) in every kind of run; not the display, the settings (unchanged in the session),
+the SPU or the CD timing (both on emulated time). Open.
+
 Waiting for the game state they need (presentation, later): a separate HUD layer and then
 native HUD elements, a native sniper scope, a PC-style aim mode (the view keeps turning, the
 game's aim follows it), moving objects interpolated between ticks.
