@@ -836,6 +836,73 @@ firing"; soldier.md's "+0x11E = 8, 3 or 4" reads as the classes.
 - **1:3's alarm event** goes to the empty 195 once (the bit is a one-tick pulse): channel 0 runs
   off it into the weighted idle 202. Levels with the alarm runner (2:x, 3:1, 3:3) fill it.
 
+## Attachments, exactly (`tools/sim/engine_attach.py`)
+
+The list at the weapon block `+0x18` (count, at most 3: the weapon, the head gear, the stick
+grenade; `0x80050720` at spawn) holds entries of 0x144 bytes from `+0x1C`: +0 flags (1
+attached, 2 falling, 4 landed, 8 detached, 0x10 turning to rest, 0x20 hidden or gone, 0x40
+becomes a pickup when it comes to rest), +4 fall ticks, +8 the bone it hangs from (or a value
+set by v1A 0x10000000), +0xC/+0x10 bounces allowed/made, +0x14 offset from the bone (3 × s16),
++0x1C drag, +0x20 gravity, +0x24 the holder's scale, +0x30 velocity, +0x3C position (16.16),
++0x48 the previous position, +0x54 spin, +0x60 angles, +0x74 the drawn matrix (rotation and
+integer translation, 0x20 bytes), +0x94 its model instance (+4 flags 0x157, +8 the model), +0xE8
+the holder's handle, +0xEC the holder's instance. Per attachment index a template at
+`0x800980B0` (0x3C bytes): +0 fall ticks, +4 bounces, +8 drag, +0xC gravity, +0x10 the
+knock-off speed (16.16; -1: keep the motion it had), +0x14 its vertical speed, +0x1C spin,
++0x20 the model shown once it is off, +0x24 the bounce sound (-1: none), +0x28 its random range,
++0x2C its bank (-1: the body model's `+0xC8`), +0x30 and +0x38 the resting x and z angles.
+
+- **Drawing moves an attached one** (`enemy_draw`, `0x8005608C`, every drawn frame for a soldier
+  whose variable 0xD is not -1, for each entry with flags & 0x27 == 1; `0x8005081C`): the
+  previous position kept, angles = the soldier's, and from the posed instance: R = the bone's
+  quaternion matrix, t = the bone's joint + R·offset (GTE, >> 12), into the world with
+  `ApplyMatrixLV(soldier matrix +0x340, t)` + the integer translation `+0x354`; the matrix =
+  soldier matrix × R (`MulMatrix2`, its last element stored as a word), position = t << 16. So
+  where a weapon is when it is knocked off, and with speed -1 how fast it moves, comes from the
+  last drawn frame. (A model without joints takes two bone points and builds the matrix from
+  them: not reached by soldiers.)
+- **v1A** (`enemy_attachments_op`, `0x800523E4`, from `enemy_think` when v1A ≠ 0): for each
+  attachment whose bit is set and whose flags have neither 2 nor 4: 0x10000000 sets +8 = v1B;
+  0x08000000 hides it (1 off, 0x20 on); 0x04000000 shows it; 0x20000000 on attachment 2 (if
+  attached) drops the grenade; 0x02000000/0x01000000 throw or lob it (if attached and its model
+  is 0x61282777); no action bit, not hidden: **knocked off**: from the hit part v1B's centre if
+  +8 is 0, else the drawn matrix's angles (`0x80051408`: TransposeMatrix, then with v =
+  SquareRoot12(T11²/4096 + T01²/4096): x = ratan2(-T21, v), y = ratan2(T20, T22), z =
+  ratan2(T01, T11); v = 0: ratan2(-T21, 0), ratan2(-T02, T00), 0) and +8 = 0; the template's
+  model swapped in; `attachment_knock_off(entry, player, template...)`; holder cleared; flags |=
+  3.
+- **`attachment_knock_off`** (`0x80051200`): with action bit 0x20000000 no velocity and one
+  bounce fewer; speed -1: velocity = position - previous position; else s = speed >> 16 and,
+  with action bit 31 (the deaths' 0x80000000), x and z = (rand·2s >> 15) - s each (two draws),
+  otherwise along the player's forward column (x = (`+0x344`·s >> 12) << 16, z with `+0x350`);
+  vertical = the template's +0x14. Unless 0x20000000, spin x, y, z = -k + (rand·2k >> 15) (three
+  draws). Fall ticks, drag, gravity from the template, bounces made 0, allowed = template +4.
+- **Each think** (`0x80055198`, after `enemy_weapon`): a falling one steps (`0x80050E34`: the
+  previous position kept; ticks - 1, at 0: y = the floor under it - 15, angles wrapped to ±0x800,
+  flags (| 0x14) & ~2; else angles += spin, x and z += velocity ∓ drag, y += vertical; no floor
+  under the new point: back, and x/z velocities reversed; vertical += gravity up to 75.0; below
+  the holder's feet y: held there and, while bounces remain, a bounce (gravity /2, vertical
+  -1/4, x, z, drag, y spin /4, x and z spin -1/4, count + 1: the sound plays at volume 0x10000 >>
+  (bounces - 1)), else ticks 0; slow (|vx|, |vz| ≤ 1.0): ticks 0). An attached one of a soldier
+  whose variable 0xD is -1 (dying) is detached (template model, holder cleared, flag 8). One
+  turning to rest (0x10) turns its x and z angles 0x224 a tick toward the template's (x: ±0x800
+  added for angles beyond ∓0x400; z: the sign of the current); at rest, 0x10 cleared and with
+  0x40 and a record template whose `+0x7C` (a pickup kind) is set, flags (& ~1) | 0x20 and the
+  weapon becomes a pickup.
+- **The pickup** (`0x80083728` → `pickup_spawn` `0x800833A0`): kind = the record template's
+  `+0x7C`; at the attachment's position and angles with the weapon's model
+  (`g_enemy_weapons[v0xF]`), or (health and item kinds 0x37C82DE4, 0x08E34FAC, 0x25C50BD4,
+  0x6C8F8AA8, 0x933987E0, 0x96593A51) at the soldier with the kind's own model; count = the
+  template's `+0x62`, cull counter 150; linked at the front. `pickup_spawn`: the kind table at
+  `0x8009E8E8` (0x14 bytes: hash, model hash, object size, ammo index, init, touch);
+  `entity_create(3, size, model, 0x157)`, type 0x65, think `0x80082E88` (empty), flags A
+  0x47028200, flags B 0x40211, mask 1 (touches the player), touch from the table; the record's
+  position and angles, y set to the floor when within 55 (both ways); probe radius 0, no parts,
+  sphere radius (max box side + 30) / 2 at the box's centre (model +0x44/+0x7C); record +0x58 bit
+  0: flags A 0x8000 and the cull counters = record +0x5E; object {kind, model, 900, -1 (the ammo
+  slot when record +0x30 has bit 3)}; the kind's init (health: +0x14 = 13, 32, 64 (16.16); ammo:
+  +0x14 = the count).
+
 ## Open
 
 - 9:4's holdout shooter and 2:2's path advance are registered but never triggered by the dumped
