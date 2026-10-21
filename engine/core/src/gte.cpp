@@ -1,5 +1,7 @@
 #include "valor/gte.h"
 
+#include <cmath>
+#include <cstring>
 #include <vector>
 
 #include "valor/fixed.h"
@@ -37,7 +39,8 @@ bool Gte::load(const std::string& data_dir, std::string* err) {
         for (int i = 0; i < n; i++) out[i] = int16_t(d[o + 2 * i] | (d[o + 2 * i + 1] << 8));
         return true;
     };
-    loaded = h(0x8002D4F8, ratan_, 1025) && h(0x8003440C, sqrt_, 192) && h(0x800347EC, sin1_, 1025);
+    loaded = h(0x8002D4F8, ratan_, 1025) && h(0x8003440C, sqrt_, 192) && h(0x800347EC, sin1_, 1025) &&
+             h(0x8002DD3C, vn_, 192);
     if (!loaded && err) *err = "bad executable: " + exe;
     return loaded;
 }
@@ -91,6 +94,129 @@ int32_t Gte::rsin(int32_t a) const {
         return -sin1_[0x1000 - x];
     };
     return a >= 0 ? sin_1(a & 0xFFF) : -sin_1((-a) & 0xFFF);
+}
+
+int32_t Gte::rcos(int32_t a) const {
+    a = int32_t(iabs(a) & 0xFFF);
+    if (a <= 0x400) return sin1_[0x400 - a];
+    if (a <= 0x800) return -sin1_[a - 0x400];
+    if (a <= 0xC00) return -sin1_[0xC00 - a];
+    return sin1_[a - 0xC00];
+}
+
+int64_t wrap44(int64_t v) {
+    v &= (int64_t(1) << 44) - 1;
+    return (v & (int64_t(1) << 43)) ? v - (int64_t(1) << 44) : v;
+}
+
+int32_t sat16(int64_t v) { return v < -0x8000 ? -0x8000 : v > 0x7FFF ? 0x7FFF : int32_t(v); }
+
+void gte_mul(const int16_t m[3][3], const int32_t v[3], const int32_t t[3], int sf, int32_t mac[3], int32_t ir[3]) {
+    for (int r = 0; r < 3; r++) {
+        int64_t acc = int64_t(t ? t[r] : 0) * 0x1000;
+        acc = wrap44(acc + int64_t(m[r][0]) * v[0]);
+        acc = wrap44(acc + int64_t(m[r][1]) * v[1]);
+        acc = wrap44(acc + int64_t(m[r][2]) * v[2]);
+        mac[r] = s32(acc >> sf);
+        if (ir) ir[r] = sat16(mac[r]);
+    }
+}
+
+void outer_product12(const int32_t a[3], const int32_t b[3], int32_t out[3]) {
+    int64_t d[3] = {s16(a[0]), s16(a[1]), s16(a[2])}, r[3] = {s16(b[0]), s16(b[1]), s16(b[2])};
+    out[0] = s32(wrap44(r[2] * d[1] - r[1] * d[2]) >> 12);
+    out[1] = s32(wrap44(r[0] * d[2] - r[2] * d[0]) >> 12);
+    out[2] = s32(wrap44(r[1] * d[0] - r[0] * d[1]) >> 12);
+}
+
+void apply_matrix_lv(const int16_t m[3][3], const int32_t v[3], int32_t out[3]) {
+    int32_t hi[3], lo[3];
+    for (int i = 0; i < 3; i++) {
+        if (v[i] >= 0) {
+            hi[i] = v[i] >> 15, lo[i] = v[i] & 0x7FFF;
+        } else {
+            int64_t y = -int64_t(v[i]);
+            hi[i] = int32_t(-(y >> 15)), lo[i] = int32_t(-(y & 0x7FFF));
+        }
+        hi[i] = s16(hi[i]);
+    }
+    int32_t mh[3], ml[3];
+    gte_mul(m, hi, nullptr, 0, mh, nullptr);
+    gte_mul(m, lo, nullptr, 12, ml, nullptr);
+    for (int i = 0; i < 3; i++) {
+        int64_t b = mh[i] < 0 ? -(int64_t(-int64_t(mh[i])) << 3) : int64_t(mh[i]) << 3;
+        out[i] = s32(ml[i] + b);
+    }
+}
+
+void rot_matrix_y(int32_t r, int16_t m[3][3]) {
+    SinCos sc = sincos_angle(r);
+    int16_t s = int16_t(sc.s), c = int16_t(sc.c);
+    int16_t v[3][3] = {{c, 0, s}, {0, 0x1000, 0}, {s16(-sc.s), 0, c}};
+    std::memcpy(m, v, sizeof v);
+}
+
+void Gte::vector_normal(const int32_t v[3], int32_t out[3]) const {
+    int64_t t[3] = {s16(v[0]), s16(v[1]), s16(v[2])};
+    int32_t n = s32(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+    int lz = lzc(uint32_t(n)) & ~1;
+    int sh = (31 - lz) >> 1;
+    int32_t x = lz - 24 >= 0 ? s32(int64_t(n) << (lz - 24)) : (n >> (24 - lz));
+    int32_t k = vn_[x - 0x40];
+    for (int i = 0; i < 3; i++) out[i] = s32(int64_t(k) * t[i]) >> sh;
+}
+
+namespace {
+// RTPS's division: h / sz3 by the UNR table, as the GTE does it.
+uint32_t gte_divide(uint32_t h, uint32_t sz3) {
+    static uint8_t unr[0x101];
+    static bool init = false;
+    if (!init) {
+        for (int i = 0; i < 0x101; i++) {
+            int v = (0x40000 / (i + 0x100) + 1) / 2 - 0x101;
+            unr[i] = uint8_t(v < 0 ? 0 : v);
+        }
+        init = true;
+    }
+    if (h >= sz3 * 2) return 0x1FFFF;
+    int z = 0;
+    while (z < 16 && !(sz3 & (0x8000u >> z))) z++;
+    int64_t n = int64_t(h) << z;
+    int64_t d = int64_t(sz3) << z;
+    int64_t u = unr[(d - 0x7FC0) >> 7] + 0x101;
+    d = (0x2000080 - d * u) >> 8;
+    d = (0x0000080 + d * u) >> 8;
+    int64_t r = (n * d + 0x8000) >> 16;
+    return r > 0x1FFFF ? 0x1FFFF : uint32_t(r);
+}
+}  // namespace
+
+void Gte::set_projection(double aspect, double hfov_deg) {
+    double squeeze = (4.0 / 3.0) / aspect, k = 1.0;
+    if (hfov_deg > 0) k = (120.0 / 400.0) / (std::tan(hfov_deg * 3.14159265358979323846 / 360.0) / aspect);
+    proj_kx = k * squeeze, proj_ky = k;
+}
+
+void Gte::rtps(const int16_t rt[3][3], const int32_t tr[3], uint32_t h, int32_t ofx, int32_t ofy, const int32_t v[3],
+               int32_t& sx, int32_t& sy) const {
+    int64_t acc[3];
+    for (int r = 0; r < 3; r++) {
+        int64_t a = int64_t(tr[r]) * 0x1000;
+        a = wrap44(a + int64_t(rt[r][0]) * v[0]);
+        a = wrap44(a + int64_t(rt[r][1]) * v[1]);
+        a = wrap44(a + int64_t(rt[r][2]) * v[2]);
+        acc[r] = a;
+    }
+    int32_t ir1 = sat16(s32(acc[0] >> 12)), ir2 = sat16(s32(acc[1] >> 12));
+    int32_t z12 = s32(acc[2] >> 12);
+    uint32_t sz3 = z12 < 0 ? 0 : z12 > 0xFFFF ? 0xFFFF : uint32_t(z12);
+    uint32_t q = gte_divide(h, sz3);
+    int64_t x = int64_t(q) * ir1, y = int64_t(q) * ir2;
+    if (proj_kx != 1.0 || proj_ky != 1.0) x = int64_t(double(x) * proj_kx), y = int64_t(double(y) * proj_ky);
+    x += ofx, y += ofy;
+    int32_t X = s32(x) >> 16, Y = s32(y) >> 16;
+    sx = X < -0x400 ? -0x400 : X > 0x3FF ? 0x3FF : X;
+    sy = Y < -0x400 ? -0x400 : Y > 0x3FF ? 0x3FF : Y;
 }
 
 void rot_yxz(int32_t ax, int32_t ay, int32_t az, int16_t m[3][3]) {

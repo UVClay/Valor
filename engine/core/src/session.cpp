@@ -15,6 +15,10 @@ struct WorldBehaviour : Behaviour {
     void think(Session& s, Entity&) override { s.lights_update(); }
 };
 
+struct CameraBehaviour : Behaviour {
+    void think(Session& s, Entity& e) override { s.camera_think(e); }
+};
+
 struct SoldierBehaviour : Behaviour {
     void think(Session& s, Entity& e) override { s.player_think(e); }
     void move(Session& s, Entity& e) override { s.player_move(e); }
@@ -38,7 +42,7 @@ bool Session::load(const std::string& data_dir, int m, int l, std::string* err) 
     char rel[64];
     std::snprintf(rel, sizeof rel, "/MSN%d/LVL%d/%d_%d.BSD", m, l, m, l);
     std::vector<uint8_t> bsd;
-    if (!info_.load(data_dir, m, l, err) || !world_.load(data_dir, m, l, err)) return false;
+    if (!info_.load(data_dir, m, l, err) || !world_.load(data_dir, m, l, err) || !gte_.load(data_dir, err)) return false;
     if (!read_file(data_dir + rel, bsd) || !records_.load(bsd, err)) return false;
     streaming_.start(int(info_.first_chunk), int(info_.chunk_slots));
     world_.set_slots_by_number(streaming_.slot_chunk);
@@ -55,7 +59,7 @@ bool Session::load(const std::string& data_dir, int m, int l, std::string* err) 
     // the soldier), the list camera, world, soldier (a level start's 0x10000, 0x20001, 0x30002).
     entities_ = Entities{};
     Entity* world = entities_.create(kTypeWorld, std::make_unique<WorldBehaviour>());
-    Entity* camera = entities_.create(kTypeCamera, nullptr);
+    Entity* camera = entities_.create(kTypeCamera, std::make_unique<CameraBehaviour>());
     Entity* soldier = entities_.create(kTypeSoldierPlayer, std::make_unique<SoldierBehaviour>());
     soldier->flags_a = kFlagAPlayer;
     entities_.set_head(camera);
@@ -84,6 +88,7 @@ void Session::lights_update() {
 Entity* Session::adopt(uint32_t handle, int32_t type, uint32_t flags_a, int record, const Ladder* ladder) {
     std::unique_ptr<Behaviour> b;
     if (type == kTypeWorld) b = std::make_unique<WorldBehaviour>();
+    if (type == kTypeCamera) b = std::make_unique<CameraBehaviour>();
     if (type == kTypeSoldierPlayer) b = std::make_unique<SoldierBehaviour>();
     if (type == kTypeLadder && ladder) b = std::make_unique<LadderBehaviour>(*ladder);
     Entity* e = entities_.adopt(handle, type, std::move(b));
@@ -148,6 +153,22 @@ void Session::zone_event(int ri, bool enter) {
     }
 }
 
+void Session::enable_aim() {
+    Player& p = player_;
+    p.aim.gte = &gte_;
+    p.aim.world = &world_;
+    p.aim.camera = &camera_;
+    p.aim.targets = &aim_targets_;
+    if (Entity* s = entities_.find_type(kTypeSoldierPlayer)) p.aim.self = s->handle;
+}
+
+// The camera entity runs first: the soldier as the last tick left him; then camera_setup.
+void Session::camera_think(Entity&) {
+    if (!player_.aim.gte) return;
+    camera_.think(player_.w.pos, player_.inv.yaw);
+    camera_.setup(gte_);
+}
+
 void Session::player_think(Entity& e) {
     Player& pl = player_;
     bool use = !pl.dead && pl.controls.action_pressed(kUse);
@@ -180,6 +201,9 @@ void Session::player_move(Entity&) {
 void Session::tick(const PlayerEvents& ev) {
     events_ = ev;
     tick_++;
+    int start_slots[4];
+    streaming_.collision_slots(start_slots);
+    world_.set_slots_by_number(start_slots);
     // entities_update: in list order; an entity removed by an earlier one this tick is skipped.
     std::vector<Entity*> walk = entities_.list();
     for (Entity* e : walk) {

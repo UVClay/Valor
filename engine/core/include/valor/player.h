@@ -7,6 +7,8 @@
 
 #include <cstdint>
 
+#include "valor/aim.h"
+#include "valor/camera.h"
 #include "valor/controls.h"
 #include "valor/level.h"
 #include "valor/movement.h"
@@ -34,9 +36,13 @@ struct Inv {
     uint16_t flinch = 0;             // +0x154: ticks left
     int32_t pitch = 0;               // +0x178 (16.16, 4096 per turn)
     int32_t cross_y = 0;             // +0x17C
+    int32_t aim_pitch = 0;           // +0x180: the body's pitch past the view's
     int32_t yaw = 0;                 // +0x184: the view yaw movement uses
     int32_t turn_rate = 0;           // +0x188
+    int32_t aim_yaw = 0;             // +0x18C
     int16_t cross_sx = 0x100, cross_sy = 0x83;  // +0x190, +0x192: the crosshair on screen
+    int32_t shot_start[3]{};         // +0x198: where shots start (16.16)
+    int32_t aim_point[3]{};          // +0x1A4: what the crosshair is on (16.16)
     uint32_t stance = 7, prev_stance = 7;       // +0x1C8, +0x1CC
 };
 
@@ -47,8 +53,13 @@ struct PlayerEvents {
     uint8_t weapon = 0;
     bool set_friction = false;  // aim_update's friction bits (inv 0x100000, bit 31), last tick's
     uint32_t friction = 0;
-    bool set_roll = false;  // the body's roll (+0x230) aim_update leaves for the move
+    bool set_roll = false;  // the body's roll (+0x230) as the move finds it
     int32_t roll = 0;
+    bool set_anim_state = false;  // the scripts' animation state (+0x11E) and the weapon's timer
+    int16_t anim_state = 0;       // (inv+0x48): player_update's inv 0x800000
+    int32_t weapon_timer = 0;
+    bool set_recoil = false;  // the kick (inv+0x4C) and its climb (+0x50) as firing left them
+    int32_t kick = 0, climb = 0;
     bool flinch = false;  // player_hit_part started a flinch: 8 ticks of this knockback
     int32_t knock[3]{};
     // weapon_draw (0x8007DD4C) this tick, when the soldier's scripts ask for it (variable 0x11):
@@ -69,8 +80,19 @@ struct PlayerEvents {
     int32_t teleport_pos[3]{};
 };
 
+// What aim_update reads besides the player: the view, the world, the entities, the arms.
+struct AimContext {
+    const Gte* gte = nullptr;
+    const World* world = nullptr;
+    Camera* camera = nullptr;
+    const std::vector<AimTarget>* targets = nullptr;  // in the entity list's order
+    AimArms arms;
+    uint32_t self = 0;  // the soldier's handle
+};
+
 class Player {
 public:
+    AimContext aim;  // with aim.gte set, the player runs aim_update and drives the camera's points
     Controls controls;
     Inv inv;
     Walker w;
@@ -80,6 +102,8 @@ public:
     int32_t local_fwd = 0;     // +0x220
     int32_t ang_vel[3]{};      // +0x234
     int32_t body[3]{};         // +0x228: the body's angles (aim_update's in stances 7, 8)
+    int16_t matrix[3][3]{};    // +0x340: RotMatrixYXZ of the body's angles, built at the end of a tick
+    int32_t ipos[3]{};         // +0x354: the position's whole part, as the last move left it
     int32_t eye_offset = -240; // the camera's +0x94
     int mission = 0, level = 0;  // g_params (0x800939F4): 5:4 crouches lower
     bool riding = false;       // +0x2C: a parent (not ported)
@@ -108,6 +132,8 @@ private:
     void player_controls();
     bool ladder_climb();
     int32_t scale_look(int32_t v) const;
+    void aim_update();
+    void bone_point(int which, int32_t out[3]) const;
     void center_view();
 };
 

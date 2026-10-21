@@ -21,6 +21,7 @@
 
 #include "valor/fixed.h"
 #include "valor/io.h"
+#include "valor/model.h"
 #include "valor/session.h"
 
 using namespace valor;
@@ -31,7 +32,7 @@ struct PadTick {
     int64_t tick, vblank;
     int32_t pos[3], yaw, pitch;
     uint32_t flags_b;
-    int32_t health, roll;
+    int32_t health, roll, body_pitch, body_yaw;
     uint32_t pad_now, pad_prev, sticks, analog;
     // The soldier as this tick's update found it: the last tick's end.
     int32_t s_pos[3], s_old[3], s_push[3], s_eye;
@@ -50,21 +51,21 @@ bool read_pad(const char* path, std::string& level, std::vector<PadTick>& out) {
     if (!std::getline(f, line)) return false;
     std::istringstream hs(line);
     hs >> magic >> ver >> level >> dv;
-    if (magic != "valor-pad" || ver != 4) return false;
+    if (magic != "valor-pad" || ver != 5) return false;
     while (std::getline(f, line)) {
         if (line.empty() || line[0] == '#') continue;
         std::istringstream s(line);
         std::vector<int64_t> v;
         int64_t x;
         while (s >> x) v.push_back(x);
-        if (v.size() < 33) return false;
+        if (v.size() < 35) return false;
         PadTick t{};
         size_t i = 0;
         auto nx = [&] { return v[i++]; };
         t.tick = nx(), t.vblank = nx();
         for (auto& p : t.pos) p = int32_t(nx());
         t.yaw = int32_t(nx()), t.pitch = int32_t(nx()), t.flags_b = uint32_t(nx()), t.health = int32_t(nx());
-        t.roll = int32_t(nx());
+        t.roll = int32_t(nx()), t.body_pitch = int32_t(nx()), t.body_yaw = int32_t(nx());
         t.pad_now = uint32_t(nx()), t.pad_prev = uint32_t(nx()), t.sticks = uint32_t(nx()), t.analog = uint32_t(nx());
         for (auto& p : t.s_pos) p = int32_t(nx());
         for (auto& p : t.s_old) p = int32_t(nx());
@@ -87,6 +88,112 @@ bool read_pad(const char* path, std::string& level, std::vector<PadTick>& out) {
         out.push_back(std::move(t));
     }
     return true;
+}
+
+// VALOR_TRACE_AIM's line for a tick (runtime/src/watch.cpp): the scripts' animation state, the
+// weapon's timer, the arms' gun bones, the last aim's results, the entities as the aim sees them.
+struct AimRec {
+    int16_t state = 0;
+    int32_t timer = 0;
+    uint32_t arms = 0;
+    int16_t joint[2][3]{};
+    Quat quat[2]{};
+    int32_t out[10]{};  // aim point, shot start, ang vel x/y, inv+0x180, +0x18C
+    int32_t view[8]{};  // the camera object's +0x100..+0x11F this tick
+    int32_t mat[5]{}, ipos[3]{};  // the soldier's +0x340.. and +0x354 (the last tick's)
+    std::vector<AimTarget> ents;
+};
+
+// Words of systems not ported, as the watch logs their changes at each frame's end: the recoil
+// (inv+0x4C, +0x50: firing), which moves the crosshair's ray, and the camera's shake (+0xCC:
+// explosions, hits), which moves the eye.
+struct WatchChange {
+    int64_t vblank;
+    int which;
+    int32_t value;
+};
+
+std::vector<WatchChange> read_watched(const char* path, const std::vector<std::string>& names) {
+    std::vector<WatchChange> out;
+    std::ifstream f(path);
+    std::string line;
+    while (std::getline(f, line)) {
+        long long v;
+        char name[16];
+        unsigned old, now;
+        if (line.rfind("watch ", 0) != 0 || std::sscanf(line.c_str(), "watch %lld %15[^:]: %x -> %x", &v, name, &old, &now) != 4)
+            continue;
+        for (size_t i = 0; i < names.size(); i++)
+            if (names[i] == name) out.push_back({v, int(i), int32_t(now)});
+    }
+    return out;
+}
+
+// The watched words as a tick starting at vblank `before` finds them.
+struct Watched {
+    std::vector<WatchChange> changes;
+    size_t next = 0;
+    std::vector<int32_t> value;
+    std::vector<bool> known;
+    void advance(int64_t before) {
+        for (; next < changes.size() && changes[next].vblank < before; next++)
+            value[changes[next].which] = changes[next].value, known[changes[next].which] = true;
+    }
+};
+
+std::map<std::pair<int64_t, int64_t>, AimRec> read_aim(const char* path) {
+    std::map<std::pair<int64_t, int64_t>, AimRec> out;
+    std::ifstream f(path);
+    std::string line;
+    AimRec cur;
+    bool have = false;
+    int64_t tick = -1;
+    while (std::getline(f, line)) {
+        if (line.rfind("aim ", 0) == 0) {
+            size_t colon = line.find(':');
+            tick = std::atoll(line.c_str() + 4);
+            std::istringstream s(line.substr(colon + 1));
+            std::vector<uint32_t> a, b, c;
+            std::string tok;
+            int part = 0;
+            while (s >> tok) {
+                if (tok == "|") {
+                    part++;
+                    continue;
+                }
+                uint32_t v = uint32_t(std::stoul(tok, nullptr, 16));
+                (part == 0 ? a : part == 1 ? b : c).push_back(v);
+            }
+            if (a.size() < 19 || b.size() < 26) continue;
+            cur = AimRec{};
+            cur.state = int16_t(a[0]), cur.timer = int32_t(a[1]), cur.arms = a[2];
+            for (int k = 0; k < 2; k++) {
+                for (int j = 0; j < 3; j++) cur.joint[k][j] = int16_t(a[4 + 8 * k + j]);
+                for (int j = 0; j < 4; j++) cur.quat[k][j] = int16_t(a[7 + 8 * k + j]);
+            }
+            for (int k = 0; k < 10; k++) cur.out[k] = int32_t(b[k]);
+            for (int k = 0; k < 8; k++) cur.view[k] = int32_t(b[10 + k]);
+            for (int k = 0; k < 5; k++) cur.mat[k] = int32_t(b[18 + k]);
+            for (int k = 0; k < 3; k++) cur.ipos[k] = int32_t(b[23 + k]);
+            for (size_t i = 0; i + 13 <= c.size();) {
+                AimTarget t;
+                t.handle = c[i], t.flags_a = c[i + 1], t.flags_b = c[i + 2];
+                for (int k = 0; k < 3; k++) t.pos[k] = int32_t(c[i + 3 + k]), t.centre[k] = int16_t(c[i + 6 + k]);
+                t.radius = uint16_t(c[i + 9]), t.box = uint16_t(c[i + 10]);
+                uint32_t np = c[i + 11];
+                i += 12;
+                for (uint32_t p = 0; p < np && i + 5 <= c.size(); p++, i += 5)
+                    t.parts.push_back({{int32_t(c[i]), int32_t(c[i + 1]), int32_t(c[i + 2])}, int32_t(c[i + 3]), int32_t(c[i + 4])});
+                cur.ents.push_back(std::move(t));
+            }
+            have = true;
+        } else if (have && line.rfind("input ", 0) == 0) {
+            long long v, t;
+            if (std::sscanf(line.c_str(), "input %lld %lld:", &v, &t) == 2 && t == tick) out[{v, t}] = std::move(cur);
+            have = false;
+        }
+    }
+    return out;
 }
 
 struct Ram {
@@ -138,6 +245,16 @@ void seed(Session& s, const Ram& r) {
     v.turn_rate = r.s32(inv + 0x188), v.cross_sx = r.s16(inv + 0x190), v.cross_sy = r.s16(inv + 0x192);
     v.stance = r.u32(inv + 0x1C8), v.prev_stance = r.u32(inv + 0x1CC);
     p.eye_offset = r.s32(r.u32(r.u32(0x8009D638) + 0x388) + 0x94);
+    v.aim_pitch = r.s32(inv + 0x180), v.aim_yaw = r.s32(inv + 0x18C);
+    for (int k = 0; k < 3; k++) v.shot_start[k] = r.s32(inv + 0x198 + 4 * k), v.aim_point[k] = r.s32(inv + 0x1A4 + 4 * k);
+    for (int i = 0; i < 3; i++) {
+        p.ipos[i] = r.s32(e + 0x354 + 4 * i);
+        for (int j = 0; j < 3; j++) p.matrix[i][j] = r.s16(e + 0x340 + 6 * i + 2 * j);
+    }
+    // The camera: its entity's position and its object's words.
+    uint32_t ce = r.u32(0x8009D638), co = r.u32(ce + 0x388);
+    for (int k = 0; k < 3; k++) s.camera().pos[k] = r.s32(ce + 0x20C + 4 * k);
+    for (int k = 0; k < 0x50; k++) s.camera().obj.w[k] = r.s32(co + 4 * k);
 
     // Records: g_level (0x8009CC64), its entity table's pairs {state, record}.
     uint32_t lvl = r.u32(0x8009CC64), et = lvl + r.u32(lvl + 0x53C), n = r.u32(et);
@@ -203,12 +320,21 @@ int run_pad(int argc, char** argv) {
     std::string data = "extracted/moh/DATA";
     const char* ram_path = nullptr;
     const char* stream_log = nullptr;
+    const char* aim_log = nullptr;
+    double projection_aspect = 0, projection_fov = 0;
     int verbose = 0;
     bool stick_only = false;
     for (int i = 2; i < argc; i++) {
         if (!std::strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
         else if (!std::strcmp(argv[i], "--ram") && i + 1 < argc) ram_path = argv[++i];
         else if (!std::strcmp(argv[i], "--stream-log") && i + 1 < argc) stream_log = argv[++i];
+        else if (!std::strcmp(argv[i], "--aim-log") && i + 1 < argc) aim_log = argv[++i];
+        else if (!std::strcmp(argv[i], "--projection") && i + 1 < argc) {
+            // W:H,FOV as the recording's settings.ini has them (aspect, fov; FOV 0: the original).
+            double w = 4, h = 3;
+            std::sscanf(argv[++i], "%lf:%lf,%lf", &w, &h, &projection_fov);
+            projection_aspect = w / h;
+        }
         else if (!std::strcmp(argv[i], "-v") && i + 1 < argc) verbose = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--stick-only")) stick_only = true;
     }
@@ -228,6 +354,22 @@ int run_pad(int argc, char** argv) {
         return 2;
     }
     seed(s, ram);
+    // --aim-log: aim_update runs in the core, fed the entities and the arms as the original had
+    // them, and its results are compared; the projection is the recording's (its settings.ini).
+    std::map<std::pair<int64_t, int64_t>, AimRec> aims;
+    Watched watched;
+    Models models;
+    if (aim_log) {
+        aims = read_aim(aim_log);
+        watched.changes = read_watched(aim_log, {"l+4C", "l+50", "ck+0"});
+        watched.value.assign(3, 0), watched.known.assign(3, false);
+        if (!models.load(data, m, l, &err)) {
+            std::fprintf(stderr, "coretest --pad: %s\n", err.c_str());
+            return 2;
+        }
+        s.enable_aim();
+        if (projection_aspect > 0) s.gte().set_projection(projection_aspect, projection_fov);
+    }
     s.player().mission = m, s.player().level = l;
     // The original's read times (capture.sh watches cl): each load completes when its slot was
     // released.
@@ -253,6 +395,7 @@ int run_pad(int argc, char** argv) {
     std::map<std::string, Stat> stats;
     long calls = 0, calls_ok = 0, axis = 0, axis_ok = 0, shown = 0;
     bool last_pos_ok = true;
+    long aim_checked = 0, aim_same = 0, aim_shown = 0, mat_same = 0, view_same = 0, dbg_shown = 0;
     long teleports = 0;
     long ladders_made = 0, list_same = 0, foreign_spawns = 0, foreign_removals = 0, own_diff = 0, own_missed = 0;
     int64_t first_bad = -1;
@@ -268,7 +411,29 @@ int run_pad(int argc, char** argv) {
         // Events of systems not ported, as this tick's update finds them.
         PlayerEvents ev;
         ev.set_weapon = true, ev.slot = int8_t(t.s_inv54 & 0xFF), ev.weapon = uint8_t(t.s_inv54 >> 8);
-        ev.set_friction = true, ev.friction = t.s_inv;
+        ev.set_friction = !aim_log, ev.friction = t.s_inv;
+        const AimRec* ar = nullptr;
+        if (aim_log) {
+            // The input line's vblank can trail the tape's by one or two (both read the counter).
+            auto it = aims.lower_bound({t.vblank - 3, t.tick});
+            while (it != aims.end() && it->first.first <= t.vblank + 3 && it->first.second != t.tick) ++it;
+            if (it != aims.end() && it->first.first <= t.vblank + 3) {
+                ar = &it->second;
+                s.aim_targets() = ar->ents;
+                AimArms& arms = p.aim.arms;
+                arms.model = models.by_hash(ar->arms);
+                for (int b = 0; b < 2; b++) {
+                    std::copy(ar->joint[b], ar->joint[b] + 3, arms.joint[b]);
+                    arms.quat[b] = ar->quat[b];
+                }
+                ev.set_anim_state = true, ev.anim_state = ar->state, ev.weapon_timer = ar->timer;
+                watched.advance(it->first.first);
+                ev.set_recoil = true;
+                ev.kick = watched.known[0] ? watched.value[0] : p.inv.kick;
+                ev.climb = watched.known[1] ? watched.value[1] : p.inv.climb;
+                if (watched.known[2]) s.camera().obj.at(0xCC) = watched.value[2];
+            }
+        }
         ev.set_roll = true, ev.roll = t.roll;  // the body's roll after this tick (aim_update)
         ev.set_flags_b = true, ev.flags_b = (p.w.flags_b & 0x10) | (t.s_flags_b & ~0x10u);
         if (t.s_flinch == 8) {
@@ -306,7 +471,37 @@ int run_pad(int argc, char** argv) {
             if (call.src == 1 && !stick_only && !c.axis_override[call.role])
                 c.axis_override[call.role] = true, c.axis_value[call.role] = call.value;
         uint32_t serial_before = s.entities().serial;
+        // The soldier's matrix and whole position as the aim reads them (the last tick's).
+        if (ar) {
+            int32_t mine[5] = {};
+            for (int i = 0; i < 9; i++) {
+                uint32_t v = uint16_t(p.matrix[i / 3][i % 3]);
+                mine[i / 2] |= int32_t(v << ((i & 1) * 16));
+            }
+            bool same = std::equal(mine, mine + 4, ar->mat) && (mine[4] & 0xFFFF) == (ar->mat[4] & 0xFFFF) &&
+                        std::equal(p.ipos, p.ipos + 3, ar->ipos);
+            mat_same += same;
+            if (!same && verbose && dbg_shown++ < verbose) {
+                std::printf("tick %" PRId64 " matrix/ipos: core", t.tick);
+                for (int32_t x : mine) std::printf(" %X", uint32_t(x));
+                std::printf(" %d %d %d game", p.ipos[0], p.ipos[1], p.ipos[2]);
+                for (int32_t x : ar->mat) std::printf(" %X", uint32_t(x));
+                std::printf(" %d %d %d\n", ar->ipos[0], ar->ipos[1], ar->ipos[2]);
+            }
+        }
         s.tick(ev);
+        if (ar) {
+            bool same = true;
+            for (int k = 0; k < 8; k++) same &= s.camera().obj.get(0x100 + 4 * k) == ar->view[k];
+            view_same += same;
+            if (!same && verbose && dbg_shown++ < verbose) {
+                std::printf("tick %" PRId64 " view: core", t.tick);
+                for (int k = 0; k < 8; k++) std::printf(" %X", uint32_t(s.camera().obj.get(0x100 + 4 * k)));
+                std::printf(" game");
+                for (int k = 0; k < 8; k++) std::printf(" %X", uint32_t(ar->view[k]));
+                std::printf("\n");
+            }
+        }
         if (s.entities().serial != serial_before) ladders_made += long((s.entities().serial - serial_before) & 0xFFFF);
         // The entity list: the core's own changes (ladders) against the original's, then the
         // original's list taken as it is (spawns and removals of systems not ported).
@@ -351,6 +546,36 @@ int run_pad(int argc, char** argv) {
         Stat& st = stats[kind];
         st.ticks++;
         bool pos_ok = std::equal(p.w.pos, p.w.pos + 3, n.s_old);
+        // The aim's results against what the next update found.
+        bool aim_ok = true;
+        if (aim_log) {
+            auto it = aims.find({n.vblank ? n.vblank : t.vblank, n.tick});
+            if (n.end_only) {
+                for (auto& [key, rec] : aims)
+                    if (key.second == n.tick && key.first >= t.vblank) {
+                        it = aims.find(key);
+                        break;
+                    }
+            }
+            if (it != aims.end()) {
+                const int32_t* o = it->second.out;
+                const Inv& v = p.inv;
+                int32_t mine[10] = {v.aim_point[0], v.aim_point[1], v.aim_point[2], v.shot_start[0], v.shot_start[1],
+                                    v.shot_start[2], p.ang_vel[0], p.ang_vel[1], v.aim_pitch, v.aim_yaw};
+                aim_ok = std::equal(mine, mine + 10, o) && ((p.inv.flags ^ n.s_inv) & 0x80100000u) == 0 &&
+                         p.body[0] == t.body_pitch && p.body[1] == t.body_yaw;
+                aim_checked++, aim_same += aim_ok;
+                if (!aim_ok && verbose && aim_shown < verbose) {
+                    aim_shown++;
+                    std::printf("tick %" PRId64 " aim: core", t.tick);
+                    for (int32_t x : mine) std::printf(" %X", uint32_t(x));
+                    std::printf(" body %X %X, game", uint32_t(p.body[0]), uint32_t(p.body[1]));
+                    for (int k = 0; k < 10; k++) std::printf(" %X", uint32_t(o[k]));
+                    std::printf(" body %X %X flags %08X/%08X\n", uint32_t(t.body_pitch), uint32_t(t.body_yaw), p.inv.flags,
+                                n.s_inv);
+                }
+            }
+        }
         last_pos_ok = pos_ok;
         bool yaw_ok = p.inv.yaw == t.yaw, pitch_ok = p.inv.pitch == t.pitch;
         st.pos += pos_ok, st.yaw += yaw_ok, st.pitch += pitch_ok;
@@ -432,5 +657,9 @@ int run_pad(int argc, char** argv) {
                 "original didn't, %ld the original made that the core didn't, %ld made in all\n",
                 list_same, total, foreign_spawns, foreign_removals, own_diff, own_missed, ladders_made);
     std::printf("the level logic placed the player %ld times\n", teleports);
+    if (aim_log)
+        std::printf("aim_update: %ld of %ld ticks exact (aim point, shot start, angular velocity, +0x180/+0x18C, "
+                    "friction, body pitch and yaw); the view %ld, the soldier's matrix %ld\n", aim_same, aim_checked,
+                    view_same, mat_same);
     return first_bad < 0 ? 0 : 1;
 }

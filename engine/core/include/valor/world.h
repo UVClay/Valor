@@ -66,6 +66,11 @@ public:
     // floor_find (0x800603DC): the floor under a 16.16 position.
     Floor floor_find(const int32_t pos[3]) const;
 
+    // world_sweep (0x8003EF5C): the segment from -> to (whole units) against the loaded chunks'
+    // triangles crossed front to back: the nearest hit point in the chunk with the smallest t
+    // (tools/sim/engine_world.py). False if nothing is hit.
+    bool sweep(const int32_t from[3], const int32_t to[3], int32_t hit[3], int16_t normal[3]) const;
+
     // walls_gather: the planes near a walker's segment (centre c, radius r, height h) that the
     // move delta goes into, at most maxn.
     void walls_gather(const int32_t c[3], int32_t r, int32_t h, const int32_t delta[3],

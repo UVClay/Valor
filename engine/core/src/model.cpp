@@ -214,6 +214,8 @@ bool Models::load(const std::string& data_dir, int m, int l, std::string* err) {
         if (sc != kNone && sc != 0)
             for (uint32_t k = 0; k < nv && b.ok; k++)
                 md.static_colours.push_back({b.u8(sc + 4 * k), b.u8(sc + 4 * k + 1), b.u8(sc + 4 * k + 2)});
+        md.gun_bone[0] = int16_t(mr.u16(0xD4)), md.gun_bone[1] = int16_t(mr.u16(0xD6));
+        for (int j = 0; j < 3; j++) md.gun_off[0][j] = int16_t(mr.u16(0xD8 + 2 * j)), md.gun_off[1][j] = int16_t(mr.u16(0xE0 + 2 * j));
         // Hit parts: 0x48-byte templates.
         uint32_t np = mr.u16(0xBE), pt = mr.u32(0xC0);
         for (uint32_t k = 0; k < np && pt != kNone && pt != 0 && b.ok && np < 64; k++) {

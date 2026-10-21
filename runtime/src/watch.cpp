@@ -267,7 +267,69 @@ extern "C" void hook_role_button(Cpu *c, RecompFn body) {
     trace_role(port, role, 0, int32_t(c->r[2]));
 }
 
+// VALOR_TRACE_AIM: what aim_update (0x8007E034, docs/re/combat.md) reads besides the player and
+// the view, and what it left the tick before, as player_update finds them: "aim TICK: STATE TIMER
+// ARMS NEAR FAR | OUT | ENTITIES". STATE is the soldier's +0x11E (the scripts' animation state,
+// which sets inv 0x800000) and TIMER inv+0x48 (the weapon's); ARMS is the first-person model's hash; NEAR and FAR its bones +0xD4 and
+// +0xD6 (index, joint 3 x s16 from the instance's +0x94, quaternion 4 x s16 from +0x88 or +0x8C);
+// OUT the last aim's results: the aim point inv+0x1A4, the shot start inv+0x198 (3 x s32 each), the
+// angular velocity +0x234/+0x238, inv+0x180/+0x18C, then the view (the camera object's +0x100..+0x11F)
+// and the soldier's +0x340..+0x353 and +0x354..+0x35F; ENTITIES every entity's handle, flags A and B,
+// position (3 x s32), sphere centre (3 x s16, +0x2E0) and radius (+0x2E8), +0x2EE, and for those
+// with flags A & 0x10400 its hit parts: count, then centre (3 x s32), radius squared and kind each.
+// All in hex.
+static void trace_aim(Cpu *c, uint32_t e) {
+    static bool on = getenv("VALOR_TRACE_AIM") != nullptr;
+    if (!on || shadow_active()) return;
+    uint32_t inv = psx_r32(c, e + 0x388), inst = psx_r32(c, e + 0x100);
+    std::string s;
+    auto add = [&](uint32_t v) {
+        char buf[12];
+        snprintf(buf, sizeof buf, " %X", v);
+        s += buf;
+    };
+    uint32_t model = inst ? psx_r32(c, inst + 8) : 0;
+    add(psx_r16(c, e + 0x11E)), add(psx_r32(c, inv + 0x48));
+    add(model ? psx_r32(c, model) : 0);
+    for (uint32_t bo : {0xD4u, 0xD6u}) {
+        uint32_t bone = model ? psx_r16(c, model + bo) : 0;
+        add(bone);
+        uint32_t jp = inst ? psx_r32(c, inst + 0x94) : 0;
+        uint32_t qp = inst ? (psx_r32(c, inst + 0x88) ? psx_r32(c, inst + 0x88) : psx_r32(c, inst + 0x8C)) : 0;
+        for (int k = 0; k < 3; k++) add(jp ? psx_r16(c, jp + 8 * bone + 2 * k) : 0);
+        for (int k = 0; k < 4; k++) add(qp ? psx_r16(c, qp + 8 * bone + 2 * k) : 0);
+    }
+    s += " |";
+    for (uint32_t o : {0x1A4u, 0x1A8u, 0x1ACu, 0x198u, 0x19Cu, 0x1A0u}) add(psx_r32(c, inv + o));
+    add(psx_r32(c, e + 0x234)), add(psx_r32(c, e + 0x238));
+    add(psx_r32(c, inv + 0x180)), add(psx_r32(c, inv + 0x18C));
+    // The view (camera object +0x100: matrix and translation, set by the camera's update this
+    // tick) and the soldier's matrix +0x340 and whole position +0x354 (the last tick's).
+    uint32_t co = psx_r32(c, psx_r32(c, 0x8009D638) + 0x388);
+    for (uint32_t o = 0; o < 0x20; o += 4) add(psx_r32(c, co + 0x100 + o));
+    for (uint32_t o = 0; o < 0x14; o += 4) add(psx_r32(c, e + 0x340 + o));
+    for (uint32_t o = 0; o < 0xC; o += 4) add(psx_r32(c, e + 0x354 + o));
+    s += " |";
+    int n = 0;
+    for (uint32_t x = psx_r32(c, 0x8009D64C); (x & 0xFFE00003) == 0x80000000 && n < 512; x = psx_r32(c, x + 4), n++) {
+        uint32_t fa = psx_r32(c, x + 0xC);
+        add(psx_r32(c, x)), add(fa), add(psx_r32(c, x + 0x10));
+        for (int k = 0; k < 3; k++) add(psx_r32(c, x + 0x20C + 4 * k));
+        for (int k = 0; k < 3; k++) add(psx_r16(c, x + 0x2E0 + 2 * k));
+        add(psx_r16(c, x + 0x2E8)), add(psx_r16(c, x + 0x2EE));
+        uint32_t np = (fa & 0x10400) ? psx_r16(c, x + 0x36) : 0, pp = psx_r32(c, x + 0x304);
+        if (!pp) np = 0;
+        add(np);
+        for (uint32_t i = 0; i < np && i < 64; i++) {
+            for (int k = 0; k < 3; k++) add(psx_r32(c, pp + 0x48 * i + 0x20 + 4 * k));
+            add(psx_r32(c, pp + 0x48 * i + 0x38)), add(psx_r32(c, pp + 0x48 * i + 8));
+        }
+    }
+    log("aim %u:%s", psx_r32(c, 0x8009A5DC), s.c_str());
+}
+
 extern "C" void hook_player_update(Cpu *c, RecompFn body) {
+    trace_aim(c, c->r[4]);
     if (trace_input()) {
         uint32_t e = c->r[4], inv = psx_r32(c, e + 0x388);
         std::string st;

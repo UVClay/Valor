@@ -23,7 +23,7 @@ import sys
 
 FIELDS = ["tick", "vblank",
           # the trace after the tick: position, the view's yaw and pitch, flags B, health
-          "x", "y", "z", "yaw", "pitch", "flags_b", "health", "roll",
+          "x", "y", "z", "yaw", "pitch", "flags_b", "health", "roll", "body_pitch", "body_yaw",
           # the pad (player_update's read)
           "pad_now", "pad_prev", "sticks", "analog",
           # the soldier at the start of the update
@@ -79,14 +79,14 @@ def main():
         if m and cur is not None and int(m[1]) == cur and int(m[2]) == 0:
             roles[cur].append((int(m[3]), int(m[4]), int(m[5])))
     out = sys.stdout
-    out.write(f"valor-pad 4 {dump_level(cap, dv)} {dv}\n# " + " ".join(FIELDS) + " ents... calls...\n")
+    out.write(f"valor-pad 5 {dump_level(cap, dv)} {dv}\n# " + " ".join(FIELDS) + " ents... calls...\n")
     for d in ticks:
         t = d["tick"]
         sol = [e for e in d["ents"] if e[1] == 1]
         if not sol or t not in inputs:
             continue
         pad, st = inputs[t]
-        v = [t, d["vblank"], *sol[0][3:6], d["player"][0], d["player"][1], d["player"][6], sol[0][9], sol[0][8],
+        v = [t, d["vblank"], *sol[0][3:6], d["player"][0], d["player"][1], d["player"][6], sol[0][9], sol[0][8], sol[0][6], sol[0][7],
              pad[0], pad[2], pad[4], pad[6] & 0xFF] + [s32(x) for x in st]
         calls = roles.get(t, [])
         ents = " ".join(f"{e[0]} {e[1]}" for e in d["ents"])
@@ -94,7 +94,7 @@ def main():
                   " ".join(f"{r} {src} {val}" for r, src, val in calls) + "\n")
     if last + 1 in inputs:
         pad, st = inputs[last + 1]
-        v = [last + 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, pad[0], pad[2], pad[4], pad[6] & 0xFF] + [s32(x) for x in st]
+        v = [last + 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, pad[0], pad[2], pad[4], pad[6] & 0xFF] + [s32(x) for x in st]
         out.write(" ".join(str(int(x)) for x in v) + " 0 -1\n")
 
 

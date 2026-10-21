@@ -217,9 +217,10 @@ void Player::player_controls() {
                     body[0] = s32(int64_t(body[0]) - kPitchLimit - inv.pitch);
                     inv.pitch = -kPitchLimit;
                 }
+                if (aim.gte) aim.camera->pitch_target(*aim.gte, inv.pitch);
             }
         }
-        // aim_update (combat.md) follows: not ported; its friction comes in as an event.
+        if (aim.gte) aim_update();
         inv.prev_stance = s;
         return;
     }
@@ -280,11 +281,12 @@ void Player::player_controls() {
         break;
     }
     if (s == 7 || s == 8) {
-        // aim_update (combat.md): the body trails the view; not ported.
+        if (aim.gte) aim_update();  // the body trails the view
     } else {
         body[0] = inv.pitch;
         body[1] = inv.yaw;
     }
+    if (aim.gte) aim.camera->pitch_target(*aim.gte, inv.pitch);
     inv.prev_stance = s;
 }
 
@@ -339,6 +341,14 @@ void Player::update(const PlayerEvents& ev) {
     static const uint8_t aiming[13] = {0, 1, 5, 6, 0, 2, 1, 6, 0, 0, 6, 1, 0};
     static const uint8_t walking[13] = {7, 8, 9, 9, 7, 7, 8, 9, 7, 7, 9, 8, 7};
     inv.stance = inv.weapon < 13 ? ((inv.flags & 0x20) ? aiming[inv.weapon] : walking[inv.weapon]) : 7;
+    // The animation state the scripts left (+0x11E) holds the gun still for aim_update (0x800000).
+    if (ev.set_anim_state) {
+        int16_t v = ev.anim_state;
+        if (v == 2 || (ev.weapon_timer > 0 && v == 8) || v == 9 || v == 10 || v == 13 || v == 16)
+            inv.flags |= 0x800000;
+        else
+            inv.flags &= 0xFF7FFFFFu;
+    }
     // The weapon switch: weapon_draw (0x8007DD4C), when the scripts ask (variable 0x11).
     if (ev.weapon_draw) {
         if (inv.flags & 0x200040) {
@@ -350,6 +360,7 @@ void Player::update(const PlayerEvents& ev) {
     }
     // Use (zones: Session), reload, the trigger: weapons, not ported.
     // The recoil kick.
+    if (ev.set_recoil) inv.kick = ev.kick, inv.climb = ev.climb;
     int32_t k = std::min(s32(int64_t(inv.kick) + inv.climb), 0xF0000);
     inv.kick = k > 0 ? k - 0x7FFF : (k < -0x2000 ? k + 0x1FFF : 0);
     inv.climb = inv.climb >= 0x2001 ? inv.climb - 0x2000 : 0;
@@ -383,6 +394,16 @@ void Player::update(const PlayerEvents& ev) {
             }
         }
         eye_offset = cur + step;
+        if (aim.camera) {
+            // The camera's eye offset and look points move with it.
+            CameraObj& co = aim.camera->obj;
+            co.at(0x94) = eye_offset;
+            co.at(0x98) = s32(int64_t(co.get(0x98)) + step);
+            co.at(0x4C) = s32(int64_t(eye_offset) << 16);
+            co.at(0x58) = s32(int64_t(eye_offset) << 16);
+            co.at(0x1C) = s32(int64_t(co.get(0x1C)) + (int64_t(step) << 16));
+            co.at(0x28) = s32(int64_t(co.get(0x28)) + (int64_t(step) << 16));
+        }
         if (eye_offset == tgt && (inv.flags & 2)) crouch_done();
     } else if ((inv.flags & 2) && !riding) {
         eye = 80 << 16;
@@ -433,6 +454,8 @@ void Player::update(const PlayerEvents& ev) {
 // entity_move, then player_world_contact.
 void Player::move(const World& world) {
     if (dead) return;  // the death camera carries him (flags A 0x20000)
+    // entity_move: the angles turn by the angular velocity first.
+    for (int k = 0; k < 3; k++) body[k] = s32(int64_t(body[k]) + ang_vel[k]);
     w.yaw = inv.yaw;
     w.roll = body[2];
     w.eye = eye >> 16;
@@ -442,6 +465,9 @@ void Player::move(const World& world) {
     std::fill(w.push, w.push + 3, 0);
     if (w.contact & 2) w.strafe = 0, local_fwd = 0;  // walls gathered: the sideways speed cleared
     if (w.events & kEvLanding) w.fwd = w.strafe = w.vy = local_fwd = 0;
+    // The matrix +0x340 (0x8006A76C) and the whole position +0x354, for the next tick's aim.
+    rot_yxz(body[0] >> 16, body[1] >> 16, body[2] >> 16, matrix);
+    for (int k = 0; k < 3; k++) ipos[k] = s16(w.pos[k] >> 16);
 }
 
 }  // namespace valor

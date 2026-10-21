@@ -1,7 +1,8 @@
 #!/bin/bash
 # engine/tools/padcheck.sh [-j N] [--stick-only] TAPE...: the core's player from the recorded pad against the
 # original, for every level start and restart (after a death) of each recording: capture.sh twice per recording
-# (once to find the starts, once with a RAM dump 7 vblanks into each), export_pad.py, coretest.
+# (once to find the starts, once with a RAM dump 7 vblanks into each), export_pad.py, coretest (with
+# aim_update against the trace; the recordings' projection is 4:3 and the original's FOV).
 # Captures go to build/gd/cap/NAME; a summary line per segment to build/gd/cap/padcheck.txt.
 # A recording made with mouse and keyboard takes the analog roles from the trace (the runtime adds
 # them); with --stick-only (recordings without: monkey runs, gamepads) the core computes them from
@@ -32,8 +33,10 @@ for line in open('$out/state.jsonl'):
         [ -f "$out/d$v.bin" ] || continue
         python3 engine/tools/export_pad.py "$out" "$v" > "$out/pad_$v.txt" 2> "$out/pad_$v.err" || continue
         build/gd/cmake/coretest "$out/pad_$v.txt" --ram "$out/d$v.bin" --stream-log "$out/run.log" $STICK -v 20 \
+            --aim-log "$out/run.log" --projection 4:3,0 \
             > "$out/coretest_$v.txt"
-        echo "$name @$v: $(tail -1 "$out/coretest_$v.txt")" >> build/gd/cap/padcheck.txt
+        echo "$name @$v: $(grep "from the pad" "$out/coretest_$v.txt" | tail -1)" >> build/gd/cap/padcheck.txt
+        echo "$name @$v: $(grep "^aim_update" "$out/coretest_$v.txt" | tail -1)" >> build/gd/cap/padcheck.txt
     done
 }
 export -f one

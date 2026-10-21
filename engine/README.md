@@ -14,6 +14,8 @@ system ported here is checked tick by tick against a replay of it.
 | `core/src/movement.cpp` | `entity_move` and `walker_slide` (movement.md) |
 | `core/src/controls.cpp` | The pad and the control roles: `role_button`'s ramps, `role_axis`'s curve, actions with their exclusion masks, the speed changes of crouching; a fresh card's configuration (movement.md, Control roles) |
 | `core/src/player.cpp` | `player_update` and `player_controls` as they run: aim mode with the pin and lean, the aiming stances' crosshair box, centre view, the three look modes, jump, the crouch easing (and 5:4's lower crouch), ladders, the flinch, zoom, `weapon_draw`'s effects, the death start; then the move. Systems not ported come in as events (`PlayerEvents`) |
+| `core/src/camera.cpp` | The camera entity in its normal mode: `camera_think` (ease, look points, the eye at the soldier, the shake) and `camera_setup`'s view matrix (movement.md, The camera) |
+| `core/src/aim.cpp` | `aim_update` (combat.md, Aiming): the crosshair's ray swept against the world and the entities' spheres and hit parts, the aim friction, the aim point and shot start, the gun's two points and the angular velocity that turns the body toward the crosshair |
 | `core/src/level.cpp` | The BSD header fields used so far and the player start (formats.md, levels.md) |
 | `core/src/records.cpp` | Entity records and their volumes, the floor zones' record lists, the zone tracking (enter/leave with the original's skips), the chunk streaming (levels.md, Triggers; formats.md, chunk streaming records) |
 | `core/src/entities.cpp` | The entity list and handle table, linking, immediate removal with handles freed at the end of the frame, the deferred message queue (entities.md, objects.md) |
@@ -149,7 +151,7 @@ from the trace, since the session's mouse and keyboard add to it in the runtime.
 `--stick-only` (monkey runs, gamepads), it computes `role_axis` from the stick bytes too. Systems
 not ported come in as events, from the soldier as the next update finds him:
 - the weapon in hand and `weapon_draw`;
-- aim_update's friction and body roll;
+- aim_update's friction (without `--aim-log`) and the body's roll;
 - a hit's flinch and death;
 - touches by soldiers and objects;
 - the trigger boxes' flags B;
@@ -167,6 +169,36 @@ Two ticks' eye height differ, in 5:4, where the player rides a parent (`+0x2C`; 
 ported). The entity list follows the original's for the systems not ported: the core takes their
 spawns and removals from the trace. The ladders it makes itself got the handles the original gave
 them, in every case.
+
+### Aiming
+
+```sh
+build/gd/cmake/coretest build/gd/pad_1720.txt --ram build/gd/cap/session/d1720.bin \
+    --stream-log build/gd/cap/session/run.log --aim-log build/gd/cap/session/run.log --projection 21:9,110
+```
+
+With `--aim-log`, the pad mode runs the camera and `aim_update` in the core. The capture's
+`VALOR_TRACE_AIM` lines supply what isn't ported yet, as each `player_update` finds it:
+- the entities' spheres and hit parts;
+- the arms model's gun bones as the last draw left them;
+- the scripts' animation state.
+
+The watch supplies the recoil (inv `+0x4C`/`+0x50`, from firing) and the camera's shake (`+0xCC`).
+Compared each tick: the aim point, shot start, angular velocity, inv `+0x180`/`+0x18C`, the friction
+bits and the body's pitch and yaw, plus the view matrix and the soldier's `+0x340` matrix. The
+projection is the recording's (the session's settings: 21:9, FOV 110; the monkey runs': 4:3, the
+original's).
+
+| Recording | Ticks | aim_update exact |
+|---|---|---|
+| 1:3 (the session) | 7,179 | 7,160 |
+| 2:2 (the session) | 6,654 | 6,083 |
+| 2:1 (the session) | 7,854 | 1,517 |
+| 1:2, the four segments of `w12` | 7,849 | all |
+| 3:1, `mk` and `st` | 4,546 | all |
+
+The misses in 2:1 and 2:2 are the ray against an object's collision box (`0x8004B0F0`, objects
+with `+0x2EE` planes), which isn't ported. In 1:3 they're 19 ticks where the eye differs.
 
 ### Poses
 
@@ -189,8 +221,8 @@ In order, following the closed-loop Python engine in `tools/sim/engine*.py`, whi
 reference simulators:
 
 1. **The rest of the player**: the death camera (a camera animation's root motion carries the
-   soldier) and the restart in place (`level_start`, shell.md), riding a parent, `aim_update`
-   (combat), weapons and their scripts, Use's messages delivered.
+   soldier) and the restart in place (`level_start`, shell.md), riding a parent, the aim ray
+   against objects' boxes, weapons and their scripts, Use's messages delivered.
 2. **Entities**: the contact phase (`entities_collide`: touches, hit parts), spawning by records.
 3. **Level logic** (levels.md, messages.md; `level_vm.py`): records, the level-script VM, triggers
    and zones, the deferred queue, objectives.

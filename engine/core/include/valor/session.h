@@ -17,7 +17,9 @@
 #include <string>
 #include <vector>
 
+#include "valor/camera.h"
 #include "valor/entities.h"
+#include "valor/gte.h"
 #include "valor/level.h"
 #include "valor/player.h"
 #include "valor/records.h"
@@ -61,6 +63,13 @@ public:
     Player& player() { return player_; }
     const Player& player() const { return player_; }
     Entities& entities() { return entities_; }
+    Camera& camera() { return camera_; }
+    const Gte& gte() const { return gte_; }
+    Gte& gte() { return gte_; }
+    // The aim (aim_update) runs once the camera object holds a level's state (a seed from RAM): the
+    // targets are the entities as the aim sees them, the arms the first-person model's gun bones.
+    void enable_aim();
+    std::vector<AimTarget>& aim_targets() { return aim_targets_; }
     MessageQueue& queue() { return queue_; }
     uint32_t tick_count() const { return tick_; }  // g_tick (0x8009A5DC)
 
@@ -84,6 +93,7 @@ public:
     void lights_update();
     void player_think(Entity& e);
     void player_move(Entity& e);
+    void camera_think(Entity& e);
 
 private:
     LevelInfo info_;
@@ -96,6 +106,9 @@ private:
     std::vector<uint32_t> record_state_;
     int held_ladder_ = -1;
     Entities entities_;
+    Gte gte_;
+    Camera camera_;
+    std::vector<AimTarget> aim_targets_;
     MessageQueue queue_;
     std::vector<Message> delivered_;
     uint32_t tick_ = 0;

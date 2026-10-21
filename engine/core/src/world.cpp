@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "valor/fixed.h"
+#include "valor/gte.h"
 #include "valor/io.h"
 
 namespace valor {
@@ -267,7 +268,170 @@ bool chunk_near(const CollChunk& ch, int32_t x, int32_t z, int32_t r) {
     return dz * dz + dx * dx < int64_t(r) * r;
 }
 
+bool in_rect(const int16_t r[4], int32_t x, int32_t z) { return r[0] <= x && x <= r[2] && r[1] <= z && z <= r[3]; }
+
+// 0x8003ECE4: the segment a -> b (x, z) crossing the rectangle, as its code tests it.
+bool crosses(const int16_t r[4], const int32_t a[3], const int32_t b[3]) {
+    int64_t t1 = s16(a[0]), t0 = s16(a[2]), t5 = s16(b[0]), t6 = s16(b[2]);
+    int64_t t2 = t5 - t1, a1 = t6 - t0;
+    int64_t x0 = r[0], z0 = r[1], x1 = r[2], z1 = r[3];
+    int64_t lo = (x1 - t1) * a1;
+    int64_t t4 = (z1 - t0) * t2 - lo, t7 = (z0 - t0) * t2 - lo;
+    if ((t4 ^ t7) <= 0 && x1 < t1 && t5 < x1) return true;
+    int64_t t3 = (z1 - t0) * t2 - (x0 - t1) * a1;
+    if (!((t4 ^ t3) > 0 || z1 >= t0 || t6 >= z1)) return true;
+    int64_t v1 = (z0 - t0) * t2 - (x0 - t1) * a1;
+    if ((v1 ^ t3) <= 0 && !(x0 >= t1 || t5 >= x0)) return true;
+    if ((v1 ^ t7) <= 0 && !(z0 >= t0 || !(t6 < z0))) return true;
+    return false;
+}
+
+int64_t frac16(int64_t num, int64_t den) {
+    if (den == 0) return 0;
+    int64_t q = iabs(num << 16) / iabs(den);
+    return ((num << 16) >= 0) == (den >= 0) ? q : -q;
+}
+
+struct SweepHit {
+    int64_t t = 0x7FFF;
+    int32_t p[3]{};
+    int16_t n[3]{};
+};
+
+// leaf_sweep (0x8003DC10): faces crossed from their front (d0 >= 0) to their back, the crossing at
+// t = |d0| * 4096 / (|d0| + |d1|) inside the triangle (three edge cross products against the normal,
+// GTE OP sf=1); the smallest t of the chunk so far.
+bool leaf_sweep(const CollChunk& ch, size_t start, size_t count, const int32_t a[3], const int32_t b[3],
+                int32_t miny, int32_t maxy, SweepHit& best) {
+    bool hit = false;
+    int64_t delta[3] = {s16(b[0] - a[0]), s16(b[1] - a[1]), s16(b[2] - a[2])};
+    size_t end = std::min(start + count, ch.idx.size());
+    for (size_t i = start; i < end; i++) {
+        const CollFace& f = ch.faces[ch.idx[i]];
+        const V3s* V[3] = {&ch.verts[f.v[0]], &ch.verts[f.v[1]], &ch.verts[f.v[2]]};
+        int32_t lo = std::min({V[0]->y, V[1]->y, V[2]->y}), hi = std::max({V[0]->y, V[1]->y, V[2]->y});
+        if (hi < miny || maxy < lo) continue;
+        const V3s& n = ch.norms[f.n];
+        int64_t d0 = (int64_t(s32(int64_t(n.x) * a[0] + int64_t(n.y) * a[1] + int64_t(n.z) * a[2])) >> 15) + f.d;
+        int64_t d1 = (int64_t(s32(int64_t(n.x) * b[0] + int64_t(n.y) * b[1] + int64_t(n.z) * b[2])) >> 15) + f.d;
+        if (d0 < 0 || (d0 ^ d1) >= 0) continue;
+        int64_t t = (iabs(d0) << 12) / (iabs(d0) + iabs(d1));
+        if (!(t < best.t)) continue;
+        int32_t p[3];
+        for (int k = 0; k < 3; k++) p[k] = s16(sat16((t * delta[k]) >> 12) + a[k]);
+        bool ok = true;
+        for (int e = 0; e < 3 && ok; e++) {
+            const V3s &va = *V[e], &vb = *V[(e + 1) % 3];
+            int32_t A[3] = {s16(p[0] - va.x), s16(p[1] - va.y), s16(p[2] - va.z)};
+            int32_t B[3] = {s16(vb.x - va.x), s16(vb.y - va.y), s16(vb.z - va.z)};
+            // OP with A as the diagonal and B as IR, saturated to IR's 16 bits.
+            int64_t c0 = sat16(s32(wrap44(int64_t(B[2]) * A[1] - int64_t(B[1]) * A[2]) >> 12));
+            int64_t c1 = sat16(s32(wrap44(int64_t(B[0]) * A[2] - int64_t(B[2]) * A[0]) >> 12));
+            int64_t c2 = sat16(s32(wrap44(int64_t(B[1]) * A[0] - int64_t(B[0]) * A[1]) >> 12));
+            if (s32(n.x * c0 + n.y * c1 + n.z * c2) < 0) ok = false;
+        }
+        if (!ok) continue;
+        best.t = t;
+        std::copy(p, p + 3, best.p);
+        best.n[0] = n.x, best.n[1] = n.y, best.n[2] = n.z;
+        hit = true;
+    }
+    return hit;
+}
+
+// chunk_sweep (0x8003E3F0): the k-d tree walked along the segment (x, z), the near half first, up
+// to 8 far halves deferred (LIFO); the first leaf with a hit ends the walk.
+bool chunk_sweep(const CollChunk& ch, const int32_t start[3], const int32_t end[3], SweepHit& out) {
+    int32_t sx = s16(start[0]), ex = s16(end[0]), sz = s16(start[2]), ez = s16(end[2]);
+    int32_t x0 = ch.rect[0], z0 = ch.rect[1], x1 = ch.rect[2], z1 = ch.rect[3];
+    struct Half {
+        int node;
+        int32_t x0, x1, z0, z1, sx, ex, sz, ez;
+    };
+    Half stack[8];
+    int sp = 0, node = 0;
+    SweepHit best;
+    int32_t miny = std::min(start[1], end[1]), maxy = std::max(start[1], end[1]);
+    while (true) {
+        const CollNode& nd = ch.nodes[node];
+        if (nd.a >= 0) {
+            if (nd.b >= 0) {
+                int32_t s = s16(x0 + nd.split);
+                if (sx < s) {
+                    if (s < ex && sp < 8) {
+                        int64_t f = frac16(s - sx, ex - sx);
+                        int32_t nz = s16(sz + ((int64_t(ez - sz) * f) >> 16));
+                        stack[sp++] = {nd.b, s, x1, z0, z1, s, ex, nz, ez};
+                        x1 = s - 1, ex = s, ez = nz;
+                    } else {
+                        x1 = s - 1;
+                    }
+                    node = nd.a;
+                } else {
+                    if (ex < s && sp < 8) {
+                        int64_t f = frac16(s - sx, ex - sx);
+                        int32_t nz = s16(sz + ((int64_t(ez - sz) * f) >> 16));
+                        stack[sp++] = {nd.a, x0, s - 1, z0, z1, s, ex, nz, ez};
+                        x0 = s, ex = s, ez = nz;
+                    } else {
+                        x0 = s;
+                    }
+                    node = nd.b;
+                }
+            } else {
+                int32_t s = s16(z0 + nd.split);
+                if (sz < s) {
+                    if (s < ez && sp < 8) {
+                        int64_t f = frac16(s - sz, ez - sz);
+                        int32_t nx = s16(sx + ((int64_t(ex - sx) * f) >> 16));
+                        stack[sp++] = {~nd.b, x0, x1, s, z1, nx, ex, s, ez};
+                        z1 = s - 1, ez = s, ex = nx;
+                    } else {
+                        z1 = s - 1;
+                    }
+                    node = nd.a;
+                } else {
+                    if (ez < s && sp < 8) {
+                        int64_t f = frac16(s - sz, ez - sz);
+                        int32_t nx = s16(sx + ((int64_t(ex - sx) * f) >> 16));
+                        stack[sp++] = {nd.a, x0, x1, z0, s - 1, nx, ex, s, ez};
+                        z0 = s, ez = s, ex = nx;
+                    } else {
+                        z0 = s;
+                    }
+                    node = ~nd.b;
+                }
+            }
+            continue;
+        }
+        if (leaf_sweep(ch, size_t(uint16_t(nd.b)), size_t(~nd.a), start, end, miny, maxy, best)) {
+            out = best;
+            return true;
+        }
+        if (sp == 0) return false;
+        const Half& h = stack[--sp];
+        node = h.node, x0 = h.x0, x1 = h.x1, z0 = h.z0, z1 = h.z1, sx = h.sx, ex = h.ex, sz = h.sz, ez = h.ez;
+    }
+}
+
 }  // namespace
+
+bool World::sweep(const int32_t from[3], const int32_t to[3], int32_t hit[3], int16_t normal[3]) const {
+    int64_t best = 0x7FFF;
+    bool any = false;
+    for (const CollChunk* ch : slots) {
+        if (!ch) continue;
+        if (!(in_rect(ch->rect, from[0], from[2]) || in_rect(ch->rect, to[0], to[2]) || crosses(ch->rect, from, to)))
+            continue;
+        SweepHit h;
+        if (chunk_sweep(*ch, to, from, h) && h.t < best) {
+            best = h.t, any = true;
+            std::copy(h.p, h.p + 3, hit);
+            std::copy(h.n, h.n + 3, normal);
+        }
+    }
+    return any;
+}
 
 bool CollChunk::parse(const std::vector<uint8_t>& d) {
     if (d.size() < 0x40) return false;

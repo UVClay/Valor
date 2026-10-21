@@ -71,6 +71,8 @@ struct Model {
     std::vector<std::array<int16_t, 3>> static_vertices;  // +0x88
     std::vector<std::array<uint8_t, 3>> static_colours;   // +0xC4
     std::vector<HitPartTemplate> parts;    // +0xBE count, +0xC0
+    int16_t gun_bone[2]{};                 // +0xD4, +0xD6: the gun's near and far bones
+    int16_t gun_off[2][3]{};               // +0xD8, +0xE0: their offsets
     bool skinned() const { return !bones.empty(); }
 };
 
