@@ -19,6 +19,9 @@ add_library(valor_core STATIC
     core/src/world.cpp
     core/src/movement.cpp
     core/src/trace.cpp
+    core/src/level.cpp
+    core/src/render_data.cpp
+    core/src/player.cpp
 )
 target_include_directories(valor_core PUBLIC core/include)
 target_compile_options(valor_core PRIVATE -Wall -Wextra -fno-exceptions)

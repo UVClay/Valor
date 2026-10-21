@@ -1,0 +1,8 @@
+# A display for Godot without a desktop: Xvfb and Mesa's software OpenGL, for screenshots of the
+# Godot host in tests (engine/godot/tools/screenshot.sh).
+FROM registry.fedoraproject.org/fedora:44
+RUN dnf install -y --setopt=install_weak_deps=False \
+        xorg-x11-server-Xvfb xorg-x11-xauth mesa-dri-drivers mesa-libGL mesa-libEGL \
+        libXcursor libXinerama libXrandr libXi libXext libXrender libxkbcommon fontconfig \
+        libstdc++ alsa-lib pulseaudio-libs \
+    && dnf clean all

@@ -48,6 +48,12 @@ scripts and their movement (exact but for unwatched inputs), combat (hits and da
 level logic (every frame but two). What's left is listed in each document's
 "Open" section: mostly confirming script-read behaviour in play and a few unread fields.
 
+**The engine** (`engine/`, engine/README.md): Godot 4.7 hosts an engine-agnostic C++ core with
+the original's arithmetic, through a GDExtension. Done so far: the player's movement and the level's
+collision, exact on every tick of the recorded session (`coretest`), and a level drawn natively
+from the disc files that you can walk with mouse and keyboard. Next, following `tools/sim`: the
+pad's control roles, entities and the tick order, the level logic, enemies, combat.
+
 Out of scope for now: the two-player mode (LEVEL2P.BIN), video playback (standard MDEC).
 
 Checking against recordings: replays now hold with or without a display (the widescreen
