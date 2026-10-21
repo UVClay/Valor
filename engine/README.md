@@ -233,7 +233,7 @@ simulators it composes: `level_vm.py`, `sst_vm.py`, `brain_sim.py`, parts of `co
 - firing, bullets, the contact phase and damage, pickups, attachments, objects' boxes;
 - the draw pass's poses and out-of-sight counters, and the sound system's voice table.
 
-It runs from the level's seed dump on the recording's outside inputs (`build/engine/`: the pad
+It runs from the level's seed dump, or from the disc files (below), on the recording's outside inputs (`build/engine/`: the pad
 and role values, the random draws by function, the frame structure, the CD's chunk timing, which
 models the renderer drew, the idle work). `coretest --engine` compares its state trace with the
 original's every tick, as `engine.py cmp` does.
@@ -264,9 +264,51 @@ That's deliberate:
   instructions, handles and pointers are compared, and pose buffers are shared. A typed model
   would have to reproduce all of that anyway to stay exact.
 
-Its starting state is still the seed dump of a level just started. Building that state from the
-disc files (the level load: the BSD's models, records and scripts placed in memory, the level
-start's spawns) is the next step on this side, so the engine can run without a dump.
+### From the disc files (`sim/src/load.cpp`)
+
+```sh
+build/gd/cmake/coretest --build 1:3 --against build/engine/seed/d1713.bin [--show N] [--out BUILT.bin]
+build/gd/cmake/coretest --engine 1:3 --disc
+```
+
+`Engine::load_disc` builds the level's starting state from the disc files and the save data the
+shell hands over (`g_game`, 0x780 bytes). It doesn't need a RAM dump. It runs the original's
+sequence in order, on an exact port of the exe's heap (`Heap`: InitHeap, malloc, calloc, free),
+so every block lands where the original put it:
+- level_entry: level_read_parameters and the pools;
+- level_load: the TAF's sound banks, the BSD read and relocated, models inherited, weapons
+  matched to slots, the world entity with the TSP files' CD entries (LBAs from
+  `extracted/moh/manifest.json`), records, zones, nodes, paths, the message lists, the camera and
+  the player's soldier with its controller configuration;
+- level_start: player_reset with the exact heap's weapon swap, the scripts' start messages, the
+  sky and stars on PsyQ's real `rand`, the first chunks loaded (tsp_parse, collision headers),
+  music_start, the fade.
+
+`coretest --build` compares the result with a dump region by region: the exe, the overlay, the
+exe's bss, and the heap block by block, matched by allocation serial. The reference is `d1713`,
+the original's RAM during level_start. It was captured mid-`music_start`, between the two SPU
+transfers, so the music ring and the fade differ by construction. For 1:3:
+- all 26 of the original's heap blocks are built at their addresses and sizes;
+- 15 blocks match word for word, among them the BSD (162,308 words), the primitive pool, the CD
+  entries, the first chunk slot and the music entry;
+- the other blocks differ only in bytes the game never wrote: past each chunk file's end, block
+  tails, and the old contents of a reused pose buffer. Drawing primitives and the HUD also
+  differ.
+
+What's left in the static regions is outside the logic. The exe has 630 differing words (PsyQ's
+CD, pad, GPU and SPU state). The overlay has 10,714 (the music ring mid-transfer, HUD and draw
+primitives, display environments). The exe's bss has 239 (libspu, libgpu).
+
+`coretest --engine --disc` runs the engine from that built state. It takes three things from the
+recording, as it takes the rest of its inputs:
+- the pad's analog mode at the first read: `player_update` then reconfigures the controls, as the
+  original does on tick 1;
+- the vblanks the load took: the vblank timer's 20-vblank message counts them;
+- `rand`'s seed at entry: the dump's seed, stepped back over the build's own draws.
+
+From the disc it matches the seed-dump run exactly: **5,632 of 7,296 ticks identical, first
+difference at 1658**. RAM differs from the seed run by a constant 35,996 words at ticks
+1000..1003: the unbuilt library and HUD state above, which nothing in the logic reads.
 
 ### Clean types for the host
 

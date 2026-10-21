@@ -23,6 +23,41 @@ section parsers (`0x80086C9C`, `0x80086D18`, `0x80086D8C`, `0x80086E34`, `0x8008
 `0x80086F24`), creates the world entity (`g_world`, `0x80053E68`) and gives it the entity table
 and the node table, sets the fog and background colours, and builds the spawners.
 
+### The whole load, in order (checked by building it)
+
+`engine/sim/src/load.cpp` builds the start of 1:3 from the disc. `coretest --build` puts every heap
+block at the original's address with its size. What the sections above didn't say:
+- **The heap** (exe `0x80036B20`..`0x80036E44`, globals at gp `0x80035D1C` + `0x3F24`..`0x406C`):
+  16-byte headers `{blocks, next | tag, 0x80000000 | flags | serial << 16, 0xB562439F − sum}`,
+  first fit, taken from the **tail** of the free block. The heap is re-initialised before
+  the overlay (base `0x800D17E8`), so serials restart at the level's entry. 1:3's serials:
+  1 TAF (freed), 2 BSD, 3 world entity, 4 primitive pool, 5–13 TSP CD entries, 14–17 chunk slots,
+  18 zones, 19 paths, 20 message lists (freed by level_start), 21 camera, 22 its pose buffer,
+  23 its animation state, 24 soldier, 25 its first pose buffer (freed by weapon_draw), 26 the
+  weapon's, 27 message lists again, 28 the music's CD entry, 29 the fade.
+- **The BSD**: sector 0 is a size table `{count, cumulative body sizes}`. `bsd_read` takes the
+  largest size the heap can hold. The model count is that index + 1 (26 in 1:3). Bytes past the
+  file's end are zeros.
+- **CD entries** (`0x80049540`): `{next, LBA, size, name}`. The name is upper-cased with `;1`
+  added, and the entry is appended to the list at `0x80093B10`. They hold the disc's LBAs, so a
+  build needs the image's directory (`extracted/moh/manifest.json`).
+- **tsp_load** (`0x8008C850`): the whole sectors are read in place. The last partial sector goes
+  through the scratch sector `0x80037D90`, and a 0 is written after the end. `tsp_parse`
+  (`0x8008C514`) relocates the render tree: a node is 0x24 bytes with children at
+  +0x18..+0x20, or a leaf of 0x1C bytes with faces at +0x18. The walk ends past the largest
+  child offset. `chunk_collision_setup` (`0x8003EB44`) fills the slot's 0x28-byte header at
+  `0x80090DE8`.
+- **The controls** (`player_pad_config` `0x8007A050` → `0x80076240`): there are six layouts,
+  the options 0..4 and 5 for a digital pad. Each sets the 9 actions, the 4 stick roles and
+  the 4 button roles, the look mode and aim-pitch-from-move. At the level's start the pad isn't
+  yet known to be analog, so layout 5 is used. `player_update` re-runs the configuration
+  whenever `+0x153` differs from the pad's analog flag, which happens on tick 1 for an analog pad.
+- **level_set(1)** during level_start only records the music request (`0x8009A608`).
+  level_start then plays it at its end, after the chunks are loaded.
+- `entity_defaults` ends with `+0x3C8 = 100`, `+0x3CA = −1`.
+- `__builtin_new` and `malloc` don't clear, so blocks keep whatever was there (the camera's
+  animation state, a reused pose buffer, slot buffers past their file).
+
 ## The level header (`g_level`)
 
 | Offset | Meaning |

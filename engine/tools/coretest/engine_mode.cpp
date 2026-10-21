@@ -9,6 +9,7 @@
 // drawn.log and seed/dV.bin.
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <map>
@@ -249,6 +250,20 @@ int run_engine(int argc, char** argv) {
     for (auto& d : lines) (d.tick <= t0 ? before : after).push_back(d);
     eng.frames = frames_of(root + "/build/engine/frames.log", after);
     eng.dumps = dumps;
+    {
+        // ticks with no line in the trace (a disc-built start's tick 1): their own frame first
+        I vbs = before.empty() ? seed_v - 1 : before.back().vblank;
+        std::vector<I> missing;
+        for (I t = t0 + 1; !eng.frames.empty() && t < eng.frames.front().second.front(); t++) missing.push_back(t);
+        if (!missing.empty()) eng.frames.insert(eng.frames.begin(), {vbs + 1, missing});
+    }
+    if (std::getenv("VALOR_FRAMES"))
+        for (auto& [vb, ticks] : eng.frames)
+            if (ticks.front() < 120) {
+                std::fprintf(stderr, "frame %lld:", (long long)vb);
+                for (I t : ticks) std::fprintf(stderr, " %lld", (long long)t);
+                std::fprintf(stderr, "\n");
+            }
     I vb0 = before.empty() ? seed_v - 1 : before.back().vblank;
     eng.vblank_prev = vb0;
     eng.world.skip_to(vb0);
