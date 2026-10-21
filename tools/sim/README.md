@@ -46,7 +46,8 @@ deaths and restarts, pauses, wall-strafing with analog sticks, every weapon the 
     python3 tools/sim/check.py build/simcheck/tapes/wML
 
 (`m3l1`: 3:1 then 1:1, seed 7, stop 30000.) The tapes stay in `build/`; a monkey run replays its
-own recording exactly. Fails per level after the fixes they led to (counts of compared items
+own recording exactly (all but `m3l1`, recorded before e668f01; the checks compare with the
+replay, so it holds). Fails per level after the fixes they led to (counts of compared items
 that differ; "within" ones, a documented range, a random draw or timing, are not counted):
 
 | Level | move | sst | brain | combat | level |
