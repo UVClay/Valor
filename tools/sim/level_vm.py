@@ -1403,18 +1403,24 @@ class Stats:
     def __init__(self):
         self.n = Counter()
         self.ok = Counter()
+        self.within = Counter()
         self.first = defaultdict(list)
 
     def add(self, what, ok, detail=""):
+        """ok: True, False, or "within" (a difference that is timing, not a rule)."""
         self.n[what] += 1
-        if ok:
+        if ok == "within":
+            self.within[what] += 1
+        elif ok:
             self.ok[what] += 1
-        elif len(self.first[what]) < 6:
+        if ok is not True and len(self.first[what]) < 6:
             self.first[what].append(detail)
 
     def report(self, out=print):
         for k in sorted(self.n):
-            out(f"  {k:28s} {self.ok[k]:7d} / {self.n[k]:7d}  {'exact' if self.ok[k] == self.n[k] else 'FAILS'}")
+            ok, w, n = self.ok[k], self.within[k], self.n[k]
+            status = "exact" if ok == n else f"within {w}" if ok + w == n else "FAILS"
+            out(f"  {k:28s} {ok:7d} / {n:7d}  {status}")
             for d in self.first[k]:
                 out(f"      {d}")
 
@@ -1909,7 +1915,9 @@ class Run:
         st.add("level end flags", a == b, f"{F}: sim {a:X} orig {b:X}")
         n = om.u32(SPQ_COUNT)
         oq = [om.u32(SPQ + 4 * ((om.u32(SPQ_HEAD) + i) % 64)) for i in range(n)]
-        st.add("spawn queue", oq == sim.spawn_q, f"{F}: sim {[L.by_pair[p].idx for p in sim.spawn_q]} "
+        # the order of records waiting together is the idle time's (levels.md, Spawning)
+        st.add("spawn queue", True if oq == sim.spawn_q else "within" if sorted(oq) == sorted(sim.spawn_q) else False,
+               f"{F}: sim {[L.by_pair[p].idx for p in sim.spawn_q]} "
                f"orig {[L.by_pair[p].idx if p in L.by_pair else hex(p) for p in oq]}")
         # entity variables, set_flags bits and trigger bits of the player and the character slots
         pa = om.u32(G_SOLDIER)

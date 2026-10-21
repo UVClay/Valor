@@ -213,11 +213,12 @@ def parse_combat(text):
 
 def parse_level(text):
     r = dict(compared=0, exact=0, within=0, fail=0)
-    for m in re.finditer(r"^  (\S.*?)\s+(\d+) /\s+(\d+)  (exact|FAILS)$", text, re.M):
-        ok, n = int(m[2]), int(m[3])
+    for m in re.finditer(r"^  (\S.*?)\s+(\d+) /\s+(\d+)  (exact|FAILS|within (\d+))$", text, re.M):
+        ok, n, w = int(m[2]), int(m[3]), int(m[5] or 0)
         r["compared"] += n
         r["exact"] += ok
-        r["fail"] += n - ok
+        r["within"] += w
+        r["fail"] += n - ok - w
     return r
 
 

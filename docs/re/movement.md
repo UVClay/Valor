@@ -122,7 +122,11 @@ soldier+0x218 (strafe speed)  =  role(1)
 `entity_move` copies +0x200 into the local velocity's z (`+0x220`; `+0x1FC`, the acceleration
 that would ramp it toward `+0x204` = 36.0, is 0 for the player). The local velocity (strafe,
 vertical, forward) is cut to 1/16 unit (`>> 12`), turned by the yaw `inv+0x184` (a rotation
-matrix of (0, yaw, `+0x230`)) and added to the position, plus any push (`+0x1F0`).
+matrix of (0, yaw, `+0x230`)) and added to the position, plus any push (`+0x1F0`). The roll
+`+0x230` is normally 0; when something tilts the body (4:2 in a monkey run: a roll of -1 unit
+for a stretch, with a pitch drift, while the body's own yaw `+0x22C` lagged the view's by 34),
+the full `RotMatrixYXZ(0, yaw, roll)` is used and the move shifts by 1/16 unit a tick in places:
+modelled, every tick of that run exact.
 
 - **No acceleration or friction**: the speed is the input's every tick (measured: from 0 to
   34.863 on the first tick with the stick, 32 then 35 with the d-pad, to 0 the tick after

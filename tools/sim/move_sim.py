@@ -62,6 +62,17 @@ def sincos(a):
     return -SIN[(-a) & 0xFFF], COS[(-a) & 0xFFF]
 
 
+def rot_yxz(px, py, pz):
+    """PsyQ's RotMatrixYXZ of integer angles (the rows the GTE loads)."""
+    sx, cx = sincos(px)
+    sy, cy = sincos(py)
+    sz, cz = sincos(pz)
+    t1, t2 = (sy * sx) >> 12, (cy * sx) >> 12
+    return [[s16(((cy * cz) >> 12) + ((t1 * sz) >> 12)), s16(-((cy * sz) >> 12) + ((t1 * cz) >> 12)), s16((sy * cx) >> 12)],
+            [s16((sz * cx) >> 12), s16((cz * cx) >> 12), s16(-sx)],
+            [s16(-((sy * cz) >> 12) + ((t2 * sz) >> 12)), s16(((sy * sz) >> 12) + ((t2 * cz) >> 12)), s16((cy * cx) >> 12)]]
+
+
 def nclip(p0, p1, p2):
     """GTE NCLIP of three (sx, sy) points, as the 32-bit MAC0."""
     return s32(p0[0] * p1[1] + p1[0] * p2[1] + p2[0] * p0[1] - p0[0] * p2[1] - p1[0] * p0[1] - p2[0] * p1[1])
@@ -468,10 +479,17 @@ def entity_move(world, e, log=None):
     vx = s16((e["strafe"] & 0xFFFFFFFF) >> 12)
     vy = s16((e["vy"] & 0xFFFFFFFF) >> 12)
     vz = s16((e["fwd"] & 0xFFFFFFFF) >> 12)
-    sn, cs = sincos(e["yaw"] >> 16)
-    mx = (cs * vx + sn * vz) >> 12
-    my = (4096 * vy) >> 12
-    mz = (-sn * vx + cs * vz) >> 12
+    roll = s16(e.get("roll", 0) >> 16)
+    if roll:
+        # the player's matrix is of (0, the view yaw inv+0x184, the body's roll +0x230)
+        # (0x8008D918): a roll (camera shake, the hit flinch's angle offsets) tilts the move
+        m = rot_yxz(0, e["yaw"] >> 16, roll)
+        mx, my, mz = ((m[i][0] * vx + m[i][1] * vy + m[i][2] * vz) >> 12 for i in range(3))
+    else:
+        sn, cs = sincos(e["yaw"] >> 16)
+        mx = (cs * vx + sn * vz) >> 12
+        my = (4096 * vy) >> 12
+        mz = (-sn * vx + cs * vz) >> 12
     pos[0] = s32(pos[0] + (mx << 12) + e.get("push", (0, 0, 0))[0])
     pos[1] = s32(pos[1] + (my << 12) + e.get("push", (0, 0, 0))[1])
     pos[2] = s32(pos[2] + (mz << 12) + e.get("push", (0, 0, 0))[2])
@@ -579,7 +597,7 @@ def read_trace(path):
         if not sol or "player" not in d:
             continue
         cam = [e for e in d["ents"] if e[1] == 2]
-        out.append(dict(tick=d["tick"], vblank=d["vblank"], pos=sol[0][3:6], yaw=d["player"][0],
+        out.append(dict(tick=d["tick"], vblank=d["vblank"], pos=sol[0][3:6], yaw=d["player"][0], body_ang=sol[0][6:9],
                         pitch=d["player"][1], flags_b=d["player"][6], health=sol[0][9],
                         cam=cam[0][3:6] if cam else None))
     return out
@@ -706,7 +724,7 @@ def check(args):
             # the position it left, keep the rest of the simulated state.
             e["pos"] = list(p["pos"])
         # The inputs of tick t as the control function produced them.
-        e.update(fwd=t["fwd"], strafe=t["strafe"], yaw=t["yaw"], eye=t["eye"], radius=t["radius"],
+        e.update(fwd=t["fwd"], strafe=t["strafe"], yaw=t["yaw"], roll=t["body_ang"][2], eye=t["eye"], radius=t["radius"],
                  flags_b=t["flags_b"])
         e.pop("landed", None)
         e.pop("strafe_cleared", None)
