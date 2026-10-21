@@ -39,7 +39,7 @@ bool Gte::load(const std::string& data_dir, std::string* err) {
         for (int i = 0; i < n; i++) out[i] = int16_t(d[o + 2 * i] | (d[o + 2 * i + 1] << 8));
         return true;
     };
-    loaded = h(0x8002D4F8, ratan_, 1025) && h(0x8003440C, sqrt_, 192) && h(0x800347EC, sin1_, 1025) &&
+    loaded = h(0x8002D4F8, ratan_, 1025) && h(0x8003440C - 2 * 192, sqrtw_, 384) && h(0x800347EC, sin1_, 1025) &&
              h(0x8002DD3C, vn_, 192);
     if (!loaded && err) *err = "bad executable: " + exe;
     return loaded;
@@ -69,9 +69,8 @@ int32_t Gte::sqrt0(int32_t a) const {
     if (n == 32) return 0;
     int n2 = n & ~1;
     int t1 = (31 - n2) >> 1;
-    uint32_t ua = uint32_t(a);
-    uint32_t t4 = n2 >= 24 ? (ua << (n2 - 24)) : (ua >> (24 - n2));
-    uint32_t t5 = uint32_t(sqrt_[t4 - 0x40]);
+    int32_t t4 = n2 >= 24 ? int32_t(uint32_t(a) << (n2 - 24)) : (a >> (24 - n2));
+    uint32_t t5 = uint32_t(int32_t(sqrtw_[192 + t4 - 0x40]));
     return int32_t(uint32_t(t5 << t1) >> 12);
 }
 
@@ -80,9 +79,8 @@ int32_t Gte::sqrt12(int32_t a) const {
     if (n == 32) return 0;
     int n2 = n & ~1;
     int t1 = (0x13 - n2) >> 1;
-    uint32_t ua = uint32_t(a);
-    uint32_t t4 = n2 >= 24 ? (ua << (n2 - 24)) : (ua >> (24 - n2));
-    uint32_t t5 = uint32_t(sqrt_[t4 - 0x40]);
+    int32_t t4 = n2 >= 24 ? int32_t(uint32_t(a) << (n2 - 24)) : (a >> (24 - n2));
+    uint32_t t5 = uint32_t(int32_t(sqrtw_[192 + t4 - 0x40]));
     return t1 >= 0 ? int32_t(t5 << t1) : int32_t(t5 >> -t1);
 }
 

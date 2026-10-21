@@ -224,7 +224,10 @@ int run_engine(int argc, char** argv) {
         // the level built from the disc files (load.cpp); the save data and rand's seed from the
         // dump taken during level_start (the vblank before the seed's)
         Mem pre;
+        // (or, when there's none, the seed itself: the save data is the same; the timer and the
+        // seed then a tick late)
         std::ifstream f(root + "/build/engine/seed/d" + std::to_string(seed_v - 1) + ".bin", std::ios::binary);
+        if (!f) f.open(seed, std::ios::binary);
         f.read(reinterpret_cast<char*>(pre.d.data()), 0x200000);
         std::vector<uint8_t> game(pre.ptr(0x800385CC), pre.ptr(0x800385CC) + 0x780);
         LevelBuild lb;

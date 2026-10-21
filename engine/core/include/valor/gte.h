@@ -34,7 +34,10 @@ struct Gte {
     void rtps(const int16_t rt[3][3], const int32_t tr[3], uint32_t h, int32_t ofx, int32_t ofy,
               const int32_t v[3], int32_t& sx, int32_t& sy) const;
 
-    int16_t ratan_[1025]{}, sqrt_[192]{}, sin1_[1025]{}, vn_[192]{};
+    int16_t ratan_[1025]{}, sin1_[1025]{}, vn_[192]{};
+    // the square-root table (0x8003440C, 192 entries) with the 192 halfwords before it, which a
+    // negative argument indexes (SquareRoot0's arithmetic shift)
+    int16_t sqrtw_[384]{};
 };
 
 // GTE helpers with the hardware's integer behaviour (tools/sim/engine_gte.py).

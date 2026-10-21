@@ -310,6 +310,10 @@ From the disc it matches the seed-dump run exactly: **5,632 of 7,296 ticks ident
 difference at 1658**. RAM differs from the seed run by a constant 35,996 words at ticks
 1000..1003: the unbuilt library and HUD state above, which nothing in the logic reads.
 
+2:1 from the disc matches its seed run too (33 identical, first difference at 35). 2:2 has no
+dump from before its tick 1, so the timer and `rand`'s seed come a tick late from the seed:
+0 identical (74 from the seed dump), first difference at tick 2 for both.
+
 ### Clean types for the host
 
 The Godot side shouldn't see offsets. The plan is an accessor layer over `Mem`: thin read-only
