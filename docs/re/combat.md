@@ -204,7 +204,7 @@ the player's (`0x8007C1D0`) handle a hit:
    1/65536 of a 6.0 soldier (the damage trace prints 0.000, not dead), and the rule kills him
    (3 times in the session, each exactly so).
 
-**Spent attack parts.** (Seen only in the recomp, with god mode and a teleported player; disputed from memory of the original, where the dog dies: to be checked on the original, enemy_types.md.) Damage between two hit parts is refused when either part is kind 8
+**Spent attack parts.** (Confirmed on the game itself: the user's DuckStation run of 1:3, 2026-10-21, shows a dog biting the player with the fetched grenade going off in its mouth; the player dies, the dog stands. In normal play the player always dies beside a dog that survives this way, which is why the dog seems to die from every grenade.) Damage between two hit parts is refused when either part is kind 8
 (`damage_from_hit`). An attack part that lands a hit, on an entity with flags B 0x20000 (the
 dog), is turned to kind 8 by `0x8004A868`, and `parts_touch` (`0x8004C990`) reports only the
 first touching pair. So a dog mid-bite that touches an explosion bites the blast first (the
