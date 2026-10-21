@@ -458,8 +458,14 @@ in entities.md.
   animation's last frame: every part from frame 19 while the joints show 20).
 - An enemy off screen keeps the last pose it was drawn in, carried along with its position and
   heading. Only enemy bullets and explosions can hit it there (the player can't aim at it).
-- An enemy never drawn has every joint at 0, so every hit sphere sits at its origin (the feet),
-  plus the parts' offsets. Its collision sphere (on bone 0) too.
+- An enemy never drawn has every joint at 0 until `entity_draw_model` first reaches it, so
+  every hit sphere sits at its origin (the feet), plus the parts' offsets; its collision sphere
+  (on bone 0) too. Once the draw pass reaches it, it is posed **every frame while it has never
+  been on screen** (`entity_draw_model`, `0x8006A5B4`: with flags A 0x02000000, as soldiers
+  have, an entity out of view is posed only while its drawn count `+0x298` is 0, else only
+  `entity_bounds` runs; with 0x01000000 it isn't drawn, only counted toward despawning). Seen
+  at 3:4's start in a monkey run: a soldier never on screen, its pose following its cross-fade
+  frame by frame.
 - The muzzle an enemy shoots from is placed on its gun's bones (the enemy weapon table's
   `+0x8`/`+0xC`, passed to `bullet_spawn` as bones; inferred from the call), so an off-screen
   enemy's shots also start from the frozen pose.

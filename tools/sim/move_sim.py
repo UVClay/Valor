@@ -481,6 +481,7 @@ def entity_move(world, e, log=None):
     e["contact"] = 0
     if e.get("walls", True):
         n, res = walker_slide(world, e, delta, old, log)
+        e["slide"], e["delta"] = (n, res), delta
         if res == 1:
             ev("still in a wall: move undone")
             pos[:] = list(old)
@@ -557,7 +558,8 @@ def read_watch(path, seeds=()):
         m = WATCH.match(line)
         if m:
             f, name, off, new = int(m[1]), m[2], int(m[3], 16), int(m[5], 16)
-            while seeds and f > seeds[0][0]:
+            # a dump at V is taken before frame V's ticks: it seeds before V's changes
+            while seeds and f >= seeds[0][0]:
                 cur.update(seeds.pop(0)[1])
             if (name, off) not in cur:
                 cur[(name, off)] = int(m[4], 16)

@@ -122,7 +122,10 @@ a frame, so a press shows on whichever tick's poll first sees the button down: o
 several ticks that can be a later one (a monkey run in 3:1 pressed fire between the two ticks
 of a frame; the shot came on the second). Use (action 5) is handled before the trigger in
 `player_update`: a reload it starts makes the weapon script 9 before `player_weapon_update`
-looks, so a fire press in the same tick is lost (1:1, the Garand, clip 6 → 8 and no shot).
+looks, so a fire press in the same tick is lost (1:1, the Garand, clip 6 → 8 and no shot);
+the weapon switch (action 2, `weapon_holster`, script 10) comes before both, with the same
+effect (9:1, the shotgun). A dead player has neither (`player_think_dead` replaces
+`player_update`, and contact 0x4000 stops `player_weapon_update`; his body script is 15).
 So:
 
 - **Every gun with a positive delay is automatic when held**, the Garand and pistols too: one

@@ -1283,7 +1283,8 @@ def watch_cmd(args):
                         seed(dumps[di], cur, sizes, addrs, ctx)
                         di += 1
                     flush(g)
-                while di < len(dumps) and dumps[di][0] < f:
+                # a dump at V is taken before frame V's ticks: it seeds before V's changes
+                while di < len(dumps) and dumps[di][0] <= f:
                     seed(dumps[di], cur, sizes, addrs, ctx)
                     di += 1
                 last_f = f

@@ -714,6 +714,10 @@ def check_trigger(st, trace, fstate):
             prev, cur = cur, poll
         if fs["level"] != pfs["level"] or slot != r0[1] or w != r0[2] or w in (3, 7, 10):
             continue
+        # a dead player has no trigger or reload (player_think_dead instead of player_update,
+        # contact 0x4000 stops player_weapon_update; movement.md, Death)
+        if any(e[1] == 1 and e[9] <= 0 for k in (n - 1, n) for e in trace[k]["ents"]):
+            continue
         m, x = fs["mask"]
         held = (cur & m) == m and (x == 0 or (cur & x) != x)
         pressed = held and (prev & m) != m
@@ -729,7 +733,10 @@ def check_trigger(st, trace, fstate):
         um, ux = fs["use"]
         use = (cur & um) == um and (prev & um) != um and (ux == 0 or (cur & ux) != ux)
         use_reload = use and r0[4] != 0 and 0 < r0[3] < size and not flags & 1 and not busy
-        fire = trig and r0[3] > 0 and not flags & 1 and not busy and not use_reload
+        # so does the weapon switch (action 2, weapon_holster: script 10), first of all
+        hm, hx = fs["holster"]
+        holster = (cur & hm) == hm and (prev & hm) != hm and (hx == 0 or (cur & hx) != hx)
+        fire = trig and r0[3] > 0 and not flags & 1 and not busy and not use_reload and not holster
         shot = clip == r0[3] - 1
         before = (lat, cd)
         if fire:
@@ -820,8 +827,17 @@ def check_aim(st, trace, shots, fstate, targets, dmg):
                 for sp in range(600, 670):
                     cur, _ = bullet_step(start, [pitch << 16, yaw << 16, 0], sp)
                     moved.add(tuple(collide(start, cur, m, tgs, 0x08000450)[:1]))
+                walls = set()
+                if not got:
+                    # nothing hit: it moved in its firing tick (an entity followed the soldier)
+                    # and stopped at a wall
+                    for sp in range(600, 670):
+                        cur, _ = bullet_step(start, [pitch << 16, yaw << 16, 0], sp)
+                        walls.add(world_cut(fs["level"], start, cur)[1])
                 if hit and got:
                     st.add("shot: gone in its firing tick: started inside a hit part", "exact")
+                elif not got and walls == {True}:
+                    st.add("shot: gone in its firing tick: moved into a wall (an entity followed the soldier)", "exact")
                 elif got and all(moved):
                     st.add("shot: gone in its firing tick: moved and hit (an entity followed the soldier)",
                            "exact" if len(moved) == 1 else "within")
@@ -1350,7 +1366,8 @@ def check(trace_path, log_path, seeds, to, frm, verbose, level=None):
     fstate = {}             # vblank -> the watched player state after the frame
     level_of = {}
     for vb in sorted(set(frames) | set(ticks_at)):
-        while seeds and vb > seeds[0][0]:
+        # a dump at V is taken before frame V's ticks: it seeds before V's changes
+        while seeds and vb >= seeds[0][0]:
             ram = Ram(seeds[0][1])
             models = models_by_root(ram)
             ctx["player_parts"] = player_templates(ram)
@@ -1383,6 +1400,7 @@ def check(trace_path, log_path, seeds, to, frm, verbose, level=None):
                           ia=[ram.s32(sol + 0x55C + o) for o in range(0, 0x80, 4)],
                           pad=ram.u32(0x80093B7C), pad_prev=ram.u32(0x80093B84), mask=(ram.u32(0x800B7790), ram.u32(0x800B77E0)),
                           use=(ram.u32(0x800B7790 + 20), ram.u32(0x800B77E0 + 20)),
+                          holster=(ram.u32(0x800B7790 + 8), ram.u32(0x800B77E0 + 8)),
                           stats=stats_d, level=ctx["level"],
                           weapons={w: (s16(ram.u32(0x80093640 + 0x44 * w + 4)), ram.u16(0x80093640 + 0x44 * w + 0x2A),
                                        ram.s32(0x80093640 + 0x44 * w + 0x2C), ram.s16(0x80093640 + 0x44 * w + 0xA))

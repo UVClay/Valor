@@ -1422,7 +1422,7 @@ class Stats:
 def obs_nodes(mem, msg):
     out, n = [], mem.u32(mem.u32(G_SUBS) + 4 * msg)
     k = 0
-    while n and k < 1100:
+    while n and k < 1100 and POOL <= n < POOL + 1024 * 0x24:
         out.append((n,) + tuple(mem.u32(n + 4 * i) for i in range(8)))
         n = mem.u32(n + 0x20)
         k += 1
@@ -1479,6 +1479,7 @@ class Run:
         self.later_done = False
         self.ghosts = []        # pickups made and taken before the trace saw them
         self.ghost_slots = set()
+        self.first_frame = True
         r = os.environ.get("LVM_DEBUG")
         self.dbgrange = tuple(int(x) for x in r.split("-")) if r else None
 
@@ -1526,7 +1527,10 @@ class Run:
                 a = 0x8009D678 + 4 * slot
                 if slot in known or slot in self.ghost_slots:
                     continue
-                if self.obs.peek(a, self.next_frame) and not self.obs.mem.u32(a):
+                nxt = self.obs.peek(a, self.next_frame)
+                # a slot taken by the next frame (empty now, or still holding an entity of the
+                # level before, at a level's first frame)
+                if nxt and nxt != self.obs.mem.u32(a) and (not self.obs.mem.u32(a) or self.first_frame):
                     ent = Ent(0xFFFF0000 | slot, 0x65, rec)
                     self.ghost_slots.add(slot)
                     self.ghosts.append(ent)
@@ -1570,6 +1574,7 @@ class Run:
         alarm_prev = s32(obs.mem.u32(G_ALARM))
         last_now = 0
         restart = False
+        self.first_frame = True
         for fi, (F, gt) in enumerate(self.frames):
             if maxf and fi >= maxf:
                 break
@@ -1587,6 +1592,7 @@ class Run:
                         e.removed = True
                 sim.player.prev_zone, sim.player.prev_bits = 0xFFFF, 0
                 self.next_new, self.claimed = self.new_entities(tick_i), set()
+                self.first_frame = True
                 sim.level_start(sim.player)
             ticks = []
             while tick_i < len(self.ticks) and self.ticks[tick_i][0] <= gt:
@@ -1675,6 +1681,7 @@ class Run:
                     sim.spq_head = want
                 sim.stats["spawn retries (idle time)"] += extra
             self.end_frame_alarms(om)
+            self.first_frame = False
             if om.u32(LEVEL_FLAGS) & 2:
                 restart = True
         return self.st
