@@ -242,6 +242,13 @@ inferred).
    `texts_update` (`0x8005F69C`, the on-screen texts), and another `input_poll` when more ticks follow.
 4. `render_pass`, `0x8004137C`, `0x8006B894`.
 
+**Which ticks share a frame** matters (the draw pass between frames poses models, moves
+attachments, counts sight): the state trace's per-tick vblank is **not** the frame, since the
+second tick of a frame can be stamped with the next vblank (1:3 ticks 617 and 618: vblanks 2941
+and 2942, one frame: the frame counter `0x8009A5D8` went 611 → 612 while `g_tick` went 616 →
+618). The frames come from a watch of the frame and tick counters
+(`VALOR_WATCH="fc=8009A5D8:8"`, one line per frame; `build/engine/frames.log`).
+
 So everything that happens in a tick (moving, firing, spawning bullets) happens before any
 collision of that tick, and a bullet fired during a think is swept and tested in the same tick
 if it's added after the shooter in the list.
@@ -282,6 +289,12 @@ For each entity, in list order, parents first:
    0x120 units), falling (flag 0x200000 entities through holes).
 6. Returns contact flags: 0x1 ground, 0x2 wall, 0x80 fell.
 
+The contact word `+0x38` for walkers and the player (the next think reads it, then it is
+cleared): `walker_slide`'s result 2 (free after pushing, or nothing hit after a gather) sets
+0x8000; a slide that left walls (its return > 0) sets 0x8000, zeroes `+0x218`/`+0x220` and
+keeps the move's delta (integer, before the slide) in `+0x364..+0x368`; result 1 (still inside)
+undoes the move for the player (position = `+0x3BC`, `+0x284` restored).
+
 ## Collisions between entities (`entities_collide`, `0x8006C08C`; from the main loop `0x800616E4`)
 
 For each entity A (not dead, not flagged 0x2/0x4 in flags B) and each B whose flags A share a
@@ -318,7 +331,11 @@ start inside the part, else r²) and reports the lowest-numbered.
 ## Shapes: spheres
 
 - **Each entity**: a sphere, centre `+0x2E0`, radius `+0x2E8` (`entity_bounds` places it from
-  the model each tick). Two entities touch when the distance between centres is less than the
+  the model each tick: on bone `+0x2EA`, or with -1 at the local point `+0x2D8` through the
+  entity's matrix `+0x340` and translation `+0x354`; **the player's** (flags A 1) through a
+  matrix of its yaw and roll only (no pitch), scaled by `+0x270` >> 4, at its integer position
+  (`0x8008D918`): its local point (0, -100, 0) stays above its feet whatever the pitch). With
+  parts the box `+0x308..+0x312` starts at -0x7FFF / 0x7FFF before `entity_parts_update`. Two entities touch when the distance between centres is less than the
   sum of the radii (`spheres_touch`, `0x8004CB18`).
 - **A segment against an entity** (`segment_sphere`, `0x8004CBC8`): the distance from the
   segment's line to the centre (GTE outer product with the unit direction) against the radius;

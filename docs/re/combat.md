@@ -173,6 +173,16 @@ Every tick the player's controls (`player_controls`, `0x8007F300`) end in `aim_u
   line into angles): **along the barrel**, so where the gun points, not where the crosshair is.
   No player shot of the session was fired this way.
 - Enemies' shots: angles from the gun to the target point (enemies.md).
+- **Exactly, the shots not aimed at the aim point** (`projectile_aim` without the flag;
+  `gun_points` `0x80044E0C`, `0x80044F10`): with an attachment given (enemies pass their weapon
+  attachment), the two points are vertices +8 and +0xC of the attachment's model (instance
+  `+0x2C`, the model's `+0x88` vertex array, 8 bytes each) through `RotTrans` with the
+  attachment's drawn matrix while it hangs on a bone (+8 ≠ 0, flag 1), else with RotMatrixYXZ of
+  its angles scaled by its scale >> 4 and moved to its integer position (`0x8008E38C`); without
+  one, `model_bone_point` of the shooter's two bones (with offsets). The start = the second
+  point; with a target point (`+0x228`/`+0x22C` from `angles_from_to(start, target)`, roll 0),
+  else from the first point to the second (along the gun). Types 0x13F3 and 0x13F1 aim their own
+  way; the player's scope copies the camera.
 - Weapons with flag 2: the start is pulled back toward the shooter by 3/4 of its horizontal
   distance, so the first tick's sweep starts behind the muzzle (no shooting through a wall the
   barrel pokes through).

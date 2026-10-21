@@ -24,7 +24,22 @@ then `0x80055198`, the hit-reaction hook (variables 0x1A/0x1B → `0x800523E4`),
 heading ← variable 0x13, the hit-part reaction (variable 0x1C → `0x80052084`),
 `0x80072704`/`0x800730D4` (smoke and blood particles, animation.md), `0x800563E8`. The dog's
 think (`dog_think`, `0x80054AB8`) is the same around the scripts with variable 0x0E as the
-heading and 0x13 as the hit reaction. (Earlier versions of this document had run_b as "the
+heading and 0x13 as the hit reaction.
+
+Exactly, in order: health's integer part ≤ 0 → health 0 and, if its holder (`+0x30`) holds it,
+the holder's `+0x30` cleared; **the ranges** (`0x80055528`: v5 = brain `+0xB2`, v6 = it / 2, v7 =
+the first soldier's +0xB2 / 3, kept once in `0x800AB930` (flag `0x80099B2C`); while the player
+crouches v5 = 3/4, v6 = 3/8, v7 = 1/4 of it, each as s16); `enemy_weapon`; the attachments
+(`0x80055198`, enemy_types.md, Attachments); v1A ≠ 0 → `enemy_attachments_op(v1A, v1B)`;
+witnesses; the scripts around v13; v1C ≠ 0 → the hit reaction (`0x80052084` with the part v0xC:
+by the blood setting `0x80093A05`, 0 turning reactions 1, 4, 8 into 2, 1 turning 4, 8 into 1;
+1: drops (`0x800727B4`, up to n of 15 slots of 0x74 at block +0x49C, each 4 draws), 2: a puff
+(`0x80072244`: the first free of 5 slots of 0x24 at block +0x3E8: 60 ticks, two draws), then
+v1C = 0); block +4 = puffs update (a live puff rises 1.0 a tick, turns, fades by 1/8, until its
+60 ticks end), block +0 = drops update (falling to the soldier's floor `+0x208`, lying there;
+the landing draws one `rand`). The blood setting is 0 in the recorded session: only puffs.
+The dog's think is witnesses, the scripts around v0E, v13 → the hit reaction, and the same two
+updates. (Earlier versions of this document had run_b as "the
 second channel" and 0x13 as the vertical velocity: `fn.py c 0x80055628` shows
 `set_var(e, 0x13, e->angles.y)` and `e->angles.y = get_var(0x13, e)`; the VM interpreter below
 matches every tick's variable 0x13 that way.)
@@ -189,7 +204,7 @@ instruction's address, and a flag (`0x80099EC0`) tells the runner to yield.
 |---|---|---|
 | 00 | anim N frames A..B | Animation N (imm low 12 bits; top 4 bits a mode), frame A, yield; the channel then waits for frame B (-1: the last) (animation.md, Playback) |
 | 01 | mask | imm 0: clear the operand's bits in the four class masks; 1..4: set them in mask imm-1 and clear them in the others |
-| 02 | sound | id = imm low byte, then the low bytes of five words (volume, pitch, spread...; scaled by the sound setting); the voice into `+0xFC` |
+| 02 | sound | id = imm low byte, then five **whole words** through `script_operand` (pitch, pitch spread, volume, volume spread, bank; e.g. pitch 0x8000, spread 0x3333), the flags in the imm high byte (3: on voice 0 path, 0x20 loop); the voice into `+0xFC` (`op_sound`, `0x80058420`). An earlier version said the words' low bytes: wrong (sst_vm.py still masks them) |
 | 03 | gravity | `+0x1FC` = operand |
 | 04 | fall | `+0x200` (unless imm bit 2), `+0x21C` (unless bit 3), `+0x218` (unless bit 4); imm bit 1: two operands only |
 | 05 | impulse | Only with imm bit 1 (else a 4-word nop): `+0x21C` += B, `+0x200` += A (at most `+0x204` when set) |
@@ -243,6 +258,8 @@ instruction's address, and a flag (`0x80099EC0`) tells the runner to yield.
 | 47 | clear_events | Zero the condition word of every record of the running channel's table |
 | 48 | run_message | Run a level-script message on an entity at once (`0x8005C698` → `script_run_message`); used by no model on the disc (catalogue.md) |
 | 49 | alarm | If none is up: spawn the alarm, flag every living soldier (+0x3C 0x100), send event 0x2B to the zone's entities |
+
+Query fact 0xF, **The player's gun points at it** (`0x80056F38` → `0x80056F60(entity, player)`): the gun line: the body model's bone `+0xD6`, its offset `+0xE0` turned by the bone's quaternion matrix from its joint (p1), and p1 + (0, 0, 100) (p2), both through the soldier's matrix and integer translation, + the camera's eye offset on y (without joints: the weapon table's two bones); u = VectorNormalSS(p2 - p1); the entity's sphere centre minus the **player's sphere centre** (`+0x2E0`, not p1) crossed with u (GTE OP, sf=1) must be within the entity's radius `+0x2E8` (0: the brain's `+0xC6`). Direction is not tested: behind counts too
 
 Some of the effect ops, exactly (op table at `0x80099B80`: {handler, op, length in words} from
 op 6):
@@ -335,6 +352,27 @@ eye height, with the damage of the enemy's weapon model (byte `+0x64` of `[[enem
 bullet's pitch and yaw (angle units, 4096 per turn), E being the brain's `+0xC8`; when the
 player's weapon-block bit 1 is set (the player crouches) the pitch offset is ±E/2. E differs per enemy, set by the
 level (Spawning): 20 to 100 in the dumps, ±1.8° to ±8.8°.
+
+**Exactly** (`tools/sim/engine_combat.py`, `enemy_weapon`): kind = variable 0xF & 0xFF, entry
+W = `0x80097FF0` + 0x30·kind (+4 type, +8/+0xC the two vertices of the weapon model the shot
+runs between, +0x10/+0x14 between shots, +0x18/+0x1C rounds, +0x20/+0x24 pause, +0x28 sound,
++0x2C bank (-1: the body model's `+0xC8`)); each "+ rand × r" is `(rand·r) >> 15`, drawn only
+when r ≠ 0. State 0: `+0x14` -= 1 (not below 0); with no rounds left `+0x12` -= 1. State 2:
+one shot at the player's middle (x, y - eye/2, z), then the error: crouched, pitch += (-E >> 1) +
+(rand·E >> 15) (E = 0: E >> 1); else pitch += (rand·2E >> 15) - E (E = 0: -E); yaw likewise
+(always the full ±E); the muzzle flash (`+0xB68+2` = 1), `+0x11` = 0; **no sound**. States 1,
+3, 4: pause 0 → new burst (pause, rounds, `+0x14` = 0); else `+0x14` running → -1; else no
+rounds → pause -1; else `+0x14` = between, and the shot unless state 1 with |angle_to| ≥ 0x15E:
+state 3 along the gun (from vertex +8 to vertex +0xC), 1 and 4 at the player's middle with the
+error (crouched: pitch ± 20 and yaw ± 90 fixed, `((rand·40) >> 15) - 20`, `((rand·180) >> 15) -
+90`; else ±E both); then the flash, the sound (class 3 for rockets) and rounds -1, at 0 `+0x3C`
+|= 1. Finally `+0x10` = `+0x11`. The bullet: `bullet_spawn(enemy, W+8, W+0xC, target or none,
+the weapon attachment (weapon block +0x1C), 0, 0, damage, 0, 0, 0x13F4, flags A 0x800, 0, mask
+0x08000401)`: its start and direction come from the weapon model's two vertices through the
+attachment's drawn matrix (combat.md, Shots not aimed at the aim point), then `0x800514E8`
+pulls the start back along the bullet's forward column by d - d/4 (d = max + min/4 of the
+horizontal offsets from the shooter) and sets object `+0x38` 0x2000. Rockets (type 0x1773):
+not reached in 1:3 (speed 130 (state 2) or 150, life doubled).
 
 The brain's `+0xB0` and `+0xB2` (1500 and 3000 for most soldiers) are the ranges `query` tests
 (sight, and the second, long sight range of queries 0x10/0x12 and the witness check; hearing uses `+0xB0`).
