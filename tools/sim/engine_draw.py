@@ -83,8 +83,11 @@ def draw_pass(eng):
             m.w32(e + 0x290, m.s32(e + 0x294))
         else:
             m.w32(e + 0x29C, 0)
-            if m.u32(e + 0x298) and fa & 0x01000000:
+            # entity_draw_model: out of view with flag 0x01000000: cull_countdown (0x8006A570),
+            # drawn before or not (the make-room case below marks it drawn)
+            if fa & 0x01000000:
                 if not keep_near(eng, e):
+                    m.w32(e + 0x29C, 0)
                     m.w32(e + 0x290, m.s32(e + 0x290) - 1)
         if d is not None and d[2] != m.s32(e + 0x290) and fa & 0x8000:
             eng.note("out-of-sight counter differs from the original's", f"{h:X} {m.s32(e + 0x290)} / {d[2]}")
@@ -97,14 +100,29 @@ def draw_pass(eng):
 
 
 def keep_near(eng, e):
-    """0x8006A3BC: kept while within the camera's far distance (max + (mid + min)/4 of the axis
-    differences); the make-room exception is not implemented (it never fired in the session)."""
+    """offscreen_keep (0x8006A3BC, e, the camera): kept while within the camera's far distance
+    (max + (mid + min)/4 of the axis differences). Make room: an entity with flags B 0x40000
+    (pickups) at 3501 or more while soldiers >= cap - 1 and a spawn waits (0x8009E288), behind the
+    camera's target (its forward column . (e - camera) < 0): marked drawn (+0x298 = 1, +0x290 =
+    1) and not kept, so it is counted out and removed this pass."""
     m = eng.m
     cam = m.u32(0x8009D638)
     co = m.u32(cam + 0x388)
     far = m.s32(co + 0xC4) >> 16 if m.s32(co + 0xC4) > 0xFFFF else m.s32(co + 0xC4)
-    d = sorted(abs(s16((m.s32(e + 0x20C + 4 * k) >> 16) - (m.s32(cam + 0x20C + 4 * k) >> 16))) for k in range(3))
-    return d[2] + ((d[0] + d[1]) >> 2) <= far
+    dv = [s16(m.s16(e + 0x20E + 4 * k) - m.s16(cam + 0x20E + 4 * k)) for k in range(3)]
+    d = sorted(abs(x) for x in dv)
+    t = d[2] + ((d[0] + d[1]) >> 2)
+    from engine import G_SOLDIER_COUNT, G_SOLDIER_CAP, G_HANDLES
+    if (m.u32(e + 0x10) & 0x40000 and m.s32(G_SOLDIER_COUNT) >= m.s32(G_SOLDIER_CAP) - 1
+            and m.u32(0x8009E288) and t >= 0xDAD):
+        h = m.u32(co + 0xC)
+        tgt = m.u32(G_HANDLES + 4 * (h & 0xFFFF)) if h else 0
+        fwd = [m.s16(tgt + o) for o in (0x344, 0x34A, 0x350)]
+        if s32(sum(dv[k] * fwd[k] for k in range(3))) < 0:
+            m.w32(e + 0x298, 1)
+            m.w32(e + 0x290, 1)
+            return False
+    return t <= far
 
 
 _models = {}

@@ -146,7 +146,11 @@ A record becomes an entity only when **its record script calls `activate`** (lev
 at the end of each frame (objects.md) retries over and over until the vblank, so with two or
 more waiting, which one is in front when a slot frees depends on how much idle time the frames
 had: timing, not game state (3:4 in a monkey run: 16 or 17 retries a frame, two soldiers
-waiting, the order flipping with the parity). An engine can retry in arrival order. Every spawnable record
+waiting, the order flipping with the parity). An engine can retry in arrival order. The ring:
+head `0x8009E280`, tail `0x8009E284`, count `0x8009E288`, entries at `0x8009E294`; a push to a
+full ring drops the head; a pop that empties it resets head and tail to 0; the run-all
+(`0x80075034`) pops until a pop fails to shrink it. The count is read by the out-of-sight
+cull's make-room rule (entities.md), so it must be kept as the game keeps it. Every spawnable record
 on the disc has a record script (all 2 257 records of kinds 2, 3, 4, 6 in the 24 levels but
 one kind-4 record), so what activates a record is always a level-script decision; the usual
 ones (catalogue.md lists the library):

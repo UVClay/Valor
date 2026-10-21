@@ -89,7 +89,16 @@ height is the model's halfword at `+0xA2`; reading `+0xA0` as a halfword gives 0
   in use) and a free flag (`+0x2810`). A destructor releases a slot with countdown 2
   (`char_release`, `0x8008EE60`); `char_pool_update` (`0x8008EAC8`, at the start of every
   frame) counts it down and frees it at 0: a dead character's memory stays intact for two
-  frames. A second pool of 5 × 0x1308 at `0x800C4378` holds their pose buffers. So **at most 5
+  frames. A second pool of 5 × 0x1308 at `0x800C4378` holds their pose buffers (`+0x1300` a
+  countdown, -67 in use, `+0x1304` free): `model_instance_init` takes the first free one
+  (`0x8008ED30`, zeroed) for a 0x1402/0x1405 model with bones, **not** the one of the same
+  index as the character slot; the destructors give it back with countdown 2 (`0x8006B234` →
+  `0x8008ECA0`) and `char_pool_update` frees it at 0, per index after the character slot.
+  `0x800AB8D0` counts the pose buffers in use (+1 taken, -1 freed) and `0x800AB8C8` is set to
+  max(`0x800AB8CC`, `0x800AB8D0`) whenever either pool changes (`0x800AB8CC` is only ever
+  lowered, by a release with countdown 0, which no caller uses: so `0x800AB8C8` is the pose
+  buffers in use). **`enemy_spawn` refuses at 4 or more** (levels.md): a corpse holds its pose
+  buffer until removed, so two corpses and two live characters block a fifth. So **at most 5
   soldiers and dogs exist at once**, whatever the level (`0x80097FEC`, the soldier cap, is 5 in
   every dump; levels.md). Checked in the four `mid_*` dumps: soldiers at slot addresses only,
   the slot states matching the live ones.
@@ -143,8 +152,14 @@ Entities with flags A **0x8000** (every soldier, flags 0x1300903C; dogs; pickups
   the axis differences) is at most the camera's far distance (camera object `+0xC4`: the
   level's `+0x590`, else 4500; 4600 in 1:3). **Exception**, to make room: an entity with flags B
   0x40000 (soldiers have it) when the soldiers alive ≥ cap - 1, a spawn is queued, and it is
-  3501 or more away **behind** the camera (its offset · the view's forward < 0): `+0x298` and
-  `+0x290` set to 1 and the counter not kept, so it reaches 0 this frame.
+  3501 or more away **behind** the camera (its offset from the camera, whole units, · the
+  forward column `+0x344`, `+0x34A`, `+0x350` of the entity the camera follows, camera object
+  `+0xC`, as a 32-bit GTE sum < 0): `+0x298` and `+0x290` set to 1 and the counter not kept, so
+  it reaches 0 this frame. Pickups have flags B 0x40000 too (1:3, tick 5825: two pickups made
+  at 5823 behind the camera while a soldier waited, gone before ever being drawn).
+- `0x8006A570` runs for every entity out of view with flags A 0x01000000, drawn before or not
+  (`entity_draw_model`): a never-drawn entity counts down too, harmlessly, as `entities_draw`
+  needs `+0x298`.
 - `entities_draw` (`0x8006C714`), after each entity's draw: flags A 0x8000, `+0x290` ≤ 0 and
   `+0x298` set → its record's script gets **message 2** (`script_run_message`, at once) and the
   entity is removed.

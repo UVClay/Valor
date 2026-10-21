@@ -528,6 +528,12 @@ class Engine:
         self.tick_no += 1
         m.w32(G_TICK, self.tick_no)
         self.rand.start_tick(self.tick_no)
+        tr = os.environ.get("ENG_TRACE_LEVEL")      # FROM:TO, the level logic's own trace
+        if tr:
+            lo, hi = (int(x) for x in tr.split(":"))
+            self.logic.debug = lo <= self.tick_no <= hi
+            if self.logic.debug:
+                print(f"-- tick {self.tick_no}")
         pad = self.feed.pad.get((self.level, self.tick_no))
         if pad:
             self.pad_now, self.pad_prev = pad[0] & 0xFFFF, pad[2] & 0xFFFF

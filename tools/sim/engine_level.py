@@ -92,9 +92,7 @@ class LevelLogic(lv.Sim):
         e = record_spawn(self.eng, rec)
         if e is None:
             self.stats["spawn refused (queued)"] += 1
-            if len(self.spawn_q) >= 64:
-                self.spawn_q.pop(0)
-            self.spawn_q.append(pair)
+            self.spq_push(pair)
             return
         m = self.m
         self.eng.link_front(e)
@@ -145,6 +143,55 @@ class LevelLogic(lv.Sim):
     def ladder_release(self):
         from engine_objects import ladder_release
         ladder_release(self.eng)
+
+    # -- the spawn queue, in RAM as the original keeps it (levels.md, Spawning)
+    def spq_sync(self):
+        m = self.m
+        n, h = m.u32(lv.SPQ_COUNT), m.u32(lv.SPQ_HEAD)
+        self.spawn_q = [m.u32(lv.SPQ + 4 * ((h + i) % 64)) for i in range(n)]
+        self.spq_head = h
+
+    def spq_push(self, pair):
+        """spawn_queue_push (0x80074F48): a full ring (64) drops its head; the pair at the tail."""
+        m = self.m
+        if m.u32(lv.SPQ_COUNT) >= 64:
+            h = m.u32(lv.SPQ_HEAD)
+            m.w32(lv.SPQ + 4 * h, 0)
+            m.w32(lv.SPQ_HEAD, h + 1)
+            m.w32(lv.SPQ_COUNT, m.u32(lv.SPQ_COUNT) - 1)
+        t = m.u32(lv.SPQ_TAIL)
+        m.w32(lv.SPQ_COUNT, m.u32(lv.SPQ_COUNT) + 1)
+        m.w32(lv.SPQ + 4 * t, pair)
+        m.w32(lv.SPQ_TAIL, t + 1 if t + 1 < 64 else t - 0x3F)
+        self.spq_sync()
+
+    def spawn_retry_one(self):
+        """spawn_queue_run_one (0x80074F9C): the head popped (an emptied ring restarts at 0) and
+        spawned, which pushes it back at the tail if refused. True if the ring shrank."""
+        m = self.m
+        n = m.u32(lv.SPQ_COUNT)
+        if not n:
+            return False
+        h = m.u32(lv.SPQ_HEAD)
+        pair = m.u32(lv.SPQ + 4 * h)
+        m.w32(lv.SPQ + 4 * h, 0)
+        m.w32(lv.SPQ_HEAD, h + 1 if h + 1 < 64 else h - 0x3F)
+        m.w32(lv.SPQ_COUNT, n - 1)
+        if n - 1 == 0:
+            m.w32(lv.SPQ_HEAD, 0)
+            m.w32(lv.SPQ_TAIL, 0)
+        self.spq_sync()
+        self.record_spawn(pair)
+        return m.u32(lv.SPQ_COUNT) < n
+
+    def spawn_retry(self):
+        """spawn_queue_run_all (0x80075034): retries from the head while one succeeds."""
+        any_ok = False
+        while self.m.u32(lv.SPQ_COUNT):
+            if not self.spawn_retry_one():
+                break
+            any_ok = True
+        return any_ok
 
     def removed(self, ent, why):
         """The engine removed an entity: the level logic's part of entity_remove."""

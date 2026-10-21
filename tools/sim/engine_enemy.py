@@ -23,6 +23,15 @@ def register(eng):
 
 # ---------------------------------------------------------------- the character pool
 
+G_CHARS_IN_USE = 0x800AB8C8        # max of the two below: enemy_spawn refuses at 4
+G_CHAR_SLOTS_USED = 0x800AB8CC     # only lowered (char_release with countdown 0), never raised
+G_POSES_USED = 0x800AB8D0          # pose buffers in use
+
+
+def chars_in_use(m):
+    m.w32(G_CHARS_IN_USE, max(m.s32(G_CHAR_SLOTS_USED), m.s32(G_POSES_USED)))
+
+
 def char_alloc(eng):
     """char_alloc (0x8008EEF0): the first free slot of five (entities.md, Memory)."""
     m = eng.m
@@ -31,8 +40,36 @@ def char_alloc(eng):
             m.zero(a, 0x280C)
             m.w32(a + 0x280C, -0x43)
             m.w32(a + 0x2810, 0)
+            chars_in_use(m)
             return i, a
     return None, None
+
+
+def pose_alloc(eng):
+    """0x8008ED30, from model_instance_init for a character model with bones: the first free pose
+    buffer of five (0x1308 bytes at 0x800C4378; +0x1300 the countdown, -67 in use, +0x1304 free),
+    zeroed; the count of those in use + 1."""
+    m = eng.m
+    for a in POSE_POOLS:
+        if m.u32(a + 0x1304):
+            m.w32(a + 0x1300, -0x43)
+            m.w32(a + 0x1304, 0)
+            m.zero(a, 0x1300)
+            m.w32(G_POSES_USED, m.s32(G_POSES_USED) + 1)
+            chars_in_use(m)
+            return a
+    return 0
+
+
+def pose_release(eng, inst):
+    """func_8006B234(instance, entity, 2) for a character -> 0x8008ECA0: the pose buffer's
+    countdown 2 (char_pool_update frees it)."""
+    m = eng.m
+    buf = m.u32(inst)
+    for a in POSE_POOLS:
+        if a == buf:
+            m.w32(a + 0x1300, 2)
+            return
 
 
 def char_release(eng, e):
@@ -41,15 +78,28 @@ def char_release(eng, e):
 
 
 def char_pool_update(eng):
-    """char_pool_update (0x8008EAC8), at the start of every frame."""
+    """char_pool_update (0x8008EAC8), at the start of every frame: per index, the character slot
+    then the pose buffer, each in use counted down when positive and freed at 0 (a pose buffer
+    freed lowers the count of those in use)."""
     m = eng.m
-    for a in CHAR_SLOTS:
-        c = m.s32(a + 0x280C)
-        if c > 0:
-            c -= 1
-            m.w32(a + 0x280C, c)
+    for a, q in zip(CHAR_SLOTS, POSE_POOLS):
+        if not m.u32(a + 0x2810):
+            c = m.s32(a + 0x280C)
+            if c > 0:
+                c -= 1
+                m.w32(a + 0x280C, c)
             if c == 0:
                 m.w32(a + 0x2810, 1)
+                chars_in_use(m)
+        if not m.u32(q + 0x1304):
+            c = m.s32(q + 0x1300)
+            if c > 0:
+                c -= 1
+                m.w32(q + 0x1300, c)
+            if c == 0:
+                m.w32(G_POSES_USED, m.s32(G_POSES_USED) - 1)
+                chars_in_use(m)
+                m.w32(q + 0x1304, 1)
 
 
 def character_create(eng, model, channels):
@@ -76,8 +126,14 @@ def character_create(eng, model, channels):
         m.w32(a + 0x124 + 0x74 * ch, p)
         p += 0x3C * channels
     m.w32(a + 0x1EC, channels)
-    instance_init(eng, a, inst, model, POSE_POOLS[i])
+    instance_init(eng, a, inst, model, pose_alloc(eng) if nbones(m, model) else 0)
     return i, a
+
+
+def nbones(m, model):
+    tbl = m.u32(model + 8)
+    first = m.u32(tbl + 4) if tbl else 0
+    return m.u8(first + 1) if first else 0
 
 
 def instance_init(eng, e, inst, model, pool):
@@ -141,11 +197,17 @@ def enemy_spawn(eng, rec):
     if not model:
         eng.note("soldier model missing", f"r{rec.idx}")
         return None
-    if m.s32(G_SOLDIER_CAP) <= 0 or m.s32(G_SOLDIER_COUNT) >= m.s32(G_SOLDIER_CAP):
-        return None
+    cap, n = m.s32(G_SOLDIER_CAP), m.s32(G_SOLDIER_COUNT)
     t = m.s32(model + 0xFC)
     if t == DOG:
+        # dog_spawn (0x80054E4C): a cap of 0 or the count at the cap refuses
+        if cap == 0 or n >= cap:
+            return None
         return dog_spawn(eng, rec, model)
+    # enemy_spawn (0x800563F0): with a cap above 0 the count at the cap refuses; then 4 or more
+    # characters in use (0x800AB8C8: pose buffers, entities.md); then a cap of 0
+    if (cap > 0 and n >= cap) or m.s32(G_CHARS_IN_USE) >= 4 or cap == 0:
+        return None
     return soldier_spawn(eng, rec, model, tmpl)
 
 
@@ -432,7 +494,9 @@ def witness_check(eng):
 def enemy_destroy(eng, e):
     """The soldier's destructor (0x80056288 -> 0x80056290): the count, its brain, the slot."""
     m = eng.m
-    m.w32(G_SOLDIER_COUNT, m.s32(G_SOLDIER_COUNT) - 1)
+    m.w32(G_SOLDIER_COUNT, max(m.s32(G_SOLDIER_COUNT) - 1, 0))
+    if m.u32(e + 0x100):
+        pose_release(eng, m.u32(e + 0x100))
     b = m.u32(e + 0x38C)
     if b:
         eng.free(b)
@@ -441,8 +505,10 @@ def enemy_destroy(eng, e):
 
 def dog_destroy(eng, e):
     m = eng.m
-    m.w32(G_SOLDIER_COUNT, m.s32(G_SOLDIER_COUNT) - 1)
-    m.w32(G_DOG_COUNT, m.s32(G_DOG_COUNT) - 1)
+    m.w32(G_SOLDIER_COUNT, max(m.s32(G_SOLDIER_COUNT) - 1, 0))
+    m.w32(G_DOG_COUNT, max(m.s32(G_DOG_COUNT) - 1, 0))
+    if m.u32(e + 0x100):
+        pose_release(eng, m.u32(e + 0x100))
     b = m.u32(e + 0x38C)
     if b:
         eng.free(b)

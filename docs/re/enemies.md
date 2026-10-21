@@ -382,7 +382,14 @@ The brain's `+0xB0` and `+0xB2` (1500 and 3000 for most soldiers) are the ranges
 A soldier is made from a spawn record in the level data (`[a0+0x4]`), so health, accuracy and
 ranges are the level designer's, per enemy; the game's difficulty parameter (`g_params+0xB`,
 from `g_game+0x110`) is read by nothing in LEVEL.BIN. At most `0x80097FEC` soldiers are alive at
-once (`0x80097FE8` counts them), and none while `0x800AB8C8` is 4 or more.
+once (`0x80097FE8` counts them), and none while `0x800AB8C8` is 4 or more. The tests in
+order: with a cap above 0, no record data or the count at the cap refuses; then `0x800AB8C8` ≥ 4
+(the characters' pose buffers in use, entities.md, Memory); then a cap of 0. `dog_spawn`
+(`0x80054E4C`) tests only a cap of 0, no record data, or the count at the cap. The destructors
+(`enemy_destroy` `0x80056290`, the dog's `0x80054D78`) lower the count, never below 0, and give
+back the pose buffer. A refused record goes to the spawn queue (levels.md); 1:3's soldier r46
+at tick 5824 was refused with 4 alive under a cap of 5 by the pose-buffer test, and spawned at
+5841 once a corpse's buffer was freed.
 
 | Record | Becomes |
 |---|---|
