@@ -1590,7 +1590,7 @@ class Run:
                         if e.rec is not None:
                             sim.remove(e, "restart")
                         e.removed = True
-                sim.player.prev_zone, sim.player.prev_bits = 0xFFFF, 0
+                # the player's soldier stays (player_reset): his last zone and bits carry over
                 self.next_new, self.claimed = self.new_entities(tick_i), set()
                 self.first_frame = True
                 sim.level_start(sim.player)

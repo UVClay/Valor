@@ -155,7 +155,9 @@ until it ends: the script's frame count (`soldier+0x11C` when it starts) + 1 tic
 - by itself when the clip is empty and the refire countdown has run out (measured: the tick the
   countdown reaches 0, e.g. 20 ticks after the Garand's 8th round; every one in the session);
 - on Use (action 5) unless the weapon has flag 1, if the clip isn't full (`g_weapons[w]+0x0A`)
-  and there is reserve, and no weapon script runs (checked: every Use press of the session);
+  and there is reserve, **whatever weapon script runs** (`player_update` calls `weapon_reload`
+  with no script test: 4:1 in a monkey run reloaded the Garand on a Use press during the raise,
+  script 16; the session's 82 Use presses agree);
 - when a slot is drawn with an empty clip (the clip "fills the first time it's drawn").
 
 A weapon switch during a reload cuts the animation (the rounds already moved; measured, weapon 6).

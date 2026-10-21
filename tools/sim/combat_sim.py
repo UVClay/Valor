@@ -732,7 +732,7 @@ def check_trigger(st, trace, fstate):
         # weapon script 9 before player_weapon_update looks, so the trigger's shot is lost
         um, ux = fs["use"]
         use = (cur & um) == um and (prev & um) != um and (ux == 0 or (cur & ux) != ux)
-        use_reload = use and r0[4] != 0 and 0 < r0[3] < size and not flags & 1 and not busy
+        use_reload = use and r0[4] != 0 and 0 < r0[3] < size and not flags & 1
         # so does the weapon switch (action 2, weapon_holster: script 10), first of all
         hm, hx = fs["holster"]
         holster = (cur & hm) == hm and (prev & hm) != hm and (hx == 0 or (cur & hx) != hx)
@@ -756,8 +756,8 @@ def check_trigger(st, trace, fstate):
         reload = clip > r0[3] and res < r0[4]
         want = (clip if fire else r0[3]) == 0 and cd <= 0 and r0[4] != 0 and not flags & 1
         if use and not want and (reload or r0[3] > 0):
-            want = use and r0[4] != 0 and r0[3] < size and not flags & 1 and not busy
-            key = "reload: on a Use press (clip not full, rounds in reserve, no weapon script)"
+            want = use and r0[4] != 0 and r0[3] < size and not flags & 1
+            key = "reload: on a Use press (clip not full, rounds in reserve, whatever weapon script runs)"
             if reload == want:
                 st.add(key, "exact")
             elif not trace[n]["first"] and fs["pre_script"] != fs["script"]:
