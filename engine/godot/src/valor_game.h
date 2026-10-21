@@ -10,6 +10,15 @@
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
+#include <map>
+#include <vector>
+
+#include <godot_cpp/classes/image.hpp>
+#include <godot_cpp/variant/transform3d.hpp>
+#include <godot_cpp/variant/typed_array.hpp>
+
+#include "valor/anim.h"
+#include "valor/model.h"
 #include "valor/render_data.h"
 #include "valor/session.h"
 
@@ -26,7 +35,18 @@ public:
     String get_error() const { return error_; }
 
     Ref<ArrayMesh> build_world_mesh();
-    Ref<Texture2DArray> get_texture_pages() const { return pages_; }
+    // The texture pages the meshes built so far use (one layer per page and CLUT): call after
+    // building them.
+    Ref<Texture2DArray> get_texture_pages();
+
+    // Actors: the models the level's records name (soldier spawns, objects), placed at their
+    // records; skinned ones play an animation in a loop (the scripts that choose animations are
+    // not ported). Their meshes are posed by the core every tick.
+    int spawn_actors();
+    int get_actor_count() const { return int(actors_.size()); }
+    Transform3D get_actor_transform(int i) const;
+    bool is_actor_skinned(int i) const;
+    Ref<ArrayMesh> build_actor_mesh(int i);
     Dictionary get_level_info() const;
 
     void place(double x, double y, double z, double yaw, double pitch);
@@ -47,9 +67,21 @@ protected:
     static void _bind_methods();
 
 private:
+    struct Actor {
+        int record;
+        const valor::Model* model;
+        valor::AnimInstance inst;
+        int anim;
+    };
     valor::Session session_;
     valor::LevelRender render_;
+    valor::Models models_;
+    std::vector<Actor> actors_;
     Ref<Texture2DArray> pages_;
+    std::map<uint32_t, int> layer_of_;
+    TypedArray<Image> page_images_;
+    bool pages_dirty_ = true;
+    int layer(uint16_t tpage, uint16_t clut);
     String error_;
     bool loaded_ = false;
 };

@@ -23,6 +23,7 @@ struct Record {
     // Use): offsets from the record to {count, count messages}.
     std::vector<uint32_t> enter_msgs, leave_msgs, c_enter_msgs, c_leave_msgs, use_msgs;
     int16_t chunks[4]{};  // +0x30: a streaming record's four chunk numbers
+    uint32_t model = 0;   // kinds 2, 6 (+0x60) and 3 (+0x74): the template's model hash (+4)
 
     // record_contains (0x80083D30): whole-unit position inside the volume.
     bool contains(const int32_t p[3]) const;

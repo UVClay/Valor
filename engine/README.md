@@ -12,14 +12,22 @@ system ported here is checked tick by tick against a replay of it.
 | `core/` | `valor_core`, a static library in plain C++20 with no engine types and no floats in game state: 16.16 positions, 4096-per-turn angles, MoH's axes (y down), the 30 Hz tick. No exceptions, no global state, deterministic. It can also be linked into the recomp's runtime for a live lockstep comparison |
 | `core/src/world.cpp` | TSP collision blocks, `floor_find`, walls of a walker (levels.md, Collision) |
 | `core/src/movement.cpp` | `entity_move` and `walker_slide` (movement.md) |
-| `core/src/player.cpp` | The player's controls for play: run, strafe, turn, pitch, jump, crouch with the eye easing and quartered speed |
+| `core/src/controls.cpp` | The pad and the control roles: `role_button`'s ramps, `role_axis`'s curve, actions with their exclusion masks, the speed changes of crouching; a fresh card's configuration (movement.md, Control roles) |
+| `core/src/player.cpp` | `player_update` and `player_controls` as they run: aim mode with the pin and lean, the aiming stances' crosshair box, centre view, the three look modes, jump, the crouch easing (and 5:4's lower crouch), ladders, the flinch, zoom, `weapon_draw`'s effects, the death start; then the move. Systems not ported come in as events (`PlayerEvents`) |
 | `core/src/level.cpp` | The BSD header fields used so far and the player start (formats.md, levels.md) |
 | `core/src/records.cpp` | Entity records and their volumes, the floor zones' record lists, the zone tracking (enter/leave with the original's skips), the chunk streaming (levels.md, Triggers; formats.md, chunk streaming records) |
-| `core/src/session.cpp` | A level in play: the animated lights, the player's update and move, his zones and the streaming, in the tick's order |
+| `core/src/entities.cpp` | The entity list and handle table, linking, immediate removal with handles freed at the end of the frame, the deferred message queue (entities.md, objects.md) |
+| `core/src/session.cpp` | A level in play: each tick walks the list (think, move; the world's lights, the soldier, ladders' thinks), zones and streaming after the soldier's move, the 1/3-second message; each frame's end runs the queue, frees handles, streams |
+| `core/src/gte.cpp` | libgte's integer math: `ratan2`, the square roots, `rsin` (the game's tables, read from the executable), the rotation matrices of angles and quaternions |
+| `core/src/model.cpp` | The level's models from the BSD (inheritance, the skeletal tables, skinned and static faces, vertices, hit parts), `anim_frame_pose`'s interpolation, the joints, the hit parts' centres, skinning (animation.md) |
+| `core/src/anim.cpp` | A model instance's animation state: op 00's start (continue, cross-fade, cut), the frame advance, `pose_build`'s cache and fade |
 | `core/src/render_data.cpp` | Presentation data: TSP render tree, faces, vertex colours, animated light colours, TAF TIMs placed in a 1024×512 VRAM, texture pages decoded through a CLUT |
 | `core/src/trace.cpp` | Traces in the `VALOR_TRACE_STATE` format (runtime/src/watch.cpp) |
-| `tools/coretest/` | Steps the core on a replay's inputs and compares every tick with the original |
-| `tools/export_moves.py` | Writes those inputs from a replay's trace and watch log (move_sim.py's reader) |
+| `tools/coretest/` | Steps the core on a replay's inputs and compares every tick with the original: the movement on the control function's outputs (`coretest.cpp`), the player from the pad (`pad_mode.cpp`), the poses against RAM dumps (`pose_mode.cpp`) |
+| `tools/capture.sh` | Replays a recording through the original and keeps the state trace, the input trace (the pad, every role call, the soldier as each update finds it), the watched fields and RAM dumps |
+| `tools/export_pad.py` | Writes a capture as coretest's pad input |
+| `tools/padcheck.sh`, `padrecheck.sh` | Captures recordings and checks every level start and restart in them; the second reruns existing captures |
+| `tools/export_moves.py` | The movement-only input (move_sim.py's reader) |
 | `godot/` | The GDExtension (`ValorGame`) and the Godot 4.7 project |
 | `godot/tools/screenshot.sh` | Runs the project on a virtual display (Xvfb and software OpenGL in a container) and saves a frame |
 
@@ -53,11 +61,18 @@ copied into the project.
 
 | Control | |
 |---|---|
-| W A S D | Run and strafe at the keyboard speed (34.863 units per tick) |
-| Mouse, ← → | Turn and look (the d-pad's 60 units per tick on the arrows) |
-| Space | Jump |
-| C, Ctrl | Crouch (toggle) |
+| W A S D | Run and strafe at the keyboard speed (34.863 units per tick: the analog roles, as the runtime's keyboard gives them) |
+| Mouse | Turn and look (the analog roles) |
+| ← → | The d-pad: turning that ramps up to 60 units per tick |
+| Space | Jump (Triangle) |
+| C, Ctrl | Crouch (L2, a toggle) |
+| E | Use (Square) |
+| Right mouse button | Aim (R2): pinned, the strafe keys lean |
+| Middle mouse button | Centre the view (L3) |
 | Esc | Release the mouse |
+
+The keys press a fresh card's buttons, which the core reads through its own control
+configuration, exactly as the game does.
 
 The core ticks at 30 Hz in `_physics_process` (`physics_ticks_per_second = 30`). The camera is
 interpolated between the last two ticks at the display rate. The mouse turns the view at once,
@@ -75,6 +90,12 @@ discarded, vertex fog, and the four semi-transparency modes. The animated lights
 the core each tick (`lights_update`) and coloured in the shader. Every chunk is drawn. Collision
 follows the streaming slots, with instant loads. It uses the Compatibility renderer, whose output matched the
 original's brightness side by side.
+
+The level's records' models are drawn at their records: objects with their static meshes, soldiers
+and dogs skinned from poses the core builds every tick (a walk or their first animation, looping:
+the scripts that choose animations aren't ported). The characters' textures aren't right yet: their
+faces point at VRAM (640, 256), where 1:3's TAF puts the dog's skin, so the soldiers' own textures
+reach VRAM some other way (not found yet).
 
 ## Checking the core against the original
 
@@ -111,25 +132,72 @@ function's outputs, as for move_sim. On 2% of ticks the strafe or forward value 
 before the watch saw it, and it is recovered by trying the keyboard values (move_sim.py's
 inference, kept as is).
 
+### From the pad
+
+```sh
+engine/tools/capture.sh recordings/2026-10-19_22-22-43_m1l3 build/gd/cap/session 61900 1720 20500 40740
+python3 engine/tools/export_pad.py build/gd/cap/session 1720 > build/gd/pad_1720.txt
+build/gd/cmake/coretest build/gd/pad_1720.txt --ram build/gd/cap/session/d1720.bin \
+    --stream-log build/gd/cap/session/run.log [-v N] [--stick-only]
+engine/tools/padcheck.sh -j 4 --stick-only build/cov/tapes/w??   # every start and restart
+```
+
+The core runs from a RAM dump a few vblanks into the level, free, on the pad words and every
+control-role call of each tick (`VALOR_TRACE_INPUT`, which the runtime logs at `player_update`). It
+computes `role_button` itself and checks every value against the original's. It takes `role_axis`
+from the trace, since the session's mouse and keyboard add to it in the runtime. With
+`--stick-only` (monkey runs, gamepads), it computes `role_axis` from the stick bytes too. Systems
+not ported come in as events, from the soldier as the next update finds him:
+- the weapon in hand and `weapon_draw`;
+- aim_update's friction and body roll;
+- a hit's flinch and death;
+- touches by soldiers and objects;
+- the trigger boxes' flags B;
+- the level logic placing the player.
+
+Compared every tick: the position where `entity_move` left him, the view's yaw and pitch, the eye
+height, the crouch, aim and scope flags, the flinch, the aim-mode flag B.
+
+| Recording | Segments | Ticks | Position, yaw, pitch exact |
+|---|---|---|---|
+| The session: 1:3, 2:1, 2:2 | 3 | 22,682 | all (and all 90,242 `role_button` values) |
+| Monkey runs (`build/cov/tapes`, `--stick-only`): 1:2, 2:3, 2:4, 3:2, 3:3, 3:4, 4:1, 4:2, 4:3, 5:1, 5:2, 5:3, 5:4, 7:1, 7:2, 7:3, 9:1, 9:2, 9:4 | 91 (level starts and restarts after deaths) | 143,648 | all |
+
+Two ticks' eye height differ, in 5:4, where the player rides a parent (`+0x2C`; riding isn't
+ported). The entity list follows the original's for the systems not ported: the core takes their
+spawns and removals from the trace. The ladders it makes itself got the handles the original gave
+them, in every case.
+
+### Poses
+
+```sh
+build/gd/cmake/coretest --pose 1:3 build/simcheck/2026-10-19_22-22-43_m1l3/d1*.bin ...
+```
+
+For every soldier and dog in a RAM dump, the core checks three things against RAM:
+- the pose it builds from the level file;
+- the joints from the pose in RAM;
+- the hit parts from the joints.
+
+On all the session's dumps (`tools/sim/check.py`'s, 1:3, 2:1 and 2:2) it gives exactly the counts
+`combat_sim.py pose` gives. The misses there are dumps that caught an instance moved on since its
+last draw. `combat_sim.py check` follows them tick by tick and finds every pose exact.
+
 ## What's next
 
 In order, following the closed-loop Python engine in `tools/sim/engine*.py`, which composes the
 reference simulators:
 
-1. **Input from the pad.** The control roles (digital ramps, the analog curve, movement.md) so the
-   core takes raw pad state, and a recorded tape's pad stream drives it directly. Then the rest of
-   `player_update`: aim mode and lean, ladders, the flinch, Use, the eye height 188 after a weapon
-   switch, death.
-2. **Entities and the tick order** (objects.md, "The frame and the tick"; entities.md): the entity
-   list, handles, think, move, contacts. Ladders (kind-0 records, like the streaming, which is
-   done).
+1. **The rest of the player**: the death camera (a camera animation's root motion carries the
+   soldier) and the restart in place (`level_start`, shell.md), riding a parent, `aim_update`
+   (combat), weapons and their scripts, Use's messages delivered.
+2. **Entities**: the contact phase (`entities_collide`: touches, hit parts), spawning by records.
 3. **Level logic** (levels.md, messages.md; `level_vm.py`): records, the level-script VM, triggers
    and zones, the deferred queue, objectives.
 4. **Enemies** (enemies.md, soldier.md; `sst_vm.py`, `brain_sim.py`): the behaviour-script VM, the
    brain and movement, animation with root motion.
 5. **Combat** (combat.md; `combat_sim.py`): weapons, bullets, hit spheres, damage.
-6. **Presentation in Godot**: static and skinned models, the sky, PVS culling, sounds and music.
+6. **Presentation in Godot**: the characters' textures, the sky, PVS culling, sounds and music.
 
-Each system gets a coretest mode against the original's trace, as movement has. Once the entity
-list exists, the core writes full `VALOR_TRACE_STATE` lines, and `tools/recon/trace_cmp.py`
-compares whole traces.
+Each system gets a coretest mode against the original's trace, as movement has, and its events
+leave the pad mode as the system is ported.

@@ -24,6 +24,11 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_error"), &ValorGame::get_error);
     ClassDB::bind_method(D_METHOD("build_world_mesh"), &ValorGame::build_world_mesh);
     ClassDB::bind_method(D_METHOD("get_texture_pages"), &ValorGame::get_texture_pages);
+    ClassDB::bind_method(D_METHOD("spawn_actors"), &ValorGame::spawn_actors);
+    ClassDB::bind_method(D_METHOD("get_actor_count"), &ValorGame::get_actor_count);
+    ClassDB::bind_method(D_METHOD("get_actor_transform", "i"), &ValorGame::get_actor_transform);
+    ClassDB::bind_method(D_METHOD("is_actor_skinned", "i"), &ValorGame::is_actor_skinned);
+    ClassDB::bind_method(D_METHOD("build_actor_mesh", "i"), &ValorGame::build_actor_mesh);
     ClassDB::bind_method(D_METHOD("get_level_info"), &ValorGame::get_level_info);
     ClassDB::bind_method(D_METHOD("place", "x", "y", "z", "yaw", "pitch"), &ValorGame::place);
     ClassDB::bind_method(D_METHOD("tick", "buttons", "forward", "strafe", "turn", "pitch"), &ValorGame::tick);
@@ -44,59 +49,54 @@ Vector3 ValorGame::to_godot(double x, double y, double z) {
 bool ValorGame::load_level(const String& data_dir, int mission, int level) {
     loaded_ = false;
     std::string dir = data_dir.utf8().get_data(), err;
-    if (!session_.load(dir, mission, level, &err) || !render_.load(dir, session_.info(), &err)) {
+    if (!session_.load(dir, mission, level, &err) || !render_.load(dir, session_.info(), &err) ||
+        !models_.load(dir, mission, level, &err)) {
         error_ = String(err.c_str());
         return false;
     }
     pages_.unref();
+    layer_of_.clear();
+    page_images_.clear();
+    actors_.clear();
     loaded_ = true;
     return true;
 }
 
-Ref<ArrayMesh> ValorGame::build_world_mesh() {
-    Ref<ArrayMesh> mesh;
-    mesh.instantiate();
-    if (!loaded_) return mesh;
-    // One texture layer per (page, depth, CLUT) the faces use.
-    std::map<uint32_t, int> layer_of;
-    TypedArray<Image> images;
+int ValorGame::layer(uint16_t tpage, uint16_t clut) {
+    uint32_t key = uint32_t(tpage & 0x19F) | uint32_t(clut) << 16;
+    auto it = layer_of_.find(key);
+    if (it != layer_of_.end()) return it->second;
     std::vector<uint8_t> rgba;
-    auto layer = [&](const valor::RenderFace& f) {
-        uint32_t key = uint32_t(f.tpage & 0x19F) | uint32_t(f.clut) << 16;
-        auto it = layer_of.find(key);
-        if (it != layer_of.end()) return it->second;
-        render_.vram.decode_page(f.tpage, f.clut, rgba);
-        PackedByteArray bytes;
-        bytes.resize(int64_t(rgba.size()));
-        memcpy(bytes.ptrw(), rgba.data(), rgba.size());
-        images.push_back(Image::create_from_data(256, 256, false, Image::FORMAT_RGBA8, bytes));
-        int n = int(layer_of.size());
-        layer_of[key] = n;
-        return n;
-    };
-    // Surfaces: opaque faces, then semi-transparent ones by blend mode.
-    struct Surface {
-        PackedVector3Array v;
-        PackedColorArray c;
-        PackedVector2Array uv, uv2;
-    };
-    Surface surf[5];
-    for (const valor::RenderChunk& ch : render_.chunks) {
-        for (const valor::RenderFace& f : ch.faces) {
-            Surface& s = surf[f.semi() ? 1 + f.blend() : 0];
-            float l = float(layer(f));
-            for (int k = 0; k < 3; k++) {
-                const valor::RenderVertex& rv = ch.verts[f.v[k]];
-                uint8_t col[3];
-                render_.lit_colour(session_.info(), rv, col);
-                s.v.push_back(to_godot(rv.x, rv.y, rv.z));
-                s.c.push_back(Color(col[0] / 255.0f, col[1] / 255.0f, col[2] / 255.0f));
-                s.uv.push_back(Vector2(f.uv[k][0] / 256.0f, f.uv[k][1] / 256.0f));
-                // UV2.y: 1 + the animated light the colour names (0: none), coloured per tick.
-                s.uv2.push_back(Vector2(l, float(valor::LevelRender::light_index(session_.info(), rv) + 1)));
-            }
-        }
+    render_.vram.decode_page(tpage, clut, rgba);
+    PackedByteArray bytes;
+    bytes.resize(int64_t(rgba.size()));
+    memcpy(bytes.ptrw(), rgba.data(), rgba.size());
+    page_images_.push_back(Image::create_from_data(256, 256, false, Image::FORMAT_RGBA8, bytes));
+    int n = int(layer_of_.size());
+    layer_of_[key] = n;
+    pages_dirty_ = true;
+    return n;
+}
+
+Ref<Texture2DArray> ValorGame::get_texture_pages() {
+    if (pages_dirty_ || pages_.is_null()) {
+        pages_.instantiate();
+        if (!page_images_.is_empty()) pages_->create_from_images(page_images_);
+        pages_dirty_ = false;
     }
+    return pages_;
+}
+
+namespace {
+
+// Surfaces: opaque faces, then semi-transparent ones by blend mode.
+struct Surface {
+    PackedVector3Array v;
+    PackedColorArray c;
+    PackedVector2Array uv, uv2;
+};
+
+void add_surfaces(Ref<ArrayMesh>& mesh, Surface (&surf)[5]) {
     static const char* names[5] = {"opaque", "semi0", "semi1", "semi2", "semi3"};
     for (int i = 0; i < 5; i++) {
         if (surf[i].v.is_empty()) continue;
@@ -109,8 +109,137 @@ Ref<ArrayMesh> ValorGame::build_world_mesh() {
         mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
         mesh->surface_set_name(mesh->get_surface_count() - 1, names[i]);
     }
-    pages_.instantiate();
-    if (!images.is_empty()) pages_->create_from_images(images);
+}
+
+bool semi(uint16_t tpage) { return tpage & 0x4000; }
+int blend_mode(uint16_t tpage) { return (tpage >> 5) & 3; }
+
+}  // namespace
+
+Ref<ArrayMesh> ValorGame::build_world_mesh() {
+    Ref<ArrayMesh> mesh;
+    mesh.instantiate();
+    if (!loaded_) return mesh;
+    Surface surf[5];
+    for (const valor::RenderChunk& ch : render_.chunks) {
+        for (const valor::RenderFace& f : ch.faces) {
+            Surface& s = surf[f.semi() ? 1 + f.blend() : 0];
+            float l = float(layer(f.tpage, f.clut));
+            for (int k = 0; k < 3; k++) {
+                const valor::RenderVertex& rv = ch.verts[f.v[k]];
+                uint8_t col[3];
+                render_.lit_colour(session_.info(), rv, col);
+                s.v.push_back(to_godot(rv.x, rv.y, rv.z));
+                s.c.push_back(Color(col[0] / 255.0f, col[1] / 255.0f, col[2] / 255.0f));
+                s.uv.push_back(Vector2(f.uv[k][0] / 256.0f, f.uv[k][1] / 256.0f));
+                // UV2.y: 1 + the animated light the colour names (0: none), coloured per tick.
+                s.uv2.push_back(Vector2(l, float(valor::LevelRender::light_index(session_.info(), rv) + 1)));
+            }
+        }
+    }
+    add_surfaces(mesh, surf);
+    return mesh;
+}
+
+int ValorGame::spawn_actors() {
+    actors_.clear();
+    if (!loaded_) return 0;
+    const valor::Records& recs = session_.records();
+    for (size_t i = 0; i < recs.records.size(); i++) {
+        const valor::Record& r = recs.records[i];
+        if (!r.model || r.cls == 0x8877B646) continue;  // the player start names the player's model
+        const valor::Model* m = models_.by_hash(r.model);
+        if (!m || (!m->skinned() && m->static_faces.empty())) continue;
+        Actor a{int(i), m, {}, -1};
+        a.inst.model = m;
+        if (m->skinned()) {
+            // A walk if the model has one (the soldier's animation 7), else its first animation.
+            for (int k : {7, 0, 1, 2, 3}) {
+                if (size_t(k) < m->anims.size() && m->anims[k].frames.size() > 1) {
+                    a.anim = k;
+                    break;
+                }
+            }
+            if (a.anim < 0)
+                for (size_t k = 0; k < m->anims.size() && a.anim < 0; k++)
+                    if (!m->anims[k].frames.empty()) a.anim = int(k);
+            if (a.anim < 0) continue;
+            // Each actor starts at its own frame, so a level's soldiers don't march in step.
+            int n = int(m->anims[a.anim].frames.size());
+            a.inst.start(a.anim, int(i * 7) % n, -1, 2);
+            a.inst.build(models_);
+        }
+        actors_.push_back(std::move(a));
+    }
+    return int(actors_.size());
+}
+
+bool ValorGame::is_actor_skinned(int i) const {
+    return i >= 0 && size_t(i) < actors_.size() && actors_[i].model->skinned();
+}
+
+Transform3D ValorGame::get_actor_transform(int i) const {
+    if (i < 0 || size_t(i) >= actors_.size()) return Transform3D();
+    const valor::Record& r = session_.records().records[actors_[i].record];
+    // The model turned by RotMatrixYXZ of the record's angles and placed at its position; in
+    // Godot's axes (y and z flipped) the basis is C M C.
+    int16_t m[3][3];
+    valor::rot_yxz(r.ang[0], r.ang[1], r.ang[2], m);
+    const float c[3] = {1, -1, -1};
+    Basis b;
+    for (int row = 0; row < 3; row++)
+        for (int col = 0; col < 3; col++) b[row][col] = real_t(c[row] * c[col] * m[row][col] / 4096.0);
+    return Transform3D(b, to_godot(r.pos[0], r.pos[1], r.pos[2]));
+}
+
+Ref<ArrayMesh> ValorGame::build_actor_mesh(int i) {
+    Ref<ArrayMesh> mesh;
+    mesh.instantiate();
+    if (i < 0 || size_t(i) >= actors_.size()) return mesh;
+    Actor& a = actors_[i];
+    const valor::Model& m = *a.model;
+    Surface surf[5];
+    // Model colours follow the animated lights as the world's do (formats.md: red below 40 names
+    // a light, black past the level's).
+    const valor::LevelInfo& info = session_.info();
+    auto corner = [&](Surface& s, int32_t x, int32_t y, int32_t z, const uint8_t* rgb, const uint8_t* uv, float l) {
+        valor::RenderVertex rv{0, 0, 0, rgb[0], rgb[1], rgb[2]};
+        uint8_t col[3];
+        render_.lit_colour(info, rv, col);
+        s.v.push_back(to_godot(x, y, z));
+        s.c.push_back(Color(col[0] / 255.0f, col[1] / 255.0f, col[2] / 255.0f));
+        s.uv.push_back(Vector2(uv[0] / 256.0f, uv[1] / 256.0f));
+        s.uv2.push_back(Vector2(l, float(valor::LevelRender::light_index(info, rv) + 1)));
+    };
+    if (m.skinned()) {
+        auto verts = valor::skin_vertices(m, a.inst.pose, a.inst.joints);
+        for (const valor::SkinFace& f : m.faces) {
+            Surface& s = surf[semi(f.tpage) ? 1 + blend_mode(f.tpage) : 0];
+            float l = float(layer(f.tpage, f.clut));
+            bool ok = true;
+            for (int k = 0; k < 3; k++) ok &= f.bone[k] < verts.size() && f.vertex[k] < verts[f.bone[k]].size();
+            if (!ok) continue;
+            for (int k = 0; k < 3; k++) {
+                const auto& v = verts[f.bone[k]][f.vertex[k]];
+                corner(s, v[0], v[1], v[2], f.rgb[k], f.uv[k], l);
+            }
+        }
+    } else {
+        static const uint8_t grey[3] = {128, 128, 128};
+        for (const valor::StaticFace& f : m.static_faces) {
+            Surface& s = surf[semi(f.tpage) ? 1 + blend_mode(f.tpage) : 0];
+            float l = float(layer(f.tpage, f.clut));
+            bool ok = true;
+            for (int k = 0; k < 3; k++) ok &= f.v[k] < m.static_vertices.size();
+            if (!ok) continue;
+            for (int k = 0; k < 3; k++) {
+                const auto& v = m.static_vertices[f.v[k]];
+                const uint8_t* rgb = f.v[k] < m.static_colours.size() ? m.static_colours[f.v[k]].data() : grey;
+                corner(s, v[0], v[1], v[2], rgb, f.uv[k], l);
+            }
+        }
+    }
+    add_surfaces(mesh, surf);
     return mesh;
 }
 
@@ -145,6 +274,12 @@ void ValorGame::tick(int64_t buttons, int64_t forward, int64_t strafe, int64_t t
     session_.vblanks(2);  // a 30 Hz tick is two vblanks
     session_.tick();
     session_.end_frame();
+    // The actors' animations, a frame per tick, looping.
+    for (Actor& a : actors_) {
+        if (!a.model->skinned()) continue;
+        if (!a.inst.advance()) a.inst.start(a.anim, 0, -1, 2);
+        a.inst.build(models_);
+    }
 }
 
 void ValorGame::place(double x, double y, double z, double yaw, double pitch) {

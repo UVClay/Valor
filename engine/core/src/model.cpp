@@ -345,6 +345,22 @@ std::vector<std::array<int16_t, 3>> skeleton_joints(const Model& m, const std::v
     return out;
 }
 
+std::vector<std::vector<std::array<int32_t, 3>>> skin_vertices(const Model& m, const std::vector<Quat>& pose,
+                                                               const std::vector<std::array<int16_t, 3>>& joints) {
+    std::vector<std::vector<std::array<int32_t, 3>>> out(m.bone_vertices.size());
+    for (size_t b = 0; b < m.bone_vertices.size(); b++) {
+        int16_t rot[3][3] = {{0x1000, 0, 0}, {0, 0x1000, 0}, {0, 0, 0x1000}};
+        if (b < pose.size()) quat_matrix(pose[b].data(), rot);
+        std::array<int16_t, 3> j = b < joints.size() ? joints[b] : std::array<int16_t, 3>{0, 0, 0};
+        for (const auto& v : m.bone_vertices[b]) {
+            int32_t in[3] = {v[0], v[1], v[2]}, r[3];
+            mvmva12(rot, in, r);
+            out[b].push_back({r[0] + j[0], r[1] + j[1], r[2] + j[2]});
+        }
+    }
+    return out;
+}
+
 void part_centre(const HitPartTemplate& p, const std::vector<std::array<int16_t, 3>>& joints,
                  const std::vector<Quat>* quats, int32_t eye, int16_t out[3]) {
     if (p.a == 0xFFFE || p.a == 0xFFFF) {

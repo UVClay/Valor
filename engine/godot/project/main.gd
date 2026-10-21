@@ -36,7 +36,9 @@ var screenshot := ""
 var screenshot_frame := 0
 var frames := 0
 var hud: Label
-var materials: Array[ShaderMaterial] = []
+var materials := {}  # by surface name, shared by every mesh
+var skinned := {}  # actor index -> MeshInstance3D
+var level_info := {}
 
 
 func _ready() -> void:
@@ -62,21 +64,24 @@ func _ready() -> void:
 		var p: PackedFloat64Array = String(args.place).split_floats(",")
 		game.place(p[0], p[1], p[2], p[3], p[4] if p.size() > 4 else 0.0)
 
-	var mesh := game.build_world_mesh()
-	var pages := game.get_texture_pages()
+	level_info = info
 	var world := MeshInstance3D.new()
-	world.mesh = mesh
-	for i in mesh.get_surface_count():
-		var mat := ShaderMaterial.new()
-		mat.shader = load("res://world_%s.gdshader" % mesh.surface_get_name(i))
-		mat.set_shader_parameter("pages", pages)
-		mat.set_shader_parameter("fog_near", float(info.fog_near))
-		var fog: Color = info.fog_color
-		mat.set_shader_parameter("fog_color", Vector3(fog.r, fog.g, fog.b))
-		mat.set_shader_parameter("units_per_metre", ValorGame.kUnitsPerMetre)
-		world.set_surface_override_material(i, mat)
-		materials.append(mat)
+	world.mesh = game.build_world_mesh()
+	apply_materials(world)
 	add_child(world)
+	# The models the records name, posed by the core; skinned ones are rebuilt every tick.
+	for i in game.spawn_actors():
+		var mi := MeshInstance3D.new()
+		mi.transform = game.get_actor_transform(i)
+		mi.mesh = game.build_actor_mesh(i)
+		apply_materials(mi)
+		add_child(mi)
+		if game.is_actor_skinned(i):
+			skinned[i] = mi
+	var pages := game.get_texture_pages()
+	for mat in materials.values():
+		mat.set_shader_parameter("pages", pages)
+	print("Valor: %d actors, %d skinned" % [game.get_actor_count(), skinned.size()])
 
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
@@ -108,6 +113,23 @@ func _ready() -> void:
 	add_child(hud)
 	if DisplayServer.get_name() != "headless" and screenshot.is_empty():
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func material_for(surface: String) -> ShaderMaterial:
+	if not materials.has(surface):
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://world_%s.gdshader" % surface)
+		mat.set_shader_parameter("fog_near", float(level_info.fog_near))
+		var fog: Color = level_info.fog_color
+		mat.set_shader_parameter("fog_color", Vector3(fog.r, fog.g, fog.b))
+		mat.set_shader_parameter("units_per_metre", ValorGame.kUnitsPerMetre)
+		materials[surface] = mat
+	return materials[surface]
+
+
+func apply_materials(mi: MeshInstance3D) -> void:
+	for i in mi.mesh.get_surface_count():
+		mi.set_surface_override_material(i, material_for(mi.mesh.surface_get_name(i)))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -184,8 +206,12 @@ func _physics_process(_delta: float) -> void:
 	cur_pitch = game.get_pitch()
 	var lights := game.get_light_colours()
 	if not lights.is_empty():
-		for mat in materials:
+		for mat in materials.values():
 			mat.set_shader_parameter("light_colours", lights)
+	for i in skinned:
+		var mi: MeshInstance3D = skinned[i]
+		mi.mesh = game.build_actor_mesh(i)
+		apply_materials(mi)
 
 
 func _process(_delta: float) -> void:

@@ -102,6 +102,11 @@ Quat quat_interp(const Gte& g, const Quat& a, const Quat& b, int k);
 std::vector<std::array<int16_t, 3>> skeleton_joints(const Model& m, const std::vector<Quat>& quats,
                                                     const int16_t root[3], int nbones);
 
+// The skinned vertices in model space, per bone index (the draw's skinning, for a host to render):
+// each bone's vertices turned by its own rotation and moved to its joint.
+std::vector<std::vector<std::array<int32_t, 3>>> skin_vertices(const Model& m, const std::vector<Quat>& pose,
+                                                               const std::vector<std::array<int16_t, 3>>& joints);
+
 // entity_parts_update (0x8004CEE4): a hit part's centre in model space.
 void part_centre(const HitPartTemplate& p, const std::vector<std::array<int16_t, 3>>& joints,
                  const std::vector<Quat>* quats, int32_t eye, int16_t out[3]);

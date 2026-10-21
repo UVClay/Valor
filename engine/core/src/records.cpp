@@ -110,6 +110,12 @@ bool Records::load(const std::vector<uint8_t>& d, std::string* err) {
             rec.enter = list(0x38, rec.enter_msgs), rec.leave = list(0x3C, rec.leave_msgs);
             rec.c_enter = list(0x40, rec.c_enter_msgs), rec.c_leave = list(0x44, rec.c_leave_msgs);
             rec.use = list(0x4C, rec.use_msgs);
+            // The template (an offset from the record) names the model to spawn.
+            uint32_t toff = rec.kind == 3 ? 0x74 : (rec.kind == 2 || rec.kind == 6) ? 0x60 : 0;
+            if (toff) {
+                uint32_t t = r.u32(a + toff);
+                if (t && t != 0xFFFFFFFF && a + t + 8 <= d.size()) rec.model = r.u32(a + t + 4);
+            }
         }
         records.push_back(rec);
     }

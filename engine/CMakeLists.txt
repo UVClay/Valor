@@ -28,6 +28,7 @@ add_library(valor_core STATIC
     core/src/entities.cpp
     core/src/gte.cpp
     core/src/model.cpp
+    core/src/anim.cpp
 )
 target_include_directories(valor_core PUBLIC core/include)
 target_compile_options(valor_core PRIVATE -Wall -Wextra -fno-exceptions)
