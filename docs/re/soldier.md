@@ -495,14 +495,64 @@ numbers). The stubs are filled and ~100 scripts are inserted: 1:3's 195/196/197 
 - **Papers and suspicion** (214..293, entered on `s40` 0x200, 0x1000, 0x2000, 0x1000000,
   0x10000000 → 214..218: v11 a role 0..4, v25 a voice 1..6, vA a starting suspicion, 40 with
   skill > 40). The soldier stands or walks its path (220/221) and every tick classifies the
-  player (261): seen with the papers (weapon 7) 1; seen with another weapon 2; seen with player
-  `+0x11E` = 8, 3 or 4; a sound heard (query 0x11) 5. Class 2 with the player aiming at it blows
+  player (261, into v4): **seen** (query 0xB) holding the papers (weapon 7) 1; seen with another
+  weapon 2, or 3/4 (by the soldier's `+0x29C`) when his body script is also 8 (using the item:
+  firing); **not seen** but a sound heard (query 0x11) while he fires another weapon 5; else 0.
+  Class 2 with the player aiming at it blows
   the disguise with probability skill/200 per check, else vA rises by skill-shaped rolls; classes
-  3..5 raise vA (5: blown at once for weapons 1, 2, 3, 6, 10). vA picks the behaviour (262):
-  < 10 idle, < 40 watch (235), < 70 approach and ask (242), < 90 inspect close (243), ≥ 90 →
-  246: shout, `send_event 4`, strafe, → 303 (combat). An inspection (228) waits for level
-  messages `s40` 1/2/4/8 (papers verdicts, inferred): 4 accepted, 8 refused, 1 accepted below
-  skill 40, 2 below 80.
+  3..5 raise vA (5, 257: blown at once for weapons 1, 2, 3, 6, 10; none for the silenced pistol 9;
+  vA set to 25..100 by rolls otherwise). For roles 0..2 vA picks the behaviour (262):
+  < 10 calm (241), < 40 watch (235), < 70 approach and ask (242), < 90 inspect close (243), ≥ 90 →
+  246: shout, `send_event 4`, strafe, → 303 (combat). Roles 3 and 4 stand (220 with the path
+  goal off), go to 246 only above 90, and inspect instead.
+  **Asking (242, roles 0..2)**: the player holding the papers out (weapon 7, body script 8) →
+  258: vA = 0, a gesture (226, 227, 224 or 225), a voice line (283: sound 0x47..0x4B by v25), →
+  262 → calm. No grade is checked: any papers do.
+  **Inspecting (227 → 228, roles 3 and 4)**: seen with the papers, the soldier waits in place
+  (227) until the player is within 500, then 228: `send_event 0x75`, a gesture on channel 1
+  (291) and every tick: not seen 5 times → 220 (role 4: 246); class above 1, or within 500
+  without the papers in hand → 246; beyond the hear range → 220; within 500 with the papers
+  **held out** (body script 8) → `send_event 0x33`, and the record's script (enemy_types.md, the
+  disguise levels) answers by the papers' grade with `set_flags` on the soldier: **8** refused
+  (grade 0), **1** (grade 1) accepted below skill 40, **2** (grade 2) accepted below skill 80,
+  **4** (grade 3) accepted; refused otherwise. Channel 1's gesture ending first also counts as a
+  refusal. Accepted: a gesture, a voice line (283), anim 227 → **229** (walk its path, 293, or
+  stand; the player near without the papers in hand → 230, bit 7). Refused: role 4 → anims 319,
+  318 → 246 (blown); role 3 → a gesture with sound 0x4D or 0x4F (282), anim 227, then it watches
+  (228:234): class above 2, or the papers put away within hear-third → 246; the player beyond the
+  hear range or 30 checks unseen → 220. So a refusal by a role-3 soldier is not fatal.
+
+**Watched** (the replay of 2:1, vblanks 20495..40736, deterministic; `ver_ai.py --watch --vars`
+plus the player's body script `[8009D654]+11C` and weapon `+420`, summarised by
+`tools/recon/far_papers.py`). The papers grade (level script 13) was 0 until the blue Ausweis
+(0x2F, grade 1) was picked up at 23707, and 3 from record 21's zone (0x31) at about 30933; the red
+one (0x30) at 31047 changed nothing. The verdict itself is a one-tick `+0x40` pulse the watch
+doesn't catch; it shows in the script path.
+
+| Vblank | Who | What |
+|---|---|---|
+| 20555 | record 16 (s42, role 3, skill 33, path 6) | appears, stands in 220 |
+| 20642 | | sees the player with the papers at 1376 → 227 (waits in place) |
+| 20702 | | player at 421 → 228, `send_event 0x75`, 291 on channel 1 |
+| 20707 | player | body script 8: papers held out |
+| 20709..20715 | | `send_event 0x33`; grade 0 → 0x6B → `set_flags 8`: **refused** (228:187) |
+| 20717..20889 | | anim 225 with sound 0x4D (282), anim 227, then watching (228:234) |
+| 20959 | | player 1099 away (beyond the hear range) → 220; not blown |
+| 28949 | record 16 again (respawned) | 228 at 519; body script 8 at 28967 |
+| 28974 | | grade 1 → 0x34 → `set_flags 1`, skill 33 < 40: **accepted** |
+| 28976..29126 | | anim 226, voice line (283), anim 227 → 229, walks its path (293) |
+| 31365 | record 17 (s42, role 3, skill 67, path 5) | 228 at 488; body script 8 at 31402 |
+| 31408 | | grade 3 → 0x36 → `set_flags 4`: **accepted**; waits for its own sound (289) to 31531, gestures, 229 at 31670 |
+| 32008, 32720 | records 75, 74 (s20, role 0, skill 100/67, vA 40) | 242 (ask) at 1312 and 316 |
+| 32145, 32755 | | papers held out → 258, vA 40 → 0, → 241 (calm) at 32258 and 32831 |
+| 21852 | record 25 (s90, role 0, skill 67, vA 40) | 242 two vblanks after the player switched to the silenced pistol (9): class 2, vA 60, 90 → 246 at 21866 → 303 (combat) at 21914 |
+| 33189..33223 | record 74 | player switched to 9 at 33097: 241 → 235 (vA 8, 16, 35) → 239 → 246 (class 2) |
+| 34162 | record 17 again | in 228 at 365 when the player switched to 9 (34156): → 246 at once |
+| 35343..35392 | record 16 again | 256 (class 5, heard while the player fired near it): vA 0, 22, 59, 97 → 246 → 247 |
+
+So the chain works as read: the same role-3 soldier refused the player at grade 0 and accepted
+him at grade 1 (skill 33); a refusal by role 3 only costs a scene. The player's `+0x11E` in 2:1
+took 0, 1, 7, 8, 9, 10 and 16; holding the papers out is body script 8 with weapon 7.
 
 Who sends the papers verdicts and the role messages, what bit 7 does and what the classifier's
 `+0x11E` = 8 means (the player's "use the item in hand" body script): enemy_types.md, Level
@@ -563,7 +613,9 @@ showed 0, 7, 13, 8, 10, 9, 16, 12, 1, 15 and 14.
 
 ## Open
 
-- Which of the player's actions its body scripts 3, 4 and 8 are in 2:1 (`+0x11E`, above).
+- The player's body scripts in 2:1 beyond 8 (using the item in hand: firing, or holding the papers
+  out, watched in the replay): 1, 9, 10, 16 seen there; "3, 4" in earlier notes were the
+  classifier's classes, not body scripts.
 - v22 > 200 paths (78) by level.
 - `send_event` 0x33 and 0x75 in detail (2:x); ops 0x1C/0x41 on corpses, `fall`/`accel`'s operands.
 - The other levels' script sets: enemy_types.md, Level differences.

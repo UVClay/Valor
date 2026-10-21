@@ -58,6 +58,23 @@ the menu's cross presses stopped before the level starts (vblank 8380; the level
   was heard there: 5:3, vblank 9011), so the same call sets flag 2 (unheard, as the silenced
   pistol's) on voices 1..4 (`0x8009115C + 0x34·v`); clearing `g_voice_enabled` doesn't work
   (the sound update re-sets it the next frame).
+- **Reaching parts outside the start's chunks**: a teleport only works onto a loaded chunk, and
+  zones (so triggers and streaming volumes) are found through the floor under the player, so
+  stepping through the streaming volumes by teleports needs a floor at each step. What works
+  instead is choosing the chunks: `chunk_stream` (`0x8005439C`, run every few frames from the
+  idle job `0x80090A30`) loads, one at a time, each chunk that the **current streaming record**
+  (`0x80099070`, set on entering one) names and no slot holds, into a slot holding a chunk it
+  doesn't name, about 400 vblanks per chunk. Poking `0x80099070` on the first `player_update`
+  with the address of the streaming record nearest the target (`far_stream.py DUMP X Y Z` lists
+  them with their chunks, the slots and the current one) streams those chunks while the player
+  still stands at the start (the start chunk is evicted, the player stays put); a shot's
+  teleport into the target after the loads (9400 in 5:1 and 7:1, chunks loaded at 8480, 8880,
+  9266) lands on the floor, and from there entering volumes works normally (7:1: the player
+  entered record 3's volume and its chunk 8 streamed in). A teleport on the first
+  `player_update` straight into the unloaded part hung for good (no zone, no shot fired). The
+  yaw pokes did not turn the player in these runs (he walked along the start facing); turning
+  with `--mouse FRAME:200,0` (about 300 yaw units a vblank) did. `far_tp.py` builds the pokes
+  (god mode, the streaming record, teleports on either call, the silenced shot).
 - God mode (`g_cheats` `0x800386A4` = 0x80) on the first `player_update`; level messages
   started directly by poking a slot's `+0x40` on the same call (seen at the next think).
 - New tools: `unr_spawns.py DUMP` (each soldier record: spawn behaviour bits from its script's
@@ -603,8 +620,21 @@ characters, not the player**: the low-zone boxes of its tag group send 0xF/0x10 
 character entering or leaving them (their `c_enter`/`c_leave` lists), the record counts them
 from 128 and sends 0x20 when the count is back to 128, i.e. when it (or any soldier) has
 crawled out of those zones. (Earlier text here said "the player out of every low zone": the
-player's own zone messages are 0xD/0xE, which only level script 13 handles.) Not watched: the
-crawl spaces are outside the chunks resident at 5:1's start (teleports there froze, above).
+player's own zone messages are 0xD/0xE, which only level script 13 handles.) **Watched
+(warp)** in 5:1 (record 134, own script 16; reached by streaming, Warped runs): the player
+teleported into its spawn box (trigger 135, enter 3, leave 0x60) at 9404, inside low zone 288
+(flags B 0x21000 → 0x21800), and walked out of the box: it spawned at 9408 (9900 away, its record
+point), got 0x40 from record 267 (script 86: 0x60 → 0x19, `set_home` to that box) and at 9452
+ran home (211, anim 14, 40 vblanks); at home with the player 1468 away (beyond the 1000), 212
+took the far branch (9492: `to_spawn.13`, anim 179 with shout 0xF, anim 180), then crawled
+(9590: 213 with 218 on channel 1, eye height 50, anim 180 with sound 0x23) from 1387 to 736 in
+324 vblanks, and at 9914 saw the player within ±350 → 214/219. It is a rifleman: each cycle 2..3
+shots (fire 2, sound 4) each followed by the bolt (anim 184 then 183 twice), anim 185, wait 10,
+and the fire roll every 15 ticks (219:28) when it fails; it stayed there for the rest of the run
+(to vblank 104000) with the player in the low zone. In a second run the player moved on at 10500
+(but stayed in low zone 262, stuck on a wall): the chaser lost sight at 10536 (back to 213),
+crawled after him and fired again from 609 at 10936. The player leaving every low zone (→ 230,
+engage) and the 0x20 stand-up were not reached.
 
 **Low zones and sight** (flags B 0x800, soldier.md, The player's concealment flags). Besides
 the halved sweep of query 0xB, the scripts read the flag directly (sensor 0x6B,
@@ -629,12 +659,38 @@ fire 3, each 1..3 times, until a side probe is blocked); 300..500: 20% bark and 
 1..3 × anim 15 with 175 clear behind). Fire 3 goes along its facing, which the scripts keep
 turned to the player. Hits 207/208: stagger (124/125) and continue; others (and hits by type
 0x13F7) drop it into the ordinary pain script 6. No cover.
+**Watched (warp)** in 7:1 (record 44, spawned by trigger 103; reached by streaming, Warped
+runs): spawned at 9408 when the player was teleported into the trigger 5695 away, it stood in
+211 (idle, 229 on channel 1) until the player, walking past it up the ramp, came within 1521 at
+9546 → 213: anim 286 (9546), 292 (9578), shout 0x18 and anim 287 (9640), one burst at fire 3
+(v16 = 3, anim 288, 9678..9778), 289, 292; no advance, the player being already beyond 1500
+behind it. At 9864 (player 3812 away) → 214 with the strafe-fire loop 215 on channel 1 (anims
+11, 291, 10, 291, fire 3 throughout): the strafes, facing the player, carried it **toward** him,
+3812 → 412 in 1200 vblanks (about 2.8 units a vblank). From 10968 (494) the 300..500 choices
+(216: anims 285/28, strafes 11/10, 292, 293), at 12080 (290) one back-off (217, anim 9) and back
+to 216; it kept 300..400 from the standing player to the end. Hits not tested (god mode, no
+shots). 7:3's copy (205..216, the same code) was not run.
 
 **R, technician** (9:4 225, `s40` 0x200000): never fights: no hit events, weapon hidden, waits
 50 ticks, walks its path (anim 334), works at the end (anims 323..333); a second 0x200000 (level
 script 34's msg 0x98, from a counter reaching 44 in script 72) makes it leave: walks off (anim
 330), health percent -1, drops its grenade attachment bit (op 0x29 0x20000000), removed. (By the
-rocket, inferred.) 9:4's 196..206, a holdout shooter on `s40` 0x800000, is registered but no
+rocket, inferred.) **Correction**: it also leaves **on its own** after one work cycle (225:180 →
+202, the same exit as the message: 50% two anims 324 and one or two 329 first), and with path id
+5 it walks until the path's end event (0x800000), otherwise five cycles of anim 330, before the
+removal. **Who spawns it** (9:4 has no streaming records, so everything is resident): the
+records 30..32 have no trigger; their tag group 0x1000E is record 0's (level script 72), which
+on message 0x3E starts counting the periodic 0x59 (about 3 a second) and sends **3** (spawn) at
+10, 0x98 (leave) at 44 and 0x20 at 53. 0x3E comes from record 35 (the kind-2 object with script
+39) after 126 periodic messages, counted from 0x2C, which is the **Use list of record 5** (a
+box at (1291, 313, 937)). **Watched (warp)**: the player teleported into record 5 on the first
+`player_update` and pressed Use at 8700: the technicians of records 32 and 30 spawned at 11462
+and 11468 (two free slots), anim 0 and the 50-tick wait (to 11574/11580), walked their paths
+(anim 334) to 11764/11854, worked (332, then 323, 327, 329, 324 or 333), and both turned to
+leave (anim 330) at 12136, the 0x98 tick (674 vblanks after the spawn: 34 periodic messages,
+19.8 vblanks each); removed at 12328 and 12386. Record 31 had waited for a slot and spawned at
+12334 in the first one freed (after its 0x98, so only the work cycle sends it away): path to
+12637, work (332, 328, 325, 324, 329) and anim 330 at 13189, removed at 13385. 9:4's 196..206, a holdout shooter on `s40` 0x800000, is registered but no
 level script sends that bit: unused.
 
 **The disguise levels** (2:1, 2:2, 3:1; soldier.md, 2:1's soldier). 2:2 = 2:1 plus P (registered
@@ -650,7 +706,12 @@ within 500 holding the papers (weapon 7) out (`+0x11E` = 8); the record asks the
 rises when papers pickups or a zone send 0x2F/0x30/0x31), and the record sets the verdict on
 its soldier: `set_flags` 8 refused, 4 accepted, 1 accepted below skill 40, 2 below skill 80.
 Only the records holding that chain (2:1's s42 and s113; 3:1 also s103) can give a verdict: their
-soldiers have roles 3 and 4; an inspection by others times out (inferred). Message **0x1E** (a
+soldiers have roles 3 and 4, and only roles 3 and 4 inspect (227 goes to 228 only for v11 ≥ 3).
+**Correction** (an earlier line here said an inspection by others times out): soldiers of roles
+0..2 never run 228; they ask in 242 and **any papers held out satisfy them** (258: vA = 0, a
+gesture and a voice line, then calm in 241), whatever the grade. Watched in the replay of 2:1
+(soldier.md, Papers and suspicion: refused at grade 0, accepted at grades 1 and 3, role-0
+soldiers calmed by the papers). Message **0x1E** (a
 role-1 soldier whose suspicion vA reaches 40, or entering certain zones) makes every other
 subscriber's suspicion rise (`s40` 0x20000 → 244: vA += 20..21); **0x1F** (zones) calms them
 (`s40` 0x40000 → 245: 5% calm at once, else vA -= 0..20). Record 20's script toggles its
@@ -728,15 +789,14 @@ firing"; soldier.md's "+0x11E = 8, 3 or 4" reads as the classes.
 - The 0x1407 weapon's identity (enemies.md calls it a pistol, soldier.md an MG; its burst is 11
   shots 12 ticks apart).
 - Mission indices 6 and 8 crash when warped to: whether the shell ever maps to them.
-- Not reached in play: the assault soldiers (X: 7:1, 7:3) and the crawl-space chaser (C: 5:1),
-  whose areas are outside the chunks resident at the level start, so warped teleports froze
-  there; the technician (R: 9:4; its records have no trigger and nothing seen activates
-  them); the low-wall nodes (L: approach side 4; no soldier took one in the runs); the papers
-  chain (2:1: the role-3 soldier, record 16, stayed in its stand script 220 2267 away while the
-  player, after a circle press (the weapon switch to the papers, not checked), held cross; it never
-  came to inspect); the sentry's "aimed at"
-  branch (204); the foxhole's pop-up fire; a worker's full work cycle; the dog's 16 and 35.
-  Watched only in part: workers (W), low-zone sight (above).
+- Not reached in play: the low-wall nodes (L: approach side 4; no soldier took one in the
+  runs); the sentry's "aimed at" branch (204); the foxhole's pop-up fire; a worker's full work
+  cycle; the dog's 16 and 35; 7:3's assault soldiers (7:1's watched); role-4 inspections and
+  2:2/3:1's papers (2:1's role-3 chain and role-0 checks watched, soldier.md). Watched only in
+  part: workers (W), low-zone sight (above), the crawl chaser (C: no stand-up, no engage on the
+  player leaving the low zones), the assault soldier (X: no advance, no hits). Reached since:
+  X, C (by streaming the chunks, Warped runs), the technician R (via record 5's Use) and the
+  papers chain (the replay).
 
 ## Names
 
