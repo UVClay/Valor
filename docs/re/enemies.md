@@ -46,7 +46,7 @@ A variable id is 9 bits:
 | 0x65 | The player's current weapon (`inv+0x55`) |
 | 0x66 | The player's `+0x11E` |
 | 0x67 | The player holds fire (action 0) |
-| 0x68 | The entity's node (`+0xFC`, 1..23) is usable: not taken (`+0xE`), enabled (`0x800910D0`), and not flagged |
+| 0x68 | The entity's last sound is still playing: its voice (`+0xFC`, 1..23) is enabled, a one-shot, positional and younger than 120 frames (audio.md) |
 | 0x69 | The alarm entity (`g_alarm`, `0x80097FE0`), 0 if none |
 | 0x6B | The player's flags B & 0x800 |
 | 0x6C | The player's weapon-block bit 1 |
@@ -149,7 +149,7 @@ weapon kind indexes the table at `0x80097FF0` (48 bytes each):
 |---|---|---|---|---|---|
 | 0 | 0x1401 | SMG | 4 ticks | 32 | 10-20 ticks |
 | 1 | 0x1406 | Rifle | - | 1-2 | 30-60 ticks |
-| 2 | 0x1407 | MG? | 12 ticks | 11 | 10-20 ticks |
+| 2 | 0x1407 | Pistol (fires the pistol sound, audio.md) | 12 ticks | 11 | 10-20 ticks |
 | 3 | 0x1773 | Panzerfaust (`rocket_spawn`) | - | 1-2 | 90-180 ticks |
 
 A shot is a `bullet_spawn` of type 0x13F4 aimed at the target's position raised by half its

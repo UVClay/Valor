@@ -194,7 +194,7 @@ arguments in push order):
 | 10 | tags_match | 5 → 1 | two records' tag lists share a tag past a value |
 | 11 | set_home | 2 | the entity's home (`+0x3A4`) from another entity or a record |
 | 12 | send_to | 3 | (entity, object, message) |
-| 13 | level_set | 2 | (what, value): 0 fog near, 1 start the music, 2 primary objectives complete (`g_bPrimaryObjectivesComplete`), 3 level end flags (`0x8009C840` \|= 0x24), 4 `0x8005F068` |
+| 13 | level_set | 2 | (what, value): 0 fog near, 1 start the music, 2 primary objectives complete (`g_bPrimaryObjectivesComplete`), 3 level end flags (`0x8009C840` \|= 0x24), 4 raise an alarm, or end the one sounding (`alarm_from_level`, `0x8005F068`; audio.md) |
 | 14..17 | objective_add / remove / complete / is_complete | 2, 1, 1, 1 → 1 | (text, id), ... |
 | 18 | world_anim_step | 1 | step the animated world textures of that group (modes: once, random, loop, reverse) |
 | 19 | sound | 7 (→ 1) | (..., mode): pushes a handle when the mode is 3 |

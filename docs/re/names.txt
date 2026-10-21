@@ -16,6 +16,8 @@
 8001BAA0 InitGeom
 800385A8 g_overlays                 # {name, file, entry} x3
 800385CC g_game                     # persistent game state (survives overlay loads), player.md
+8003864C g_music_volume             # 0..6
+80038658 g_music_alt                # 1: play mM_La.vb (SHELL audio menu)
 80038660 g_game_mission             # g_game+0x94, 0-based
 80038664 g_game_level               # g_game+0x98, 0-based
 800386A4 g_cheats                   # bits: 0x10 rapid fire, 0x20 big bullets, 0x40 free throws
@@ -44,7 +46,28 @@
 800408B4 brain_goto_point           # goal 0x1000: distance into a variable, arrive radius brain+0xA8
 80040A0C brain_follow_path          # goal 0x2
 80040DF4 brain_update               # entity+0x38C: goals set by script op 0x2F
+80041260 sound_init                 # SsInit, master/CD volume, banks forgotten, SPU allocator 0x1010, music ring
+800412E0 sound_stop_all             # voice_stop on 1..23 (level_load)
+8004131C sound_reset                # stop all, forget the banks, allocator back to 0xB010
+8004137C sound_update               # per frame: key-ons, ages (351), follow entities, fades, re-pan every 4th, loops
+800418B8 bank_forget
 800418E4 vab_upload                 # (vab, bank 0..7): sample-only VAB to SPU RAM
+80041AA0 voice_alloc                # first of 1..23 not looping and off/releasing; -1 none
+80041B04 voice_start                # volume, pitch with spread, start address, ADSR, queue key-on
+80041CE8 sound_play                 # (bank, sound, entity, vol, vol_spread, pitch, pitch_spread, fade_in, loop, class, flags) -> voice
+80041FC4 sound_play_voice0
+80042250 sound_restart              # sound_play on a given voice (loops)
+8004249C sound_fade_entity          # (entity, frames)
+800425C4 voice_stop
+80042664 voice_release
+8004270C bank_tone_pitch
+80042790 banks_clear
+800427F4 sound_listener_vec         # source - listener, through the camera matrix (scaled 2, 1.25, 2)
+80042998 sound_falloff              # (distance, class) -> gain 0..4096 x effects volume >> 7
+80042AA4 sound_pan                  # (voice, &left, &right, class)
+80042DF8 explosion_sound            # 0:9/10, two or three layers
+8004301C ammo_add                   # (soldier, slot, amount); plays the weapon's reload sound
+80043140 impact_sound               # 0:0..6 and sparks
 80043AD4 bullet_touch               # touch(bullet, other): exact hit test, effects, target's handler
 8004532C projectile_create          # +0xF8 damage
 80045A78 bullet_spawn               # bullets are entities at 600-669 units/tick
@@ -80,6 +103,9 @@
 8005163C enemy_weapon               # bursts, aim error +0x38C->+0xC8
 80052D70 record_activate            # level built-in 4: once (bit 0), spawns the record's entity
 80052DC4 level_set                  # level built-in 13: (what, value): 0 fog near, 1 music, 2 primary objectives complete, 3 level end?
+80052F14 lvl_explosion              # level built-in 6
+800533D4 lvl_sound                  # level built-in 19 -> sound_play
+80053444 lvl_sound_stop             # level built-in 20 -> voice_stop
 80053464 show_text                  # level built-in 8: a message-table text on screen
 8005351C record_has_tag             # level built-in 9
 8005372C objective_add
@@ -109,16 +135,21 @@
 80057C24 path_find                  # path id -> index in g_paths
 80057C8C path_nearest_point         # (e, path): index of the nearest point
 80057D9C script_op_anim             # op 00: anim N (mode in bits 12-15) frames A..B; mode 1 fade, 2 cut
+80058420 op_sound                   # model script op 02
 8005AB04 brain_release_node         # frees the node brain+0xB6 claimed
 8005ABA0 brain_reset_gait           # speed 1.0, gait 0, no slow-down
 8005ABEC brain_clear_moves          # goals &= ~0x5C03
 8005AC00 op_behaviour               # enemy script op 0x2F
+8005C710 op_alarm                   # model script op 0x49
 8005C97C set_var                    # (entity, var, value): script variables, enemies.md
 8005CBA8 get_var                    # (var, entity): 0x60-0x7F sensors, else variables/flag bits
 8005D148 script_operand             # (n, mask, value, entity): variable or literal
 8005D18C script_step
 8005D32C destructible_touch         # type 0x1770: damage, message 1 at 0 health, objects-destroyed count
 8005DA24 mounted_gun_think          # MG emplacement operated by the player
+8005EA54 alarm_spawn
+8005EDF8 alarm_think
+8005F068 alarm_from_level           # level_set(4, id)
 8005F28C text_add                   # (text, x, y, scale, r, g, b, ticks, id, ...): 32-byte entries at 0x80099F4C, at most 50
 8005F69C texts_update               # on-screen texts: lifetime, colour fade
 80061350 spawn_by_type              # (record, spawner): by spawner+0xFC
@@ -184,12 +215,14 @@
 8007C1D0 player_hit_part
 8007CF4C throw_weapon
 8007D5C8 fire_gun
+8007DD4C weapon_draw
 8007F084 center_view
 8007F300 player_controls
 80080240 stat_kill                  # (attacker, n)
 80080304 stat_wounded
 80080328 stat_hit
 8008034C stat_melee
+80080380 weapon_holster
 8008080C model_draw_static          # model +0x2C faces, 10-bit packed vertex indices
 80080DD4 model_draw_skinned         # face tables / bones (inferred from the fields it reads)
 800824D0 model_render               # skeletal models -> 0x80082948 -> skinning
@@ -215,10 +248,18 @@
 80086F98 zones_parse                # BSD +0x598 -> g_zone_records
 80087080 model_relocate
 80087308 level_load                 # reads the TAF and BSD, relocates, builds spawners
+80087FA0 casing_think
+80088040 casing_spawn
 80088744 stars_init                 # 255 stars, height from g_level+0x58F
 800888C4 sky_init                   # moon from g_level+0x594/+0x596
 80088980 sky_gradient_init          # 16 POLY_G4 strips, colour g_level+0x58C..+0x58E
+8008A6A8 music_ring_init
+8008A6D8 music_transfer_done        # rewinds at the end of the file
+8008A7B8 music_irq
 8008A838 music_start                # streams a .VB into a 2 x 0x5000 SPU ring
+8008A9E4 music_rewind
+8008AA38 music_voice_on
+8008AB48 music_stop
 8008B3E8 tsp_walk
 8008BF00 tsp_draw
 8008C718 tsp_load_async             # streaming: slot -> 0x800AA184 until read
@@ -230,8 +271,13 @@
 8008E354 entity_bone_point          # (entity, bone, out, offset): a point on a bone in the world
 8008E9DC entity_in_view             # bounding sphere against the view (inferred)
 80090B90 present
+80090FC8 g_keyon_pending
+80090FCC g_pan_phase                # 0..3, positional voices re-panned on 3
 800910D0 g_voice_enabled            # a byte per SPU voice (bit 0: in use)
+800910E8 g_bank_spu                 # 8 SPU addresses; +0x20 size-table pointers, +0x40 loaded flags
 8009115C g_voices                   # the 24 SPU voices' state, 0x34 each (audio.md)
+8009163C g_bank_pitch               # base pitch per (sound, slot), 256 x 8 u16
+8009263C g_bank_sizes               # 8 x 0x200: the VAB size tables
 80093640 g_weapons                  # 13 x 0x44 weapon definitions, player.md
 800939F4 g_params                   # "PARAMETER DATA": mission, level, mode, music, sound, ...
 80097FCC g_last_vsync
@@ -246,8 +292,11 @@
 8009A5D8 g_frame_count              # +1 per game_frame (displayed frame)
 8009A5DC g_tick
 8009A5E0 g_paused
+8009A608 g_music_requested
+8009A60C g_level_starting
 8009A618 g_taf_variant              # TAF digit (cheat bit 0x2)
 8009CC64 g_level                    # the BSD level header
+8009CC74 g_music_started
 8009D5AC g_level_scripts
 8009D5C0 g_level_builtins           # 22 level script built-ins (levels.md)
 8009D61C g_update_stamp
@@ -269,6 +318,10 @@
 8009EABC g_skin_cursor              # next free skinned vertex (from 0x800AB148)
 8009EC54 g_model_count
 8009EC58 g_models                   # 0x100 bytes each: +0 hash, +0x94 script, +0xB8 scripts, +0xFC entity type
+800A0128 g_music_irq_flag
+800A012C g_music_left               # bytes of the file still to play
+800A0130 g_spu_alloc
+800A0134 g_music_ring               # two SPU addresses, +0x1C the half to refill
 800AA178 g_pvs_b                    # camera leaf's mask B; nodes need +0x10 & this
 800AA17C g_pvs_a                    # camera leaf's mask A; nodes need +0x14 & this
 800AA184 g_chunk_loading            # slot being streamed (-1: none), skipped by draw/collision

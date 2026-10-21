@@ -121,8 +121,9 @@ player is within 1000 in any direction (v7, 44:39). No skill roll.
 
 **Hearing** (query 0x11, `0x8005A574` around `0x8005A9C4`) goes through the sound system's voice
 table (`g_voices`, `0x8009115C`: the 24 SPU voices, 0x34 bytes each; audio.md). A soldier hears a
-voice when it is enabled, a one-shot (`+0xE` = 0), started less than **60 ticks (2 s)** ago,
-positioned in the world (`+0x0` bits 0..1 clear), not made by the soldier itself (the voice's
+voice when it is enabled, a one-shot (`+0xE` = 0), started less than **60 frames** ago (the age counts drawn frames:
+2 s at the game's normal 30 a second), positioned in the world (`+0x0` bit 0 clear) and not
+flagged unheard (bit 1: the **silenced pistol's** shots, weapon flag 0x10; audio.md), not made by the soldier itself (the voice's
 source handle at `+0x4`), and within **brain `+0xB0`** of it (1500 in the dumps; 3000 without a
 brain), measured from the sound's position (`+0x2C`) with `dist_approx`. Any such sound counts,
 the player's shots and other soldiers' alike, so gunfire draws every soldier within range for two
