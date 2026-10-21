@@ -180,6 +180,8 @@ class Engine:
         engine_objects.register(self)
         import engine_projectile
         engine_projectile.register(self)
+        import engine_combat
+        engine_combat.register(self)
         self.logic.adopt()
 
     # -- notes: what the engine left out, kept to report

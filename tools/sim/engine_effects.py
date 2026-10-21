@@ -200,7 +200,109 @@ def sound(vm, snd, pitch, pspread, vol, vspread, bank, flags):
     m.w32(e + 0xFC, eng.audio.play(bank, snd, e, vol, vspread, pitch, pspread, 0, loop, 0, 0))
 
 
+# ---------------------------------------------------------------- the other effects
+
+def hit_parts_set(m, e, mask, kind, radius, damage):
+    """0x8004C64C: the parts whose +4 bits meet the mask get the kind (+8; < 0: the default +0xC),
+    the damage (+0x10; < 0: +0x14) and the radius (+0x34, squared +0x38; < 0: +0x30)."""
+    pp = m.u32(e + 0x304)
+    for i in range(m.u16(e + 0x36)):
+        q = pp + 0x48 * i
+        if not m.u32(q + 4) & mask:
+            continue
+        if kind > 0:
+            m.w32(q + 8, kind)
+        elif kind < 0:
+            m.w32(q + 8, m.u32(q + 0xC))
+        if damage > 0:
+            m.w32(q + 0x10, damage)
+        elif damage < 0:
+            m.w32(q + 0x10, m.u32(q + 0x14))
+        if radius > 0:
+            m.w32(q + 0x34, radius)
+            m.w32(q + 0x38, s32(radius * radius))
+        elif radius < 0:
+            r = m.s32(q + 0x30)
+            m.w32(q + 0x34, r)
+            m.w32(q + 0x38, s32(r * r))
+
+
+def hit_part(vm, mask, kind, radius, damage):
+    """Op 0C (0x80058AB4): configure hit parts (a melee attack); for the player an attack kind
+    counts a melee statistic, any other clears flags A 0x10000000."""
+    m, e = vm.m, vm.e
+    hit_parts_set(m, e, mask & 0xFFFFFFFF, s32(kind), s32(radius), s32(damage << 16))
+    if m.s32(e + 8) == 1:
+        if kind in (9, 5, 6):
+            vm.eng.note("stat_melee not implemented")
+        else:
+            m.w32(e + 0xC, m.u32(e + 0xC) & 0xEFFFFFFF)
+
+
+def hit_part_reset(vm):
+    """script_start on channel 0: every part back to its defaults (0x8004C64C(e, -1, -1, -1, -1))."""
+    hit_parts_set(vm.m, vm.e, 0xFFFFFFFF, -1, -1, -1)
+
+
+def remove_self(vm):
+    """Op 17 (0x8005926C): entity_remove; the flag 0x80099EC0."""
+    vm.eng.remove(vm.e, "remove_self")
+    vm.m.w32(0x80099EC0, 1)
+
+
+def model_variant(vm, v):
+    """Op 1C (0x800594AC): the instance's variant (+0x68, which mesh is drawn)."""
+    inst = vm.m.u32(vm.e + 0x100)
+    if inst:
+        vm.m.w32(inst + 0x68, v)
+
+
+def prop(vm, sel, value, typ, grp, tgt):
+    """Op 1F, sop_property (0x80059718): a field of the entity (or of the first of type/group)."""
+    m = vm.m
+    t = tgt & 0xFFFFFFFF
+    if t == 0:
+        t = vm.e
+        if s32(typ) != -1 and s32(grp) != -1:
+            from engine_sense import find_type_group
+            t = find_type_group(m, s32(typ << 24) >> 24, s32(grp << 24) >> 24)
+    if not t:
+        vm.eng.note("property of a missing entity")
+        return
+    value = s32(value)
+    if sel == 1:
+        m.w32(t + 0xF4, value)
+    elif sel == 2:
+        for k in range(3):
+            m.w32(t + 0x270 + 4 * k, value)
+    elif sel == 3:
+        m.w32(t + 0x2D4, value)
+    elif sel == 4:
+        m.w32(t + 0x294, value >> 16)
+        m.w32(t + 0x290, value >> 16)
+    elif sel == 5:
+        m.w32(t + 0x44, value >> 16)
+    elif sel == 6:
+        m.w32(t + 0x48, value >> 16)
+    elif sel == 19:
+        m.w16(t + 0x2E8, value >> 16)
+    elif sel == 20:
+        m.w16(t + 0x2EC, value >> 16)
+
+
+def send_event(vm, msg):
+    """Op 43 (0x8005C210 -> send_event -> msg_send): a level message with the entity as sender."""
+    eng = vm.eng
+    eng.logic.send(msg & 0xFFFF, eng.ents.get(vm.e), 0, None, src="send_event")
+
+
 EFFECTS = {
+    "hit_part": hit_part,
+    "hit_part_reset": hit_part_reset,
+    "remove_self": remove_self,
+    "model_variant": model_variant,
+    "property": prop,
+    "send_event": send_event,
     "sound": sound,
     "root_motion": lambda vm: root_motion(vm),
     "anim": anim,

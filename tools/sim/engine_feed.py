@@ -140,6 +140,7 @@ FN = {
     "pellet": (0x80045F14,),
     "fire_gun": (0x8007D5C8,),
     "player_hit": (0x8007C1D0,),
+    "enemy_hit": (0x80055864,),
     "player_death": (0x80079D10,),
     "helmet": (0x80051200,),
     "mounted_gun": (0x8005DA24,),
