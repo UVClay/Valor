@@ -282,7 +282,7 @@ within the 1200), or a soldier with fewer than 3 warned and within 1000; with 3 
 the nearest soldier gets 0x20 (smother) instead. So a dog nearest to a rolling grenade always
 goes for it.
 
-**The dog survives its own grenade while biting.** Damage between two parts
+**The dog survives its own grenade while biting.** (Seen only in the recomp, with god mode and a teleported player; disputed from memory of the original, where the dog dies: to be checked on the original, see Open.) Damage between two parts
 (`damage_from_hit` `0x8004C1B4`) is refused when either part is kind **8**, and an attacker
 with flags B 0x20000 (the dog: 0x68000) has its attack parts (kinds 5, 6, 9) turned to kind 8
 by `0x8004A868` once one of them lands. `parts_touch` (`0x8004C990`) reports only the first
