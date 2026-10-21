@@ -68,6 +68,21 @@ of 0x3C × n for the script channels (`+0x124`, `+0x198`). Then the handle, defa
 (`0x8006B350`: health 100.0, scale 1.0, `+0x290`/`+0x294` 1, every handler 0, animation -1,
 both script channels empty, on the ground), and the instance from the model.
 
+Exactly (`entity_create(flags, object size, model hash, instance flags, parts, channels, list,
+model)`): with a model hash (≠ -1) the model is found (`model_find`), and refused if missing;
+flags & 5 gives an animation instance (0xB0 bytes) **with or without a model** (the shell
+casing has one and no model: its instance fields read -1/0 from the defaults); flags & 2 takes
+the part count from the argument, otherwise (with a model) from the model's `+0xBE`. The block
+is allocated from the character pool for model types 0x1402/0x1405, else from the heap; the
+handle, `+0x390` = 0xFFFF, `+0x394` = 0, `+0x398` = 0xFFFF, `+0x39C` = 0, the pointers in the
+order object, instance, parts, list (`+0x2EE` its count), the two channels' tables; the
+defaults (`0x8006B350`, which clears `+0x36`, the part count); then `model_instance_init`
+when there is a model. **Only `model_instance_init` sets `+0x36`** (from the model), so a
+model-less entity created with parts (projectiles: 2) has the memory but a count of 0.
+`model_instance_init` (`0x8006A96C`) also copies the model's `+0xA4..+0xAC` into the scale
+`+0x270..+0x278` and the **word** at model `+0xA0` into the eye height `+0x2D4` (16.16: the
+height is the model's halfword at `+0xA2`; reading `+0xA0` as a halfword gives 0).
+
 - **Characters** (model type 0x1402 soldier, 0x1405 dog) come from a **pool of 5 fixed slots**
   of 0x2814 bytes at `0x800B7B08` (`char_alloc`, `0x8008EEF0`): the entities are always at
   `0x800B7B08 + i × 0x2814`. A slot's last two words are a release countdown (`+0x280C`: -67
@@ -238,7 +253,12 @@ For each entity, in list order, parents first:
 2. Riding: with a parent (`+0x2C`), add the parent's movement this tick (position delta,
    angle delta, and its rotation applied to the offset) to `+0x1F0`/velocity. A dead parent
    (flag 0x80000) or attachment bit 0 detaches it (`0x8006D84C`).
-3. `think(e)` (`+0x36C`).
+3. `think(e)` (`+0x36C`). `entities_update` reads the entity's `next` **before** this call,
+   so an entity linked at the end during the think of the last one is not updated in that tick.
+   If the think removed the entity, nothing else runs for it. Then the event words `+0x38`,
+   `+0x3C`, `+0x40` are cleared: what was set during the think (and before it, in the last
+   tick's collisions) is gone, what `entity_move`, the collisions and later thinks set this tick
+   stays for the next think.
 4. Attached (`+0x30`): position = the target's bone `+0x34` (`0x8008DABC`).
 5. Otherwise, unless flag 0x20000: `entity_move` (`0x8006C83C`), then `world_contact(e, flags)`
    (`+0x378`) if anything was hit; player and walkers also `0x800845A8`.
@@ -278,6 +298,22 @@ bit with A's mask:
   `hit_part(B, part, A, -1)`; if none of them returns non-zero (the bullet goes on), the next
   nearest. A bullet's whole path is tested each tick: nothing is skipped however fast it flies.
 - Afterwards, with flag B 0x8: `world_contact(A, 0)`.
+
+Exactly: the outer loop reads A's `next` first; A is skipped when removed or flagged 2 in flags
+B. A box pair needs B not removed, B's flags B without 2 and 4, A's mask & B's flags A, and
+`spheres_touch` ((rA + rB)² - |cA - cB|² > 0, the centre differences as s16); after the two
+touches `parts_touch` marks **every** touching pair of parts (part +0 = 1, `+0x314` = the
+overlap r² - d², on both) but reports the first (A's lowest part, then B's); after the two
+`hit_part` calls a removed A stops its loop. A swept A tests **every** entity from the list's
+head (not only those after it), itself excepted, with the same conditions; its direction u =
+`VectorNormalSS` of the integer path (`+0x20C` - `+0x258`, >> 16 as s16), or the forward column
+of its matrix for a path of no length; |path|² from the GTE. Without flag B 0x80000 each
+crossing is handled at once (`touch(A, B)`, then `segment_parts` and the two `hit_part`
+calls with -1 for A's part), stopping when A is removed. With it the list `g_hit_list` gets
+{entity, key (s16), part (-1 for an entity without parts), done}; the nearest is handled, and
+while all three calls return 0 the next is the smallest key ≥ the last one among the entries
+not done and not that entity. `segment_parts` marks every crossed part (+0 = 1; the target's `+0x314` = |d|² - r² for a
+start inside the part, else r²) and reports the lowest-numbered.
 
 ## Shapes: spheres
 

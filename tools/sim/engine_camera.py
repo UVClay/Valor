@@ -93,7 +93,7 @@ def view_lookat(m, co, look, eye, side):
     up = gt.outer_product12(f_n, s_n)
     right = gt.outer_product12(up, f_n)
     M = [[s16(right[k] * 2) for k in range(3)],
-         [s16(int(up[k] * 5 / 8) * 2) if False else s16(_cdiv(up[k] * 5, 8) * 2) for k in range(3)],
+         [s16(_cdiv(up[k] * 5, 8) * 2) for k in range(3)],
          [s16(f_n[k] * 2) for k in range(3)]]
     base = co + 0x100
     for i in range(3):

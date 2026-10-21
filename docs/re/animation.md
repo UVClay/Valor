@@ -120,6 +120,14 @@ joints of the soldier at `0x800BA31C` (mid_14000) from its quaternions and the b
 gives the joints in RAM within 22 units in total with the transposed matrix, 1244 with the
 textbook one.
 
+**A point on a bone** (`model_bone_point`, `0x8008DABC(e, inst, bone, out, offset)`): without
+joints (instance `+0x84` 0) the entity's integer position. Otherwise the bone's joint (instance
+`+0x94`, 8 bytes per bone), plus, with an offset, the bone's quaternion matrix (from `+0x88`)
+applied to it (>> 12); then into the world by the entity's matrix `+0x340` and the integer
+translation `+0x354` (s16 results). **For the player's soldier (type 1) the camera object's eye
+offset (`+0x94`, the halfword) is added to y**: the first-person arms and gun hang from the eye,
+so the gun points `aim_update` and `fire_gun` use move with crouching (combat.md).
+
 **Key frames.** Only every 2nd or 4th frame stores quaternions; in all models of mid_14000 and
 mid_50000 the gaps are 2 (one frame between, at ½) or 4 (three frames, at ¼, ½, ¾), never
 anything else. Frame 0 and the last frame are keys. Animations that must be exact (the

@@ -78,7 +78,10 @@ music are dry. Master volume 0x3FFF both sides.
 24 SPU voices. **Voice 0 is the music**; voices 1..23 play effects. Their state is `g_voices`
 (`0x8009115C`, 24 × 0x34 bytes), with a status byte per voice in `g_voice_enabled`
 (`0x800910D0`) refreshed every frame from `SpuGetAllKeysStatus` (0 off, 1 on, 3 keyed off but the
-release still sounding).
+release still sounding). **`voice_start` itself sets the status to 1 at once** (before the
+key-on is even sent), so a sound started during a tick is "playing" for every later think of
+that tick: hearing (query 0x11) and `+0x68` see it immediately. A one-shot reads 1 while it
+plays, 3 for one update once it ends, then 0 (the voice free again from 3).
 
 | Offset | Type | Meaning |
 |---|---|---|

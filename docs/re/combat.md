@@ -11,20 +11,125 @@ fire through the same spawners. With an empty clip it does nothing.
    whether the shot is aimed at the aim point: stances 0, 1, 7, 8 yes (`projectile_aim_at_point`),
    2..6 and 9 no (the scope or the gun's bones, below). It is not an accuracy setting: nothing
    changes the spread.
-3. **The shot**, through a jump table on the weapon (`0x8003D240`):
-   - Most guns: one bullet, `bullet_spawn` (`0x80045A78`), type `0x13F6` (weapon 11: `0x13F7`).
-   - Shotgun: six pellets, `pellet_spawn` `0x80045F14` (type `0x13F7`, damage 2.0 each; flags B
-     `0x24`: swept but **not** nearest-first, below).
-   - Bazooka: a rocket, `0x80045CA0` (type `0x13F1`).
-   - Weapons 1, 6 and 11 (the SMGs and the BAR) also climb recoil (`inv+0x50` += 1.0, up to
-     1.0) and have spread 2^11 (measured: player.md, Weapons in play).
-4. **Noise.** `0x8004D8DC(soldier+0x152, 0, 100, 3)` (7 for some weapons): the shot is heard by
-   enemies (enemies.md, to come).
-5. **Effects.** Muzzle flash (`0x8006DCA0(inv+0x1D4)`), the weapon's sound (`0x80041CE8`;
-   louder for weapons 5 and 11), and with ~49% chance `0x80088040` (a shell casing) unless the
-   weapon's flag 0x10 is set.
-6. **Ammo.** One round off the clip; at 0 the reload starts (`0x8005C97C(soldier, 0x10, 1)`).
-7. **Refire.** `inv+0x44/+0x48` = the weapon's delay (cheat 0x10 shortens it).
+3. **The shot**, through a jump table on the weapon (`0x8003D240`, 13 entries; the damage is
+   the weapon table's `+0x2C` unless given):
+   - Weapons 0, 5, 8, 9: one bullet, `bullet_spawn` (`0x80045A78`), type `0x13F6`.
+   - Weapon 12: the same with damage 2.5 (0x28000) passed directly.
+   - Weapons 1, 6, 11 (the SMGs and the BAR): one bullet of type **`0x13F7`** with spread 11
+     (below), and the recoil climb `inv+0x50` += 1.0, at most 1.0.
+   - Weapon 4 (shotgun): six pellets, `pellet_spawn` `0x80045F14` (type `0x13F7`, damage 2.0
+     each; flags B `0x24`: swept but **not** nearest-first, below); its fire sound's volume
+     0x20000.
+   - Weapon 2 (bazooka): a rocket, `0x80045CA0` (type `0x13F1`).
+   - Weapons 3, 7, 10: nothing here (thrown: `throw_weapon`; 7 has its own case in
+     `player_weapon_update`).
+   Every bullet call is `bullet_spawn(soldier, boneA, boneB, 0, 0, offA, offB, damage, spread,
+   aimed, type, 0x2000, 0x20, 0x08000450)`; the bones are the weapon table's `+0xC`/`+0xE` as
+   `player_weapon_update` passes them, replaced by the body model's `+0xD4`/`+0xD6` and offsets
+   `+0xD8`/`+0xE0` when the instance's `+0x84` is set. The shots counter `0x80039CA8` += 1
+   before the shot.
+4. **Rumble** (`0x8004D8DC(port = inv+0x152, 0, 100, 3 (7 for the rocket and pellets), 0)`,
+   not enemy hearing): by the vibration setting `0x80093A04` (0 off: nothing; 1 the strength
+   halved; 2 three quarters; 3 full) it writes the port's two bytes at `0x80093BE8 + 2·port`
+   (0, strength), `0x80093BFC + 4·port` = the duration, `0x80093BF4 + 4·port` = (1 << 0) - 1.
+5. **Effects**, in this order: the projectile's `+0x3CA` = the weapon; unless `inv` word 0 has
+   0x200040, the muzzle flash (`0x8006DCA0`: `inv+0x1D6` = 1); the weapon's sound if its
+   `+0x14` ≥ 0: `sound_play(bank +0x16 (< 0: the body model's +0xC8), sound, soldier, 0x17FFF
+   (0x20000 for weapons 4, 5, 11), 0, pitch 1.0, pitch spread 0x1800, 0, 0, class 0,
+   flags (weapon flags >> 3) & 2)`; then, unless weapon 7 or weapon flag 0x10, one `rand()`:
+   `rand·100 >> 15 ≥ 51` → a shell casing `casing_spawn(soldier, soldier's position, pitch
+   1.25)` (below).
+6. **Ammo.** The clip `inv+0x66 + 2·slot` -= 1; at 0 variable 0x10 = 1 (the reload).
+7. **Refire.** `inv+0x44` = `inv+0x40` (the delay set by the weapon), `inv+0x48` = its
+   absolute value (cheat 0x10 shortens it). Then `ammo_hud_update` (drawing only).
+
+### The projectile (`projectile_create`, `0x8004532C`), in its order
+
+`bullet_spawn` draws the speed first (`rand() % 70 + 600`, << 16) and calls
+`projectile_create(owner, type, -1, speed, boneA, boneB, 0, 0x20, damage, life 15, 0, 0, offA,
+offB, aimed, flagsA 0x2000, flagsB 0x20, mask)`:
+1. `entity_create(0 (no instance), object 0x90, no model, 2 parts)`. The part count `+0x36`
+   stays 0 (only `model_instance_init` sets it), so a projectile has no hit parts of its own.
+2. Handlers: think `projectile_think` (`0x80044470`), draw `0x80044B0C`, hit_part `0x80043E38`,
+   world_contact `projectile_world_contact` (`0x80043284`), destructor `0x80044BE4`.
+3. Type; flags A = 0x2000 | 0x108 (| the owner's flag 4); mask; flags B |= 0x200 | 0x20.
+4. Damage `+0xF8` (×4 for the player with weapon block word 0 bit 0x20000000).
+5. `+0x30` (attached) none, `+0x34` = -1; object: `+0x38` = 0, `+0x54` = the owner's handle,
+   `+0x3A` = life, `+0x2C`/`+0x30` = 0, `+0x42` = 0, `+0x34` = 1.0.
+6. Velocity 0; `+0x200` = the speed; `projectile_aim` (Aiming, below).
+7. `+0x284` = 0 (not on the ground), object `+0x58`, `+0x44` = 0; the matrix (`0x8006A76C`);
+   `+0x258` = the position.
+8. Weapons with flag 2 (the player's): the start pulled back along the projectile's forward
+   column by d - d/4, d = the larger of |dx|, |dz| (projectile minus shooter, integer) plus a
+   quarter of the smaller.
+9. The parts' `+0x3C` cleared; the parts box (`0x8004CDB0`: `+0x308..+0x312` = min/max of the
+   parts' centres ∓ radius `+0x34`, from ±0x7FFF; empty here); linked **at the end** of the list
+   (`entity_link`); object `+0x84..+0x8C` = the position.
+
+Then `bullet_spawn`: touch = `bullet_touch`, object `+0x38` = 0 (0xA40 for the player with
+cheat 0x20), the tracer (`0x8004572C`: object `+0x38` |= 0xA0, two `SetLineG2` primitives at
+object +4 and +0x18 with the colours (230, 180, 70) and (40, 20, 10), `+0x258` = the position),
+flags B |= 0x90004, and with a spread n: three draws, pitch/yaw/roll += ((rand & (2^(n+1) - 1))
+- 2^n) << 9.
+
+**`projectile_think`** (bullets): object `+0x3A` -= 1, at 0 removed; object `+0x40` (the
+world-only countdown from `projectile_aim_at_point`) -= 1 and at 0 the mask is restored from
+object `+0x3C`; the parts box; object `+0x68..+0x70` += `+0x74..+0x7C` (0 for bullets); bits of
+object `+0x38` for grenades and rolling or smoking projectiles (0x40 fuse, 0x400 rolling, 0x1/0x2
+gravity, 0x10 trail); finally object `+0x80` = `+0x200`.
+
+**Moving** (`entity_move`'s general case, for anything that is not the player or a walker): the
+previous position and angles saved (`+0x258`, `+0x264`), angles += angular velocity, `+0x220` =
+`+0x200`, gravity for flag A 0x20 off the ground, then the local velocity >> 12 (as s16) turned
+by `RotMatrixYXZ` of the integer angles (GTE, >> 12), << 12, added with the push `+0x1F0`. If the
+mask meets the world's flags A (`g_world` entity `+0xC`) and the entity has flag A 8 and flags
+B 0x44 (not 1): `world_sweep(new position, old position)` (levels.md). On a hit: when the
+normal's y ≥ 0x801 and the vertical move was downward with `+0x21C` > 0, `+0x21C` = 0 and y back
+to `+0x3C0`; result |= 2, `+0x218` = `+0x220` = 0, `+0x364..+0x36A` = the normal (its fourth
+halfword the face's d), contact `+0x38` |= 0x8000, and without flag A 0x80 the position = the
+hit point (integer, << 16); the face record (point, normal, the three vertices: 0x28 bytes)
+goes to `+0x318`. Then the floor (`floor_find` for flag A 8 or on the ground: `+0x208`, zone
+`+0x390`), the push cleared, `+0x3BC` = the position.
+
+**The world contact is deferred.** `projectile_world_contact(p, result)` for a swept projectile
+(flags B 4) only sets flags B 0x8 and keeps the result in object `+0x5C`; `entities_collide`
+calls it again (result 0) after the projectile's entity tests, so a bullet hitting a soldier and
+a wall in the same tick hits the soldier. The second call clears 0x8, takes the kept result and,
+with flags B 0x20:
+1. A bullet hole: `0x8004E614(+0x318)` refuses when the point is within 16 units (each axis,
+   exclusive) of the last one (`0x800AB918`) or the normal is zero; else the next of 100 decal
+   slots (`0x80093C58` index, slots of 0x80 at `0x80093C5C`; its polygon from `0x8004E354`,
+   which draws one `rand()`), the last point updated, and the projectile moved to the face
+   record's point.
+2. Unless object `+0x38` 0x200: sparks `particles_spawn(position, 1, rand·3 >> 15 + 2, 30, 25,
+   15, 100, 0x3F4, 0xE0, 0x3E0, 0xFE, 15, 1.0, 1, rand·4 >> 15 + 6)` (the two draws first).
+3. With result & 3 (or `+0x38` 0x200): object `+0x38` |= 2 and the bounce/roll handling for
+   grenades (bits 4, 8, 0x200, 0x400, 0x800).
+4. Unless object `+0x38` 0x40: explosive rounds (0x100) explode; others `impact_sound`
+   (`0x80043140`: a ricochet `sound_play(0, rand·7 >> 15, p, 0x30000, 0, 1.0, 0x7FFF, 0, 0, class 3,
+   0)` and the impact effect, entities.md); the yaw += ((rand & 0x3FF) - 0x200) << 16 + 0x08000000
+   (wrapped above 0x10000000); removed.
+
+**Particles** (`particles_spawn`, `0x80073BA8`, type 0x31, flags A 0x01028000, flags B |= 0x203,
+`+0x290`/`+0x294` = 180, linked at the front): two systems in the object (+0xC sparks, +0x38
+smoke), particles of 0x34 bytes from object +0x64 {+0 state 1 live / 2 dead, +1 delay, +2 life,
++4 position, +0x10 velocity, +0x1C rotation, +0x24 rotation speed (150, 100, 200), +0x2C
+colour}. Each spark draws, in order: life (rand·10 >> 15) + 25; x, y, z = position + (-spread +
+rand·2·spread >> 15) << 16; velocity x, y, z = (-a3 + rand·2·a4 >> 15) << 16; three rotations
+rand >> 3; with a colour spread, colour += rand·spread >> 15; flag +3 = rand·100 >> 15 ≥ 51;
++0x30 and +0x32 = rand·7 >> 15 + 5. Each smoke puff: delay = its index, life (rand·2 >> 15) +
+20, at the position, velocity y = ((-(rand·2) >> 15) - 2) << 16. The system: gravity 2.0 up to
+75.0 (smoke: -4 up to 150.0), drag 2.0 (x, z). The think (`0x80073B08`) steps each live
+particle (`0x80073960`: life down, dead at 0; after its delay it moves, gravity while |vy| <
+the limit, drag towards 0 on x and z, rotation += speed) and removes the entity once both
+systems had no live particle. So its life is its longest particle's.
+
+**The shell casing** (`casing_spawn`, `0x80088040`): at most 5 pending (`0x8009EC60`);
+`entity_create(1 (an instance, no model), object 0xC)`, type 0x66, flags A 0x07020000, flags
+B 0x213, think `casing_think` (`0x80087FA0`), destructor `0x8006A318`; the given position;
+object +0 = (rand & 15) + 8 ticks, +4 the owner's handle, +8 the pitch; linked at the front.
+Each tick +0 -= 1; at 0 `sound_play(0, (rand & 1) | 0x10, casing, 0xCCCC, 0, pitch, 0x199B, ...)`,
+the count -1, removed.
 
 Thrown and launched weapons go through `throw_weapon` (`0x8007CF4C`): a wind-up
 (`inv+0x120/+0x124`), then a projectile entity (`0x80045808`, type 0x5A) at the hand, swept
@@ -81,9 +186,49 @@ aim point is a median 2.95° below the view's direction (yaw: centred). The orig
 crosshair outside aim mode; a crosshair drawn at the screen's centre is ~3° above where the
 shots go (30 units at 600, 150 at 3000).
 
-**Turning** (`player_controls`): the turn and look inputs are scaled by 0.5625 (0.375 with
-`inv` flag 0x80000), then by the aim friction (½ or ¼) or the scope (⅛), and pitch is clamped
-to ±0x2AA (±60°).
+**Turning** (`player_controls`): with the scope (`inv` flag 0x100) the turn and look inputs
+are divided by 8, nothing else. In the aiming stances 0 and 1 they are scaled by 0.5625
+((v >> 1) + (v >> 4); 0.375, (v >> 1) - (v >> 3), with `inv` flag 0x80000), then by the aim
+friction (>> 1, or >> 2 with bit 31); in every other stance only by the aim friction. The
+pitch then moves by **half** the scaled look (`pitch - (look >> 1)`, an arithmetic shift) and
+is clamped to ±0x2AA (±60°).
+
+### `aim_update`, exactly (`0x8007E034`)
+
+1. Out of aim (`inv+0xA4` ≥ 0x191 without flag 0x200000): angular velocities 0, done. With
+   flag 0x800000: the velocities follow the look angles (`+0x234` = look pitch - 4·`+0x17C`
+   (stances 0, 1) + `+0x180` - pitch; `+0x238` = look yaw + 8·`+0x188` (stances 0, 1) +
+   `+0x18C` - yaw), done.
+2. The ray: the transposed view matrix (camera object `+0x100`) with its middle column ×64/25
+   (C division), applied (GTE, >> 12) to ((`+0x190` - 256) << 6 - tx, (`+0x192` - (`+0x4E` +
+   120)) << 6 - ty, (`inv+0xA4` << 6) - tz), each >> 2 as s16. The end E = C + (P << 16 - C) >> 1
+   from the camera's position C (with any |P| > 0x4000: C + ((P >> 2) << 16 - C >> 2) << 1).
+3. Swept in three pieces, nearest first: (C + (E-C)/8 → C), (C + (E-C)/2 → C + (E-C)/8),
+   (E → C + (E-C)/2), each `world_sweep(a, b)` with integer points; the first hit is the aim
+   point, else E's integer part. Flags 0x100000 and bit 31 cleared.
+4. Entities: d = aim - C (integers), L = cheap length (max + (mid + min)/4), u =
+   `VectorNormal(d)`, |d|² from the GTE. For every entity but the soldier, not dead (flags A
+   0x20000000) and not flagged 0x206 in flags B: `segment_sphere(C, u, centre, radius)`; for
+   flags A 0x10400 also the parts (`segment_parts`, |d|²) or, with plane shapes, the box test
+   `0x8004B0F0`. Passing ones: their distance dd = cheap(C - position); the smallest below L wins,
+   and a character (flags A 0x50) at dd ≥ 1200 sets 0x100000, ≥ 2750 also bit 31. A winner moves
+   the aim point to C + d·dd / (cheap(d) + 1) (C division). The aim point → `inv+0x1A4` (<< 16).
+5. The gun's two points: near = `model_bone_point(bone +0xD4, offset +0xD8)`, far = bone +0xD6,
+   offset +0xE0 (body model; the player's eye offset applies, animation.md). With t5 = the
+   horizontal cheap distance (|a| + |b| - min/2, of the differences >> 2) from C to the aim point
+   and a3 the same to the far point: if t5 < a3 + 20.0, shots start at the camera (`inv+0x198` =
+   C, flag 0x20000) and the gun is steered on the screen: the far point projected (RTPS with the
+   view matrix, H = `inv+0xA4`, offset (256, 120)); yaw velocity = (`+0x190` - sx) << 16 (halved
+   under 9 pixels); pitch velocity from sy - `+0x192`: ×1.25 from 9, ×1 from 5, else ½.
+   Otherwise shots start at the far point (the camera with flag 0x200000), 0x20000 cleared, and
+   the gun is steered by angles: g = normal(far - near), a = normal(aim - near); yaw difference
+   = ratan2(gz, gx) - ratan2(az, ax), pitch difference = ratan2(gy, √(gx² + gz²)) - ratan2(ay,
+   √(ax² + az²)), each wrapped to ±0x800 and scaled by the 3D cheap distance s to the aim point
+   (16.16): ≤ 37.5: /4, ≤ 100: /2, ≤ 200: ×3/4, under 8 then /4. Yaw velocity = the yaw
+   difference; the pitch target = pitch + difference (clamped ±0x2AA), velocity = ((7·target +
+   pitch) >> 3) - pitch.
+6. `inv+0x180` = pitch + velocity - (look pitch - 4·`+0x17C` in stances 0, 1), `inv+0x18C` = yaw
+   + velocity - (look yaw + 8·`+0x188` in stances 0, 1).
 
 ## Bullets (`bullet_spawn`, `0x80045A78`)
 
@@ -225,6 +370,53 @@ All 17 parts of a soldier are kind 1, so every hit does the weapon's damage wher
 lands, **except the head: a hit on part 0 kills** (below). (An earlier version of this
 document said there was no headshot effect; the replay's damage trace and `enemy_hit_part`
 show otherwise.)
+
+### The hit handlers, exactly
+
+- **Who applies the damage.** In the collision pass a bullet's own `hit_part(bullet, -1, victim,
+  part)` (`0x80043E38`) calls `damage_from_hit(bullet, -1, victim, part)`, which does nothing
+  for a part < 0 (returns 0) — the call still removes the bullet (1) unless the victim is its
+  shooter (`handle_same(object+0x54)`), a projectile (0x13F0..0x13F9) or type 0x25; a soldier
+  victim (type 0x1402) also plays `sound_play(0, (rand >> 15) + 12, bullet, 0x20000, 0, 1.0,
+  0x4CCD)` (the draw is always 0: sound 12). The damage comes from the victim's
+  `hit_part(victim, part, bullet, -1)`.
+- **`damage_from_hit(v, part, a, apart)`**: part < 0: 0. A projectile (apart < 0): damage =
+  `a+0xF8`, scaled by the victim part's kind; the side bit into `v+0x38`: 0x40 if the
+  victim's forward column (`+0x344`, `+0x34A`, `+0x350`) · (the projectile's start `+0x258`
+  (integer) - the part's centre) > 0 (from the front), else 0x20; `apply_damage` if non-zero.
+  Between parts: refused (0) when either part is kind 8 unless one side is type 0x1B; with
+  dy = (v.y - a.y) >> 16 and "front" the same dot with the attacker part's centre: an attack
+  part (5, 6, 9) sets the attacker's `+0x38` 0x200000 and the victim's 0x40/0x20 by the side
+  (kind 6 adds 0x100000, kind 9 0x80000), then spends the attacker's attack parts (flags B
+  0x20000 only, above); an ordinary victim part sets 0x400 (front) or 0x200; with an attack
+  part also 0x80 for dy > 0 and 0x100 for dy < 0. Then `apply_damage` if non-zero; returns 1.
+- **`apply_damage(v, d, a)`**: the hit statistic is counted here once per projectile for victims
+  with flags A 0x4440 (not the player): attacker not the player, its flags B without 0x100000,
+  its `+0x3CA` (weapon) ≠ -1 → `0x80039CAC` and `inv+0x148` += 1, attacker flags B |= 0x100000.
+  A death (health ≤ 0 and not already dead, not the player) with flags B 0x8000 credits a kill
+  (`stat_kill(a, 1)`: `inv+0x142` and `0x80039CB8` += 1, both reset when `+0x142` reaches
+  0x8000; the attacker's weapon `+0x3CA` (< 13), else the player's current weapon, counts in its
+  table entry's `+0x30`). The player as victim: the wound wedge (`hit_indicator`) and
+  `0x80039CB0`/`inv+0x144` += 1.
+- **The dog's `hit_part`** (`0x80054C24`): `damage_from_hit`, then variable 0xD = health·100 /
+  max unless it is -1, variable 0x18 = the attacker's type, 0xC = the part; a player's melee part
+  (kind 5) that hit is turned back to kind 1 with sound 0x22. Returns 1.
+- **`enemy_hit_part`** order: a projectile from itself: 0. Same type, or a projectile from an
+  owner with flags A 4: damage, variables 0x18/0xC, and dead or negative health → variable 0xD
+  = 0, health 0. Otherwise damage, 0x18/0xC; if the health changed: the hit statistic as in
+  `apply_damage`, then by part: 0 the head (below), 7 or (1, 2 by an explosion) torso and
+  explosion counters `0x80039CC4`/`0x80039CE8`, 1 and 2 `0x80039CC8` with `0x80039CE0`/`CE4`,
+  3/4 `0x80039CC4` + `CD0`/`CD4`, 5/6 `0x80039CC8` + `CD8`/`CDC`, 8 `0x80039CC4` + `CEC`, 9..16
+  `0x80039CCC` + `CF0..D0C`; a player's melee part back to kind 1 (sound 0x22). Then the 10%
+  rule; finally, hit by a projectile not from a flags-A-4 owner, the soldier's level script gets
+  message 1 at once (`script_run_message(soldier, 0, 1)`).
+- **Touching.** `enemy_touch` (`0x8005291C`, soldiers and dogs) and the player's touch
+  (`0x8007C030`) answer only objects with plane shapes (`+0x2EE`, `sphere_vs_object_planes`
+  `0x8004B6DC`), except that the player's touch also pushes the player away from a soldier or
+  dog whose instance `+0x6C` is 0x80: with dx, dz the integer offsets (character - player) and
+  d = max + min/4 of their absolute values, overlap = the two `+0x2EC` radii - d; if positive
+  (at most 65), n = `VectorNormalSS(dx, 0, dz)`, the player's push `+0x1F0`/`+0x1F8` +=
+  ((-n·overlap) >> 12) << 16 and its speeds `+0x200`, `+0x218`, `+0x220` = 0.
 
 ### Head hits (`enemy_hit_part`, `0x80055864`, part 0)
 

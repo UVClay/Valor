@@ -370,6 +370,31 @@ before the soldier. In its normal mode (`camera_obj+0x9C` = 0x80):
 - The crosshair rests 11 lines below the centre (screen line 131 of 240, combat.md), so the aim
   point is ~3° below the view direction.
 
+**Exactly** (reimplemented in `tools/sim/engine_camera.py`; the view matrix matched the
+original's bit for bit, since `aim_update` reads it):
+- `camera_think`, normal mode: `camera_ease` (`0x80046C64`) moves each current point toward its
+  target by (target - current) >> `obj+0x10` (0 here: a copy): the eye offset pair `+0x48..+0x50`
+  ← `+0x54..+0x5C`, the look offset `+0x18..+0x20` ← `+0x24..+0x2C`, the side offset
+  `+0x78..+0x80` ← `+0x84..+0x8C`. Then `camera_look_points` (`0x800479D8`, modes 0x480):
+  `obj+0xBC` = the soldier's look yaw `inv+0x184`; the look offset's (x, z) and the side offset's
+  (x, z), integer parts, turned by `RotMatrixY(obj+0xBE)` (`RotTransSV`, saturated): look point
+  `obj+0..+8` = soldier + (turned look x, z) << 16 with y = soldier y + `obj+0x1C`; side point
+  `obj+0x6C..+0x74` = soldier + (turned side x, z), y = soldier y + `obj+0x94` << 16. Then
+  `camera_place` (`0x800482A4`, mode 0x80): the camera's position = the soldier's, y +
+  `obj+0x94` << 16. Then the shake (`obj+0xCC` amplitude, `+0xCE` count) adds to the camera's
+  y and both points' y.
+- `camera_setup` (`0x8004913C`, from `entities_update` for type 2): look point, eye (the
+  camera's integer position) into `obj+0xE4`/`+0xF0` (words), then `view_lookat`
+  (`0x80048EEC`): f = `VectorNormal(look - eye)`, s = `VectorNormal(side - eye)`, up =
+  `OuterProduct12(f, s)`, right = `OuterProduct12(up, f)`; the rows (s16) right·2,
+  (up·5 / 8, a C division)·2, f·2 at `obj+0x100`; the translation `obj+0x114` =
+  `ApplyMatrixLV(rows, -eye)` (PsyQ's, in two 15-bit halves). The frustum after it is drawing
+  only.
+- The look point's height target (`view_pitch_target`, `0x8007BADC`, from `player_update`):
+  `obj+0x28` = (eye offset `obj+0x98` + C division(-d·rsin(p), rcos(p))) << 16, with p =
+  `inv+0x17A` (the look pitch's integer part) and d = |x| + |z| - min/2 of the look offset's
+  `+0x26`, `+0x2E`.
+
 ### Recoil kick (`inv+0x4C`, `+0x50`)
 
 Kick is not a view movement: `aim_update` raises the crosshair ray's screen point by

@@ -244,6 +244,25 @@ instruction's address, and a flag (`0x80099EC0`) tells the runner to yield.
 | 48 | run_message | Run a level-script message on an entity at once (`0x8005C698` → `script_run_message`); used by no model on the disc (catalogue.md) |
 | 49 | alarm | If none is up: spawn the alarm, flag every living soldier (+0x3C 0x100), send event 0x2B to the zone's entities |
 
+Some of the effect ops, exactly (op table at `0x80099B80`: {handler, op, length in words} from
+op 6):
+- **0C hit_part** (`0x80058AB4`): operands mask (1), kind (2; word bit 2: -1, bit 1: operand),
+  radius (3; bits 8/4), damage (4; bits 0x20/0x10, << 16) into `0x8004C64C(e, mask, kind,
+  radius, damage)`: every part whose `+4` meets the mask gets kind `+8` (> 0: the value; < 0:
+  its default `+0xC`), damage `+0x10` (< 0: `+0x14`) and radius `+0x34` with its square `+0x38`
+  (< 0: `+0x30`). For the player (type 1) an attack kind (5, 6, 9) counts a melee statistic,
+  any other clears flags A 0x10000000. `script_start` on channel 0 calls it with (-1, -1, -1,
+  -1): every part back to its defaults.
+- **17 remove_self** (`0x8005926C`): `entity_remove`, `0x80099EC0` = 1, and the script yields.
+- **1C model_variant** (`0x800594AC`): the instance's `+0x68` (which mesh is drawn).
+- **1F property** (`sop_property`, `0x80059718`): value (1), type (2), group (3: the imm high
+  byte), target (4); no target: the entity itself, or with type ≠ -1 and group ≠ -1 the first of
+  that type and group. Selector (imm low byte): 1 health `+0xF4`; 2 the scale `+0x270..+0x278`;
+  3 the eye height `+0x2D4`; 4 the cull counters `+0x290`/`+0x294` = value >> 16; 5 `+0x44` and
+  6 `+0x48` (>> 16); 19 the radius `+0x2E8` and 20 the probe radius `+0x2EC` (>> 16).
+- **43 send_event** (`0x8005C210` → `send_event` → `msg_send`): level message N with the entity
+  as sender, no object, no actor.
+
 ### Checking (`tools/sim/sst_vm.py`)
 
 `sst_vm.py --pairs V...` takes RAM dumps one game tick apart (`--dump-ram V` and `V+1` of the

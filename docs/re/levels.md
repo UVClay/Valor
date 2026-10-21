@@ -168,7 +168,16 @@ ones (catalogue.md lists the library):
 | 6 | 0xD31F988A | 1..45 | Like kind 2 |
 
 On spawning, the entity gets the record's position and angles (`0x80074AD8`), its model's
-behaviour script (+0x94), and message 0 runs its entity script.
+behaviour script (+0x94), and message 0 runs its entity script. The order matters (kinds 2, 3,
+6; `record_spawn_model` `0x80074C54` and `spawn_from_model`): the entity is made by its type's
+spawner, then `spawn_from_model` builds its matrix, starts the model's behaviour script
+(forced) and **runs script A once — at the origin, before it is placed**; then it is linked
+after the camera, the record's state bit 0 set, `+0x1C` = the record's pair, message 0 run;
+and only then `0x80074AD8` writes the record's angles and position (also `+0x258` and
+`+0x3BC`; not `+0x354`). Kind 4 (`record_spawn_pickup`, `0x80074CE8`) places the pickup first,
+then the matrix and the script, then links it and sends message 0. The destructible spawner
+(`0x8005D678`) snaps **the record's own y** (`+0x12`) to the floor when within 55 units, so
+the placement after it uses the snapped height (and so does any later respawn).
 
 **Models** (`[0x8009EC58]`, count `[0x8009EC54]`, 0x100 bytes each, loaded with the level):
 +0x0 hash, +0x94 the behaviour script started at spawning (-1: none), +0xB8/+0xBC the scripts
@@ -617,6 +626,42 @@ halves; in each leaf (`0x8003DC10`) a face is hit where the plane distance chang
 the ends (t = |d0| / (|d0| + |d1|), in 1/4096) and the crossing point is inside the triangle
 (three edge cross products against the normal). The nearest hit wins: its point, normal and
 face (`-1`: nothing hit).
+
+Exactly (reimplemented in `tools/sim/engine_world.py`, matching the original's aim points and
+bullet stops tick for tick):
+- `world_sweep(from, to, out normal, out point, out t, out face record, 0)` takes 16.16 points
+  and works on their integer parts. A chunk qualifies (slot order) when its rectangle holds
+  `from` (x, z, bounds included), or holds `to`, or the segment crosses it (`0x8003ECE4`).
+  That test, with (ax, az) = `from`, (bx, bz) = `to` (integers), dx = bx - ax, dz = bz - az and
+  c(x, z) = (z - az)·dx - (x - ax)·dz at the rectangle's corners (x0, z0, x1, z1), is true if
+  c(x1, z1), c(x1, z0) differ in sign (or one is 0) and bx < x1 < ax; or c(x1, z1), c(x0, z1)
+  and bz < z1 < az; or c(x0, z1), c(x0, z0) and bx < x0 < ax; or c(x0, z0), c(x1, z0) and
+  bz < z0 < az. Only an edge crossed toward smaller coordinates counts (the other cases are
+  caught by the end-inside tests when an end is inside; a segment passing clean through a chunk
+  the other way is not searched).
+- `0x8003EACC` **swaps the ends**: the chunk is walked from `to` toward `from`. The callers pass
+  (far, near): `entity_move` (new position, old position), `aim_update` (outer end, inner end).
+- The walk (`0x8003E3F0`): from the root, at a split on x at sp = x min + split: the side of
+  the walk's start (< sp: child a, the cell's x max = sp - 1; else child b, x min = sp); if the
+  walk's end lies on the other side and fewer than 8 halves are deferred, the far half is
+  pushed (its cell, and the segment from the split point to the end) and the current segment
+  ends at the split point; the split point's other coordinate is start + (end - start)·f >> 16,
+  f = ((sp - start) << 16) / (end - start) truncated toward zero. Splits on z likewise (child a
+  below, ~b above). Deferred halves come back last-in first-out.
+- A leaf (`leaf_sweep`, `0x8003DC10`) tests its faces against the **whole** segment (start =
+  `to`, end = `from`), skipping faces whose vertices' y range misses the segment's. With the
+  plane distances d0 = ((n · start) >> 15) + d and d1 the same at the end (n the face's 32767-long
+  normal): a hit needs d0 ≥ 0 and a sign change, i.e. **only faces crossed from their front**;
+  t = |d0|·4096 / (|d0| + |d1|) (integer), and only if t is below the best t of this chunk so
+  far; the point = start + saturate16((t · (end - start)) >> 12); inside the triangle when, for
+  each edge (v0→v1, v1→v2, v2→v0), n · OP(point - vi, vi+1 - vi) (GTE outer product, sf = 1)
+  ≥ 0. The best is kept: point, normal, and the face record (0x28 bytes: the point with its
+  fourth halfword, the normal, the three vertices), and the normal output's fourth halfword =
+  the face's d.
+- **The first leaf with a hit ends the chunk's walk** (the halves still deferred are not
+  searched), so the result is the nearest hit in the first leaf, in walk order, that has one.
+- Across chunks the smallest t wins (the first chunk on a tie); the return is the face's index
+  in its leaf, -1 for none.
 
 **The floor** (`floor_find`, `0x80060474` → `0x8006028C`, from `entity_move` and spawning).
 Every rule below is reproduced by `tools/sim/move_sim.py` (`floor_find`), which matched the
