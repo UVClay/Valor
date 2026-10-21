@@ -1,6 +1,6 @@
 #!/bin/bash
 # engine/tools/padcheck.sh [-j N] [--stick-only] TAPE...: the core's player from the recorded pad against the
-# original, for every level start and restart of each recording: capture.sh twice per recording
+# original, for every level start and restart (after a death) of each recording: capture.sh twice per recording
 # (once to find the starts, once with a RAM dump 7 vblanks into each), export_pad.py, coretest.
 # Captures go to build/gd/cap/NAME; a summary line per segment to build/gd/cap/padcheck.txt.
 # A recording made with mouse and keyboard takes the analog roles from the trace (the runtime adds
@@ -16,12 +16,16 @@ one() {
     engine/tools/capture.sh "$tape" "$out" 200000
     starts=$(python3 -c "
 import json, sys
-last = 0
+last, hp = 0, 1
 for line in open('$out/state.jsonl'):
     try: d = json.loads(line)
     except json.JSONDecodeError: break
-    if d['tick'] < last or d['tick'] == 1: print(d['vblank'] + 7)
-    last = d['tick']")
+    sol = [e for e in d['ents'] if e[1] == 1]
+    h = sol[0][9] if sol else 0
+    # a level's start, or a restart in place after a death (the player alive again; the tick
+    # counter goes on)
+    if d['tick'] < last or d['tick'] == 1 or (hp <= 0 < h): print(d['vblank'] + 7)
+    last, hp = d['tick'], h")
     [ -z "$starts" ] && { echo "$name: no level start" >> build/gd/cap/padcheck.txt; return; }
     engine/tools/capture.sh "$tape" "$out" 200000 $starts
     for v in $starts; do

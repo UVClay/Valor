@@ -142,7 +142,9 @@ void ValorGame::tick(int64_t buttons, int64_t forward, int64_t strafe, int64_t t
     c.pad.now = 0xFFFF0000u | (uint32_t(buttons) & 0xFFFF);
     const int64_t axes[4] = {forward, strafe, pitch, turn};
     for (int r = 0; r < 4; r++) c.axis_override[r] = true, c.axis_value[r] = valor::s32(axes[r]);
+    session_.vblanks(2);  // a 30 Hz tick is two vblanks
     session_.tick();
+    session_.end_frame();
 }
 
 void ValorGame::place(double x, double y, double z, double yaw, double pitch) {

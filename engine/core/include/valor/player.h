@@ -84,6 +84,8 @@ public:
     // player_update, then entity_move and the landing's world contact. The pad must be set in
     // `controls.pad` (and any host axis values) before.
     void tick(const World& world, const PlayerEvents& ev = {});
+    void update(const PlayerEvents& ev);  // the think: player_update (0x8007A6B0)
+    void move(const World& world);        // entity_move, player_world_contact
 
     int32_t yaw() const { return inv.yaw; }
     int32_t pitch() const { return inv.pitch; }

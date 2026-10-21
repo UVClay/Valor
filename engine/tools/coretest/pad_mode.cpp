@@ -38,6 +38,7 @@ struct PadTick {
     uint32_t s_contact, s_flags_b, s_inv, s_inv54, s_flinch;
     int32_t s_kn[3];
     bool end_only;  // the start of the tick after the last
+    std::vector<std::pair<uint32_t, int32_t>> ents;  // the list after the tick: (handle, type)
     std::vector<Controls::Call> calls;
 };
 
@@ -49,7 +50,7 @@ bool read_pad(const char* path, std::string& level, std::vector<PadTick>& out) {
     if (!std::getline(f, line)) return false;
     std::istringstream hs(line);
     hs >> magic >> ver >> level >> dv;
-    if (magic != "valor-pad" || ver != 2) return false;
+    if (magic != "valor-pad" || ver != 3) return false;
     while (std::getline(f, line)) {
         if (line.empty() || line[0] == '#') continue;
         std::istringstream s(line);
@@ -70,6 +71,11 @@ bool read_pad(const char* path, std::string& level, std::vector<PadTick>& out) {
         t.s_eye = int32_t(nx()), t.s_contact = uint32_t(nx()), t.s_flags_b = uint32_t(nx());
         t.s_inv = uint32_t(nx()), t.s_inv54 = uint32_t(nx()), t.s_flinch = uint32_t(nx()) & 0xFFFF;
         for (auto& p : t.s_kn) p = int32_t(nx());
+        int64_t ne = nx();
+        for (int64_t k = 0; k < ne && i + 2 <= v.size(); k++) {
+            uint32_t h = uint32_t(nx());
+            t.ents.push_back({h, int32_t(nx())});
+        }
         int64_t n = nx();
         t.end_only = n < 0;
         for (int64_t k = 0; k < n && i + 3 <= v.size(); k++) {
@@ -149,16 +155,27 @@ void seed(Session& s, const Ram& r) {
     ZoneTracker& z = s.zone_state();
     z.zone = z.prev_zone = r.u16(e + 0x390);
     z.bits = z.prev_bits = r.u32(e + 0x394);
-    // Ladders: the type 0x4C entities, in list order.
-    s.ladders().clear();
-    for (uint32_t x = r.u32(0x8009D64C); x && (x & 0xFFE00003) == 0x80000000; x = r.u32(x + 4)) {
-        if (r.u32(x + 8) != 0x4C) continue;
+    // The entity list, handles and all: the core's behaviours for the types it runs, none for
+    // the rest.
+    Entities& ents = s.entities();
+    ents = Entities{};
+    std::vector<Entity*> order;
+    for (uint32_t x = r.u32(0x8009D64C); x && (x & 0xFFE00003) == 0x80000000 && order.size() < 512; x = r.u32(x + 4)) {
+        int32_t type = r.s32(x + 8);
         auto it = by_pair.find(r.u32(x + 0x1C));
-        if (it == by_pair.end()) continue;
-        uint32_t o = r.u32(x + 0x388);
-        Ladder l{it->second, {r.s32(x + 0x20C), r.s32(x + 0x210), r.s32(x + 0x214)}, r.s32(o), r.s32(o + 4)};
-        s.ladders().push_back(l);
+        int rec_i = it != by_pair.end() ? it->second : -1;
+        Ladder l{};
+        if (type == kTypeLadder) {
+            uint32_t o = r.u32(x + 0x388);
+            l = Ladder{{r.s32(x + 0x20C), r.s32(x + 0x210), r.s32(x + 0x214)}, r.s32(o), r.s32(o + 4)};
+        }
+        Entity* e = s.adopt(r.u32(x), type, r.u32(x + 0xC), rec_i, type == kTypeLadder ? &l : nullptr);
+        if (e) order.push_back(e);
     }
+    ents.set_order(order);
+    ents.serial = r.u32(0x8009D670), ents.slots_used = r.u32(0x8009D674);
+    s.set_tick(r.u32(0x8009A5DC));
+    s.set_vbl_timer(r.s32(0x8009A5C0));
     auto held = by_pair.find(r.u32(0x8009A5B8));
     s.held_ladder() = held != by_pair.end() ? held->second : -1;
 }
@@ -233,6 +250,7 @@ int run_pad(int argc, char** argv) {
 
     std::map<std::string, Stat> stats;
     long calls = 0, calls_ok = 0, axis = 0, axis_ok = 0, shown = 0;
+    long ladders_made = 0, list_same = 0, foreign_spawns = 0, foreign_removals = 0, own_diff = 0, own_missed = 0;
     int64_t first_bad = -1;
     for (size_t k = 0; k + 1 < T.size(); k++) {
         const PadTick &t = T[k], &n = T[k + 1];  // n: the start of the next tick, this one's end
@@ -277,7 +295,46 @@ int run_pad(int argc, char** argv) {
             if (probe.role_axis(call.role) == call.value) axis_ok++;
             if (!stick_only && !c.axis_override[call.role]) c.axis_override[call.role] = true, c.axis_value[call.role] = call.value;
         }
+        uint32_t serial_before = s.entities().serial;
         s.tick(ev);
+        if (s.entities().serial != serial_before) ladders_made += long((s.entities().serial - serial_before) & 0xFFFF);
+        // The entity list: the core's own changes (ladders) against the original's, then the
+        // original's list taken as it is (spawns and removals of systems not ported).
+        {
+            Entities& ents = s.entities();
+            std::vector<Entity*> order;
+            bool same = ents.list().size() == t.ents.size();
+            for (size_t i = 0; same && i < t.ents.size(); i++)
+                same = ents.list()[i]->handle == t.ents[i].first && ents.list()[i]->type == t.ents[i].second;
+            list_same += same;
+            for (const auto& [h, type] : t.ents) {
+                Entity* e = ents.resolve(h);
+                if (e && e->handle == h && !(e->flags_a & kFlagARemoved)) {
+                    order.push_back(e);
+                    continue;
+                }
+                e = s.adopt(h, type, 0, -1);
+                if (!e) continue;
+                foreign_spawns++;
+                if (type == kTypeLadder || type == kTypeSoldierPlayer || type == kTypeWorld) own_missed++;
+                if (((h >> 16) - ents.serial) & 0x8000 ? false : ((h >> 16) != ents.serial)) ents.serial = h >> 16;
+                order.push_back(e);
+            }
+            for (Entity* e : std::vector<Entity*>(ents.list()))
+                if (std::find(order.begin(), order.end(), e) == order.end()) {
+                    // Gone in the original: removed by a system not ported, or a core removal it
+                    // didn't make.
+                    if (e->type == kTypeLadder || e->type == kTypeSoldierPlayer || e->type == kTypeWorld) own_diff++;
+                    ents.remove(s, e);
+                    foreign_removals++;
+                }
+            ents.set_order(order);
+        }
+        // The end of a drawn frame: the queue, the handles, the streaming check.
+        if (n.vblank != t.vblank || n.end_only) {
+            s.end_frame();
+            if (!n.end_only) s.vblanks(int(n.vblank - t.vblank));
+        }
         // Compare with the original's end of this tick.
         bool aiming = p.inv.flags & 0x20;
         std::string kind = classify(t, p, aiming);
@@ -343,5 +400,9 @@ int run_pad(int argc, char** argv) {
                 "at tick %" PRId64 "\n",
                 level.c_str(), total, all_pos, all_yaw, all_pitch, all_state, all_checked, calls_ok, calls, axis_ok,
                 axis, first_bad);
+    std::printf("entity list: the core's equal to the original's after %ld of %ld ticks; %ld spawns and %ld "
+                "removals by systems not ported taken from it; the core's own entities (ladders): %ld made that the "
+                "original didn't, %ld the original made that the core didn't, %ld made in all\n",
+                list_same, total, foreign_spawns, foreign_removals, own_diff, own_missed, ladders_made);
     return first_bad < 0 ? 0 : 1;
 }

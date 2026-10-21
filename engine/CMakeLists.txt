@@ -25,6 +25,7 @@ add_library(valor_core STATIC
     core/src/controls.cpp
     core/src/records.cpp
     core/src/session.cpp
+    core/src/entities.cpp
 )
 target_include_directories(valor_core PUBLIC core/include)
 target_compile_options(valor_core PRIVATE -Wall -Wextra -fno-exceptions)

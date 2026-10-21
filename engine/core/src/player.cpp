@@ -289,6 +289,11 @@ void Player::player_controls() {
 }
 
 void Player::tick(const World& world, const PlayerEvents& ev) {
+    update(ev);
+    move(world);
+}
+
+void Player::update(const PlayerEvents& ev) {
     Controls& c = controls;
     c.calls.clear();
     // Events from systems not ported yet, as they stand at the start of this tick.
@@ -408,8 +413,11 @@ void Player::tick(const World& world, const PlayerEvents& ev) {
     }
     inv.was_on_ground = w.ground;
     inv.flags &= ~0xE00u;
+}
 
-    // entity_move, then player_world_contact.
+// entity_move, then player_world_contact.
+void Player::move(const World& world) {
+    if (dead) return;  // the death camera carries him (flags A 0x20000)
     w.yaw = inv.yaw;
     w.eye = eye >> 16;
     w.gravity = flags_a & 0x20;

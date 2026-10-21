@@ -7,9 +7,11 @@ it (the events of systems the core doesn't run yet, and what to compare the core
 
 DUMP_VBLANK names CAPTURE_DIR/dVBLANK.bin, taken a few vblanks into the level: the core starts from
 it (the control configuration, the player's state) with the first tick after it, and the export
-runs until the level ends (the tick counter restarts) or --to.
+runs until the level ends (the tick counter restarts), restarts in place after a death (the player
+alive again), or --to.
 
-One line per tick (FIELDS), then its role calls: a count and (role, source, value) triples, the
+One line per tick (FIELDS), then the entity list after the tick (a count and (handle, type) pairs, in
+list order), then its role calls: a count and (role, source, value) triples, the
 source 0 for role_button (the core computes it: a check) and 1 for role_axis (the stick's curve
 plus what the runtime's mouse and keyboard add: an input). The `s_` fields are the soldier at the
 start of the tick's player_update (VALOR_TRACE_INPUT), which is how the tick before left him. A
@@ -48,8 +50,13 @@ def main():
             break
     start = next(i for i, d in enumerate(trace) if d["vblank"] > dv)
     ticks = []
+    def health(d):
+        sol = [e for e in d["ents"] if e[1] == 1]
+        return sol[0][9] if sol else 0
+
     for d in trace[start:]:
-        if ticks and d["tick"] != ticks[-1]["tick"] + 1 or d["vblank"] > hi:
+        # The level ends, or restarts in place after a death (the player alive again).
+        if ticks and (d["tick"] != ticks[-1]["tick"] + 1 or (health(ticks[-1]) <= 0 < health(d))) or d["vblank"] > hi:
             break
         ticks.append(d)
     first, last = ticks[0]["tick"], ticks[-1]["tick"]
@@ -71,7 +78,7 @@ def main():
         if m and cur is not None and int(m[1]) == cur and int(m[2]) == 0:
             roles[cur].append((int(m[3]), int(m[4]), int(m[5])))
     out = sys.stdout
-    out.write(f"valor-pad 2 {dump_level(cap, dv)} {dv}\n# " + " ".join(FIELDS) + " calls...\n")
+    out.write(f"valor-pad 3 {dump_level(cap, dv)} {dv}\n# " + " ".join(FIELDS) + " ents... calls...\n")
     for d in ticks:
         t = d["tick"]
         sol = [e for e in d["ents"] if e[1] == 1]
@@ -81,12 +88,13 @@ def main():
         v = [t, d["vblank"], *sol[0][3:6], d["player"][0], d["player"][1], d["player"][6], sol[0][9],
              pad[0], pad[2], pad[4], pad[6] & 0xFF] + [s32(x) for x in st]
         calls = roles.get(t, [])
-        out.write(" ".join(str(int(x)) for x in v) + f" {len(calls)} " +
+        ents = " ".join(f"{e[0]} {e[1]}" for e in d["ents"])
+        out.write(" ".join(str(int(x)) for x in v) + f" {len(d['ents'])} {ents} {len(calls)} " +
                   " ".join(f"{r} {src} {val}" for r, src, val in calls) + "\n")
     if last + 1 in inputs:
         pad, st = inputs[last + 1]
         v = [last + 1, 0, 0, 0, 0, 0, 0, 0, 0, pad[0], pad[2], pad[4], pad[6] & 0xFF] + [s32(x) for x in st]
-        out.write(" ".join(str(int(x)) for x in v) + " -1\n")
+        out.write(" ".join(str(int(x)) for x in v) + " 0 -1\n")
 
 
 def dump_level(cap, dv):

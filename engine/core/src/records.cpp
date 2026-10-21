@@ -99,10 +99,17 @@ bool Records::load(const std::vector<uint8_t>& d, std::string* err) {
             if (rec.cls == kClassStream)
                 for (int k = 0; k < 4; k++) rec.chunks[k] = int16_t(r.u16(a + 0x30 + 2 * k));
         } else {
-            // The list offsets: 0 is no list.
-            rec.enter = r.u32(a + 0x38), rec.leave = r.u32(a + 0x3C);
-            rec.c_enter = r.u32(a + 0x40), rec.c_leave = r.u32(a + 0x44);
-            rec.use = r.u32(a + 0x4C);
+            // The list offsets (from the record; 0: no list), each {count, messages}.
+            auto list = [&](uint32_t off, std::vector<uint32_t>& out) {
+                uint32_t o = r.u32(a + off);
+                if (!o) return false;
+                uint32_t n = r.u32(a + o);
+                for (uint32_t k = 0; k < n && k < 256 && r.ok; k++) out.push_back(r.u32(a + o + 4 + 4 * k));
+                return true;
+            };
+            rec.enter = list(0x38, rec.enter_msgs), rec.leave = list(0x3C, rec.leave_msgs);
+            rec.c_enter = list(0x40, rec.c_enter_msgs), rec.c_leave = list(0x44, rec.c_leave_msgs);
+            rec.use = list(0x4C, rec.use_msgs);
         }
         records.push_back(rec);
     }

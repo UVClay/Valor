@@ -19,6 +19,9 @@ struct Record {
     int16_t ang[3]{};    // +0x18: angles (the box's turn)
     int16_t shape[4]{};  // +0x28: 0 sphere (r), 1 cylinder (r, top, bottom), 2 box (x, y, z sizes)
     bool enter = false, leave = false, c_enter = false, c_leave = false, use = false;  // lists present
+    // The lists' messages (+0x38 the player enters, +0x3C leaves, +0x40/+0x44 a character, +0x4C
+    // Use): offsets from the record to {count, count messages}.
+    std::vector<uint32_t> enter_msgs, leave_msgs, c_enter_msgs, c_leave_msgs, use_msgs;
     int16_t chunks[4]{};  // +0x30: a streaming record's four chunk numbers
 
     // record_contains (0x80083D30): whole-unit position inside the volume.
