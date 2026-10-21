@@ -29,6 +29,7 @@ var screenshot := ""
 var screenshot_frame := 0
 var frames := 0
 var hud: Label
+var materials: Array[ShaderMaterial] = []
 
 
 func _ready() -> void:
@@ -67,6 +68,7 @@ func _ready() -> void:
 		mat.set_shader_parameter("fog_color", Vector3(fog.r, fog.g, fog.b))
 		mat.set_shader_parameter("units_per_metre", ValorGame.kUnitsPerMetre)
 		world.set_surface_override_material(i, mat)
+		materials.append(mat)
 	add_child(world)
 
 	var env := Environment.new()
@@ -150,6 +152,10 @@ func _physics_process(_delta: float) -> void:
 	cur_eye = game.get_eye_position()
 	cur_yaw = game.get_yaw()
 	cur_pitch = game.get_pitch()
+	var lights := game.get_light_colours()
+	if not lights.is_empty():
+		for mat in materials:
+			mat.set_shader_parameter("light_colours", lights)
 
 
 func _process(_delta: float) -> void:

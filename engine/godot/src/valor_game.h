@@ -6,13 +6,12 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/classes/texture2d_array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 
-#include "valor/level.h"
-#include "valor/player.h"
 #include "valor/render_data.h"
-#include "valor/world.h"
+#include "valor/session.h"
 
 namespace godot {
 
@@ -36,6 +35,7 @@ public:
     double get_yaw() const;    // Godot rotation.y, radians
     double get_pitch() const;  // Godot rotation.x, radians
     Dictionary get_state() const;
+    PackedVector3Array get_light_colours() const;  // the animated lights' colours this tick, 0..1
 
     static Vector3 to_godot(double x, double y, double z);
 
@@ -43,10 +43,8 @@ protected:
     static void _bind_methods();
 
 private:
-    valor::LevelInfo info_;
-    valor::World world_;
+    valor::Session session_;
     valor::LevelRender render_;
-    valor::Player player_;
     Ref<Texture2DArray> pages_;
     String error_;
     bool loaded_ = false;

@@ -332,6 +332,12 @@ void World::set_slots_by_rect(const int16_t rects[4][4]) {
             }
 }
 
+void World::set_slots_by_number(const int numbers[4]) {
+    slots.assign(4, nullptr);
+    for (int i = 0; i < 4; i++)
+        if (numbers[i] >= 1 && size_t(numbers[i]) <= chunks.size()) slots[i] = &chunks[numbers[i] - 1];
+}
+
 void World::set_all_chunks() {
     slots.clear();
     for (const CollChunk& ch : chunks) slots.push_back(&ch);

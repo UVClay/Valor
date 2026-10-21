@@ -1,13 +1,20 @@
 // coretest: runs the core's player movement on the inputs of a replay of the original and compares
 // every tick's position with the original's, as tools/sim/move_sim.py check does.
 //
-//   coretest MOVES.txt [--data extracted/moh/DATA] [--free] [-v N] [--trace OUT.jsonl]
+//   coretest MOVES.txt [--data extracted/moh/DATA] [--free] [--all-chunks | --stream [--stream-log LOG]]
+//            [-v N] [--trace OUT.jsonl]
 //
 // MOVES.txt comes from engine/tools/export_moves.py (the original's per-tick state and the control
 // function's outputs). With --free the core carries its own state from tick to tick (only object
 // touches, which move the player after the move, are taken from the original); without it, each tick
-// starts from the original's state of the tick before.
+// starts from the original's state of the tick before. --all-chunks keeps every chunk loaded instead
+// of the slots the game had. --stream has the core fill the slots itself: the player's zone tracking
+// and the streaming records (records.h), with instant loads, from the level's initial slots. With
+// --stream-log, a replay's log of VALOR_WATCH="cs=80098970:10;cl=800AA184:4", the loads take as long
+// as the original's did (each completes at the vblank its slot was released), and the slot numbers
+// are compared with the game's.
 #include <algorithm>
+#include <array>
 #include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
@@ -19,6 +26,9 @@
 #include <vector>
 
 #include "valor/fixed.h"
+#include "valor/io.h"
+#include "valor/level.h"
+#include "valor/records.h"
 #include "valor/movement.h"
 #include "valor/trace.h"
 #include "valor/world.h"
@@ -104,16 +114,20 @@ struct Stat {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::fprintf(stderr, "usage: coretest MOVES.txt [--data DIR] [--free] [-v N] [--trace OUT.jsonl]\n");
+        std::fprintf(stderr, "usage: coretest MOVES.txt [--data DIR] [--free] [--all-chunks | --stream] [-v N] [--trace OUT.jsonl]\n");
         return 2;
     }
     std::string data = "extracted/moh/DATA";
-    bool free_run = false;
+    bool free_run = false, all_chunks = false, stream = false;
     int verbose = 0;
     const char* trace_path = nullptr;
+    const char* stream_log = nullptr;
     for (int i = 2; i < argc; i++) {
         if (!std::strcmp(argv[i], "--data") && i + 1 < argc) data = argv[++i];
         else if (!std::strcmp(argv[i], "--free")) free_run = true;
+        else if (!std::strcmp(argv[i], "--all-chunks")) all_chunks = true;
+        else if (!std::strcmp(argv[i], "--stream")) stream = true;
+        else if (!std::strcmp(argv[i], "--stream-log") && i + 1 < argc) stream_log = argv[++i];
         else if (!std::strcmp(argv[i], "-v") && i + 1 < argc) verbose = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--trace") && i + 1 < argc) trace_path = argv[++i];
     }
@@ -133,6 +147,58 @@ int main(int argc, char** argv) {
     }
     std::FILE* trace = trace_path ? std::fopen(trace_path, "w") : nullptr;
 
+    // --stream: the level's records and zone lists, the slots from the initial chunks on.
+    LevelInfo info;
+    Records recs;
+    Streaming streaming;
+    ZoneTracker zones;
+    long slot_differs = 0, stream_triggers = 0;
+    if (stream) {
+        std::vector<uint8_t> bsd;
+        char rel[64];
+        std::snprintf(rel, sizeof rel, "/MSN%d/LVL%d/%d_%d.BSD", m, l, m, l);
+        if (!info.load(data, m, l, &err) || !read_file(data + rel, bsd) || !recs.load(bsd, &err)) {
+            std::fprintf(stderr, "coretest: %s\n", err.c_str());
+            return 2;
+        }
+        streaming.start(int(info.first_chunk), int(info.chunk_slots));
+    }
+    // --stream-log: the original's load completions and slot numbers by vblank.
+    std::vector<int64_t> completions;
+    std::map<int64_t, std::array<int, 4>> game_slots;
+    if (stream_log) {
+        std::ifstream f(stream_log);
+        std::string line;
+        // A watch logs changes only: the slots start as the level's initial ones.
+        std::array<int, 4> cur;
+        for (int i = 0; i < 4; i++) cur[i] = streaming.slot_chunk[i];
+        while (std::getline(f, line)) {
+            long long v;
+            char name[8];
+            unsigned off, from, to;
+            if (std::sscanf(line.c_str(), "watch %lld %7[a-z]+%x: %x -> %x", &v, name, &off, &from, &to) != 5) continue;
+            if (!std::strcmp(name, "cl") && to == 0xFFFFFFFF) completions.push_back(v);
+            if (!std::strcmp(name, "cs") && off < 16) {
+                cur[off / 4] = int(int32_t(to));
+                game_slots[v] = cur;
+            }
+        }
+        streaming.instant = false;
+    }
+    size_t next_completion = 0;
+    long slot_number_differs = 0;
+    // After a tick's move: the player's zones, which may stream a chunk in (and the idle job's
+    // chunk_stream, once per tick).
+    auto zones_after_move = [&](const int32_t pos[3], uint16_t zone) {
+        if (!stream) return;
+        int32_t ip[3] = {s16(pos[0] >> 16), s16(pos[1] >> 16), s16(pos[2] >> 16)};
+        zones.update(recs, zone, ip, true, [&](int ri, bool enter) {
+            const Record& r = recs.records[ri];
+            if (enter && r.kind == 0 && r.cls == kClassStream) stream_triggers++, streaming.trigger(&r);
+        });
+        streaming.run();
+    };
+
     std::map<std::string, Stat> stats;
     long inferred = 0, shown = 0;
     bool have = false;
@@ -141,11 +207,61 @@ int main(int argc, char** argv) {
     const int32_t keys[5] = {0, 0x22DD00, -0x22DD00, 0x8B740, -0x8B740};
     for (size_t k = 1; k < T.size(); k++) {
         const Tick &p = T[k - 1], &t = T[k];
+        if (stream) {
+            if (t.tick < p.tick) {  // the level restarted
+                streaming.start(int(info.first_chunk), int(info.chunk_slots));
+                zones = ZoneTracker{};
+            }
+            while (next_completion < completions.size() && completions[next_completion] <= t.vblank) {
+                if (completions[next_completion] > T[k - 1].vblank) streaming.finish();
+                next_completion++;
+            }
+            int cs[4];
+            streaming.collision_slots(cs);
+            world.set_slots_by_number(cs);
+            if (stream_log && !game_slots.empty()) {
+                auto it = game_slots.upper_bound(t.vblank - 1);  // the game's slots as of the tick before
+                if (it != game_slots.begin()) {
+                    --it;
+                    if (!std::equal(it->second.begin(), it->second.end(), streaming.slot_chunk)) {
+                        if (verbose && slot_number_differs < verbose)
+                            std::printf("vbl %" PRId64 ": slot numbers %d %d %d %d, the game's %d %d %d %d\n", t.vblank,
+                                        streaming.slot_chunk[0], streaming.slot_chunk[1], streaming.slot_chunk[2],
+                                        streaming.slot_chunk[3], it->second[0], it->second[1], it->second[2],
+                                        it->second[3]);
+                        slot_number_differs++;
+                    }
+                }
+            }
+            if (t.has_slots && !stream_log) {
+                World game;
+                game.chunks = world.chunks;
+                game.set_slots_by_rect(t.slots);
+                for (int i = 0; i < 4; i++) {
+                    int n = game.slots[i] ? game.slots[i]->number : -1;
+                    if (n != streaming.slot_chunk[i]) {
+                        slot_differs++;
+                        if (verbose && slot_differs <= verbose) {
+                            std::printf("vbl %" PRId64 " tick %" PRId64 ": slots", t.vblank, t.tick);
+                            for (int j = 0; j < 4; j++) std::printf(" %d", streaming.slot_chunk[j]);
+                            std::printf(", the game's");
+                            for (int j = 0; j < 4; j++) std::printf(" %d", game.slots[j] ? game.slots[j]->number : -1);
+                            std::printf("\n");
+                        }
+                        break;
+                    }
+                }
+            }
+        }
         if (t.tick != p.tick + 1 || !(t.single && p.single)) {
             have = false;
+            const int32_t* at = t.has_old ? t.old : t.pos;
+            zones_after_move(at, world.floor_find(at).zone);
             continue;
         }
-        if (t.has_slots)
+        if (stream)
+            ;
+        else if (t.has_slots && !all_chunks)
             world.set_slots_by_rect(t.slots);
         else
             world.set_all_chunks();
@@ -227,6 +343,7 @@ int main(int argc, char** argv) {
         }
         if (best_in != std::make_pair(e.fwd, e.strafe)) inferred++;
         e = best;
+        zones_after_move(e.pos, e.zone);
         last_fwd = best_in.first, last_strafe = best_in.second;
 
         std::string kind = classify(p, t, jump, e.wall_pushes > 0, aiming);
@@ -273,5 +390,9 @@ int main(int argc, char** argv) {
     }
     std::printf("%s %s: %ld ticks, %ld exact, %ld with the input inferred\n", level.c_str(),
                 free_run ? "free-running" : "stepped", total, exact, inferred);
+    if (stream)
+        std::printf("streaming: %ld triggers, %d loads, %ld ticks with %s unlike the game's\n", stream_triggers,
+                    streaming.loads, stream_log ? slot_number_differs : slot_differs,
+                    stream_log ? "slot numbers" : "collision slots");
     return exact == total ? 0 : 1;
 }

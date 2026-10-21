@@ -153,6 +153,10 @@ bool LevelRender::load(const std::string& data_dir, const LevelInfo& info, std::
     return !chunks.empty();
 }
 
+int LevelRender::light_index(const LevelInfo& info, const RenderVertex& v) {
+    return !info.lights.empty() && v.r < 40 && v.r < info.lights.size() ? v.r : -1;
+}
+
 void LevelRender::lit_colour(const LevelInfo& info, const RenderVertex& v, uint8_t out[3]) const {
     out[0] = v.r, out[1] = v.g, out[2] = v.b;
     if (info.lights.empty() || v.r >= 40) return;

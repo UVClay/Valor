@@ -83,7 +83,7 @@ levels.md has the entity-related fields. The full layout:
 | +0x58F | Star field height: stars are placed with y = −(`+0x58F` << 8) − rand(0..0x2FFF), 255 stars | `0x80088744` |
 | +0x590 | **View distance**: the camera's far plane (`camera+0xC4`, and `<< 16` into the camera struct's `+0x40`); 0 → 4500 | `0x8004770C` |
 | +0x594, +0x596 | s16 moon y, z ("Using Scene Y/Z value for moon"); 0: "Scene File Has No Moon" | `0x800888C4` |
-| +0x598 | Zone record lists ("Property Set File") | levels.md (Triggers), `zones_parse` |
+| +0x598 | Zone record lists ("Property Set File"): s32 the highest zone id N (-1: none), then N + 1 entries of {u8 255 − count, u8, count × u16 record indices} | levels.md (Triggers), `zones_parse` |
 | +0x59C | Level scripts | levels.md |
 | +0x5A0 | Paths | enemies.md |
 | +0x5A4 | Model count (the loader uses the size table's instead; they agree on the disc) | |
@@ -236,6 +236,28 @@ zone record lists (+0x598), the level scripts (+0x59C) and the VM. enemies.md co
   by the draws, by the collision tests and by the animated faces. 1:3's ten records name runs of
   four consecutive chunks, e.g. (5, 2, 3, 4) and (1, 2, 3, 4) at the two ends of a doorway. The
   record's volume is the usual shape at +0x28 (levels.md, Triggers).
+
+  **One chunk at a time, seconds per chunk.** `chunk_stream` (`0x8005439C`) remembers the record
+  (`0x80099070`). The needed list is the record's chunks that no slot holds, in the record's order.
+  The evictable list is the slots, in slot order, whose chunk the record doesn't name. The slot's
+  chunk number (`0x80098970[slot]`) changes **at once**, and `0x800AA184` holds the slot until the
+  read is done. While a read is in progress, `chunk_stream` leaves it alone if the record names
+  the chunk being read. Otherwise it prints a warning and replaces that read (1:3 at vblank 11409
+  went 5 → 9 → 5 → 9 this way). The **frame idle job** (`frame_idle_job`, `0x80090A30`, a
+  four-step round robin that also runs the message queue and the spawn queue) calls
+  `chunk_stream` again, so the next missing chunk starts after the previous one is in. 2:1's
+  record at vblank 37700 needed chunks 5 and 6: chunk 5 finished at 37884 and chunk 6 started at
+  37886.
+
+  Watched on the recorded session (`VALOR_WATCH="cs=80098970:10;cl=800AA184:4;cr=80099070:4"`),
+  every read took **240 to 390 vblanks (4 to 6.5 seconds)**. The player can outrun the stream.
+  At 2:1 vblank 38124 he walked onto chunk 6's floor while it was still being read. The floor
+  search found only a lower floor in the loaded chunks, and he dropped from y 449 to 603
+  (`engine/tools/coretest --stream --stream-log` reproduces every tick of it, with the reads
+  timed as watched). The slot assignments themselves follow the player's zones exactly: the
+  engine's streaming gives the game's slot numbers on every tick of 1:3, 2:1 and 2:2, except
+  one tick of idle-job timing. An engine that loads instantly differs from the original only
+  where the player outran a read.
 - **Kind 5** (class 0x413B09BF): a volume that the ordinary zone code reads, like any other
   record. It has no class-specific code: no instruction builds the hash. There are 51 on the disc
   (`fmt_bsd.py -v`), and they are used in three ways:

@@ -60,6 +60,8 @@ public:
     // The slots by the chunks' rectangles, as the game's slot table (0x80090DE8) holds them.
     void set_slots_by_rect(const int16_t rects[4][4]);
     void set_all_chunks();
+    // The slots by chunk numbers (1-based file numbers, -1 empty), as Streaming holds them.
+    void set_slots_by_number(const int numbers[4]);
 
     // floor_find (0x800603DC): the floor under a 16.16 position.
     Floor floor_find(const int32_t pos[3]) const;

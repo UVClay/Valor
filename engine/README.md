@@ -14,6 +14,8 @@ system ported here is checked tick by tick against a replay of it.
 | `core/src/movement.cpp` | `entity_move` and `walker_slide` (movement.md) |
 | `core/src/player.cpp` | The player's controls for play: run, strafe, turn, pitch, jump, crouch with the eye easing and quartered speed |
 | `core/src/level.cpp` | The BSD header fields used so far and the player start (formats.md, levels.md) |
+| `core/src/records.cpp` | Entity records and their volumes, the floor zones' record lists, the zone tracking (enter/leave with the original's skips), the chunk streaming (levels.md, Triggers; formats.md, chunk streaming records) |
+| `core/src/session.cpp` | A level in play: the animated lights, the player's update and move, his zones and the streaming, in the tick's order |
 | `core/src/render_data.cpp` | Presentation data: TSP render tree, faces, vertex colours, animated light colours, TAF TIMs placed in a 1024×512 VRAM, texture pages decoded through a CLUT |
 | `core/src/trace.cpp` | Traces in the `VALOR_TRACE_STATE` format (runtime/src/watch.cpp) |
 | `tools/coretest/` | Steps the core on a replay's inputs and compares every tick with the original |
@@ -69,8 +71,9 @@ and its yaw reaches the core on the next tick. Other user arguments:
 `engine/godot/tools/screenshot.sh OUT.png ARGS...` does the same on a virtual display.
 
 The world is drawn as the PS1 drew it: texture × vertex colour × 2, the transparent texel
-discarded, the animated lights' colours substituted (each light's first step for now), vertex fog,
-and the four semi-transparency modes. It uses the Compatibility renderer, whose output matched the
+discarded, vertex fog, and the four semi-transparency modes. The animated lights are stepped by
+the core each tick (`lights_update`) and coloured in the shader. Every chunk is drawn. Collision
+follows the streaming slots, with instant loads. It uses the Compatibility renderer, whose output matched the
 original's brightness side by side.
 
 ## Checking the core against the original
@@ -94,6 +97,15 @@ object touches, which move the player after the move, come from the original):
 | Scripted 1:1 run `t2b` | 53,617 | all |
 | Scripted 1:1 run `t1` | 647 | 553, exactly as `move_sim.py` |
 
+With `--stream`, the core fills the chunk slots itself: the player's zones, the streaming records,
+and the level's initial slots. It no longer takes them from the game. With
+`--stream-log build/gd/stream_watch.log`, the reads take as long as the original's did: each one
+completes at the vblank the replay's `VALOR_WATCH="cs=80098970:10;cl=800AA184:4"` showed. Then all
+three levels are exact on every tick. The slot numbers equal the game's on every tick but one
+(the idle job ran a frame later). That includes 2:1 at vblank 38124, where the player outran a
+four-second read and dropped to a lower floor. With instant loads (`--stream` alone), 2:1 differs
+from that tick on, and only there (formats.md, chunk streaming records).
+
 That is the same result `move_sim.py --free` gets, tick for tick. The inputs are the control
 function's outputs, as for move_sim. On 2% of ticks the strafe or forward value was cleared in RAM
 before the watch saw it, and it is recovered by trying the keyboard values (move_sim.py's
@@ -109,15 +121,14 @@ reference simulators:
    `player_update`: aim mode and lean, ladders, the flinch, Use, the eye height 188 after a weapon
    switch, death.
 2. **Entities and the tick order** (objects.md, "The frame and the tick"; entities.md): the entity
-   list, handles, think, move, contacts; the chunk streaming slots (kind-0 records), which the
-   floor search depends on. All chunks are loaded for now.
+   list, handles, think, move, contacts. Ladders (kind-0 records, like the streaming, which is
+   done).
 3. **Level logic** (levels.md, messages.md; `level_vm.py`): records, the level-script VM, triggers
    and zones, the deferred queue, objectives.
 4. **Enemies** (enemies.md, soldier.md; `sst_vm.py`, `brain_sim.py`): the behaviour-script VM, the
    brain and movement, animation with root motion.
 5. **Combat** (combat.md; `combat_sim.py`): weapons, bullets, hit spheres, damage.
-6. **Presentation in Godot**: static and skinned models, animated lights stepped per tick, the sky,
-   PVS culling, sounds and music.
+6. **Presentation in Godot**: static and skinned models, the sky, PVS culling, sounds and music.
 
 Each system gets a coretest mode against the original's trace, as movement has. Once the entity
 list exists, the core writes full `VALOR_TRACE_STATE` lines, and `tools/recon/trace_cmp.py`

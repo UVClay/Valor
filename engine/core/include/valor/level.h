@@ -10,6 +10,7 @@ namespace valor {
 
 struct AnimLight {
     std::vector<uint32_t> steps;  // low 24 bits RGB (R low), top byte the ticks it lasts
+    uint32_t step = 0;            // +0x8 as stored: the step before the first
 };
 
 struct PlayerStart {

@@ -52,6 +52,7 @@ bool LevelInfo::load(const std::string& data_dir, int m, int l, std::string* err
         size_t e = h + 0xDC + 0x14 * i;
         uint32_t n = r.u32(e), off = r.u32(e + 4);
         AnimLight light;
+        light.step = r.u32(e + 8);
         for (uint32_t k = 0; k < n && r.ok; k++) light.steps.push_back(r.u32(h + off + 4 * k));
         lights.push_back(std::move(light));
     }

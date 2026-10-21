@@ -58,6 +58,9 @@ struct LevelRender {
     // A vertex colour with the animated lights' substitution (red < 40 is a light index; past
     // the level's lights it draws black), using each light's first step.
     void lit_colour(const LevelInfo& info, const RenderVertex& v, uint8_t out[3]) const;
+
+    // The animated light a vertex colour names (red < 40, below the level's light count), or -1.
+    static int light_index(const LevelInfo& info, const RenderVertex& v);
 };
 
 }  // namespace valor

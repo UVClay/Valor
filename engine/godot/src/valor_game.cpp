@@ -31,6 +31,7 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_yaw"), &ValorGame::get_yaw);
     ClassDB::bind_method(D_METHOD("get_pitch"), &ValorGame::get_pitch);
     ClassDB::bind_method(D_METHOD("get_state"), &ValorGame::get_state);
+    ClassDB::bind_method(D_METHOD("get_light_colours"), &ValorGame::get_light_colours);
     ClassDB::bind_static_method("ValorGame", D_METHOD("to_godot", "x", "y", "z"), &ValorGame::to_godot);
     BIND_CONSTANT(kUnitsPerMetre);
 }
@@ -43,13 +44,10 @@ Vector3 ValorGame::to_godot(double x, double y, double z) {
 bool ValorGame::load_level(const String& data_dir, int mission, int level) {
     loaded_ = false;
     std::string dir = data_dir.utf8().get_data(), err;
-    if (!info_.load(dir, mission, level, &err) || !world_.load(dir, mission, level, &err) ||
-        !render_.load(dir, info_, &err)) {
+    if (!session_.load(dir, mission, level, &err) || !render_.load(dir, session_.info(), &err)) {
         error_ = String(err.c_str());
         return false;
     }
-    world_.set_all_chunks();  // streaming isn't ported: every chunk stays loaded
-    player_.spawn(world_, info_);
     pages_.unref();
     loaded_ = true;
     return true;
@@ -90,11 +88,12 @@ Ref<ArrayMesh> ValorGame::build_world_mesh() {
             for (int k = 0; k < 3; k++) {
                 const valor::RenderVertex& rv = ch.verts[f.v[k]];
                 uint8_t col[3];
-                render_.lit_colour(info_, rv, col);
+                render_.lit_colour(session_.info(), rv, col);
                 s.v.push_back(to_godot(rv.x, rv.y, rv.z));
                 s.c.push_back(Color(col[0] / 255.0f, col[1] / 255.0f, col[2] / 255.0f));
                 s.uv.push_back(Vector2(f.uv[k][0] / 256.0f, f.uv[k][1] / 256.0f));
-                s.uv2.push_back(Vector2(l, 0));
+                // UV2.y: 1 + the animated light the colour names (0: none), coloured per tick.
+                s.uv2.push_back(Vector2(l, float(valor::LevelRender::light_index(session_.info(), rv) + 1)));
             }
         }
     }
@@ -115,16 +114,24 @@ Ref<ArrayMesh> ValorGame::build_world_mesh() {
     return mesh;
 }
 
+PackedVector3Array ValorGame::get_light_colours() const {
+    PackedVector3Array out;
+    for (const valor::LightState& l : session_.lights())
+        out.push_back(Vector3((l.colour & 0xFF) / 255.0f, ((l.colour >> 8) & 0xFF) / 255.0f, ((l.colour >> 16) & 0xFF) / 255.0f));
+    return out;
+}
+
 Dictionary ValorGame::get_level_info() const {
+    const valor::LevelInfo& info = session_.info();
     Dictionary d;
-    d["mission"] = info_.mission;
-    d["level"] = info_.level;
-    d["chunks"] = int(world_.chunks.size());
-    d["fog_near"] = info_.fog_near;
-    d["fog_color"] = Color(info_.fog_rgb[0] / 255.0f, info_.fog_rgb[1] / 255.0f, info_.fog_rgb[2] / 255.0f);
-    d["sky_color"] = Color(info_.sky_rgb[0] / 255.0f, info_.sky_rgb[1] / 255.0f, info_.sky_rgb[2] / 255.0f);
-    d["view_distance"] = int64_t(info_.view_distance);
-    d["lights"] = int64_t(info_.lights.size());
+    d["mission"] = info.mission;
+    d["level"] = info.level;
+    d["chunks"] = int(session_.world().chunks.size());
+    d["fog_near"] = info.fog_near;
+    d["fog_color"] = Color(info.fog_rgb[0] / 255.0f, info.fog_rgb[1] / 255.0f, info.fog_rgb[2] / 255.0f);
+    d["sky_color"] = Color(info.sky_rgb[0] / 255.0f, info.sky_rgb[1] / 255.0f, info.sky_rgb[2] / 255.0f);
+    d["view_distance"] = int64_t(info.view_distance);
+    d["lights"] = int64_t(info.lights.size());
     return d;
 }
 
@@ -133,36 +140,41 @@ void ValorGame::tick(int64_t forward, int64_t strafe, int64_t turn, int64_t pitc
     valor::PlayerInput in;
     in.forward = valor::s32(forward), in.strafe = valor::s32(strafe), in.turn = valor::s32(turn);
     in.pitch = valor::s32(pitch), in.jump = jump, in.crouch = crouch;
-    player_.tick(world_, in);
+    session_.tick(in);
 }
 
 void ValorGame::place(double x, double y, double z, double yaw, double pitch) {
     // Game units (y down) and game angles (4096 per turn).
     int32_t pos[3] = {valor::s32(int64_t(x * 65536.0)), valor::s32(int64_t(y * 65536.0)),
                       valor::s32(int64_t(z * 65536.0))};
-    player_.place(pos, valor::s32(int64_t(yaw * 65536.0)), valor::s32(int64_t(pitch * 65536.0)), true);
+    session_.player().place(pos, valor::s32(int64_t(yaw * 65536.0)), valor::s32(int64_t(pitch * 65536.0)), true);
 }
 
 Vector3 ValorGame::get_eye_position() const {
-    const valor::Walker& w = player_.walker();
-    return to_godot(w.pos[0] / 65536.0, w.pos[1] / 65536.0 + player_.eye_offset(), w.pos[2] / 65536.0);
+    const valor::Player& player = session_.player();
+    const valor::Walker& w = player.walker();
+    return to_godot(w.pos[0] / 65536.0, w.pos[1] / 65536.0 + player.eye_offset(), w.pos[2] / 65536.0);
 }
 
-double ValorGame::get_yaw() const { return -(player_.yaw() / 65536.0) * kAngle; }
-double ValorGame::get_pitch() const { return (player_.pitch() / 65536.0) * kAngle; }
+double ValorGame::get_yaw() const { return -(session_.player().yaw() / 65536.0) * kAngle; }
+double ValorGame::get_pitch() const { return (session_.player().pitch() / 65536.0) * kAngle; }
 
 Dictionary ValorGame::get_state() const {
-    const valor::Walker& w = player_.walker();
+    const valor::Player& player = session_.player();
+    const valor::Walker& w = player.walker();
     Dictionary d;
-    d["tick"] = int64_t(player_.ticks());
+    d["tick"] = int64_t(player.ticks());
     d["x"] = w.pos[0] / 65536.0;
     d["y"] = w.pos[1] / 65536.0;
     d["z"] = w.pos[2] / 65536.0;
     d["vy"] = w.vy / 65536.0;
     d["ground"] = bool(w.ground);
     d["zone"] = int64_t(w.zone);
-    d["crouched"] = player_.crouched();
-    d["yaw"] = player_.yaw() / 65536.0;
+    d["crouched"] = player.crouched();
+    d["yaw"] = player.yaw() / 65536.0;
+    Array slots;
+    for (int c : session_.streaming().slot_chunk) slots.push_back(c);
+    d["chunk_slots"] = slots;
     return d;
 }
 
