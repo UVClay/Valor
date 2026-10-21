@@ -6,6 +6,7 @@
 #include <array>
 #include <initializer_list>
 #include <map>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,6 +31,7 @@ class Feed {
 public:
     bool load(const std::string& root, const std::string& log_path);
     std::vector<std::pair<I, std::string>> marks;  // (vblank, "m:l")
+    std::set<std::string> analog;                  // levels whose start found the pad analog
     std::map<std::pair<std::string, I>, std::vector<Draw>> rand;
     std::map<std::pair<std::string, I>, std::array<U, 4>> pad;
     std::map<std::pair<std::string, I>, std::map<std::array<int, 3>, I>> roles;  // (port, role, src)

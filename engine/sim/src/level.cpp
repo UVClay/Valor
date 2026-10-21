@@ -1200,6 +1200,13 @@ void LevelLogic::builtin_base(I n, Ctx& c, std::vector<SVal>& st, U, I sid) {
             m_.w32(LEVEL_FLAGS, m_.u32(LEVEL_FLAGS) | 0x24);
         else if (what == 4)
             alarm_level(v);
+        else if (what == 1) {
+            // the music: while the level starts only the request (audio.md, Music)
+            if (m_.u32(0x8009A60C))
+                m_.w32(0x8009A608, 1);
+            else
+                eng_.note("level_set(1): music started mid-level");
+        }
         stats["level_set " + std::to_string(what)]++;
     } else if (n == 14) {
         I oid = as_int(popv());

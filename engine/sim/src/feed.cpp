@@ -52,6 +52,23 @@ bool Feed::load(const std::string& root, const std::string& log_path) {
     std::ifstream f(log_path);
     if (!f) return false;
     std::string line, level;
+    // a level's first ticks are logged before its mark: lines of ticks 0 and 1 after the level's
+    // later ticks are the next level's ("+" until its mark)
+    I last_tick = 0;
+    auto key = [&](I tick) {
+        if (tick <= 1 && last_tick > 1) return std::string("+");
+        last_tick = std::max(last_tick, tick);
+        return level;
+    };
+    auto adopt = [&](auto& map, const std::string& from) {
+        for (auto it = map.begin(); it != map.end();) {
+            if (it->first.first == from) {
+                map[{level, it->first.second}] = it->second;
+                it = map.erase(it);
+            } else
+                ++it;
+        }
+    };
     while (std::getline(f, line)) {
         if (line.empty()) continue;
         char c = line[0];
@@ -59,13 +76,13 @@ bool Feed::load(const std::string& root, const std::string& log_path) {
             long long vb, tick, val;
             unsigned ra;
             if (std::sscanf(line.c_str(), "rand %lld %lld: %X %lld", &vb, &tick, &ra, &val) == 4 && starts(line, "rand ")) {
-                rand[{level, tick}].push_back({fns.of(ra), ra, val, vb});
+                rand[{key(tick), tick}].push_back({fns.of(ra), ra, val, vb});
                 continue;
             }
             int port, role, src;
             long long v;
             if (starts(line, "role ") && std::sscanf(line.c_str(), "role %lld: %d %d %d %lld", &tick, &port, &role, &src, &v) == 5) {
-                roles[{level, tick}][{port, role, src}] = v;
+                roles[{key(tick), tick}][{port, role, src}] = v;
                 continue;
             }
             int mm, ml;
@@ -73,7 +90,11 @@ bool Feed::load(const std::string& root, const std::string& log_path) {
                 std::sscanf(line.c_str(), "replay: mark mission %d %d at vblank %lld", &mm, &ml, &vb) == 3) {
                 level = std::to_string(mm) + ":" + std::to_string(ml);
                 marks.push_back({vb, level});
+                for (const char* from : {"", "+"}) adopt(rand, from), adopt(roles, from), adopt(pad, from);
+                last_tick = 0;
             }
+        } else if (c == 'i' && starts(line, "input: game set pad 1 to analog mode")) {
+            if (!level.empty()) analog.insert(level);
         } else if (c == 'i' && starts(line, "idle2 ")) {
             idle[{level, std::atoll(line.c_str() + 6)}].push_back(-1);
         } else if (c == 'i' && starts(line, "idle ")) {
@@ -84,7 +105,7 @@ bool Feed::load(const std::string& root, const std::string& log_path) {
             long long v, t;
             unsigned a, b, cc, d;
             if (std::sscanf(line.c_str(), "input %lld %lld: %X %X %X %X", &v, &t, &a, &b, &cc, &d) == 6)
-                pad[{level, t}] = {a, b, cc, d};
+                pad[{key(t), t}] = {a, b, cc, d};
         }
     }
     return true;

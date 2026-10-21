@@ -1,4 +1,4 @@
-// coretest --engine M:L [--to TICK] [--max N] [--out TRACE.jsonl] [--dump TICK:PATH]...
+// coretest --engine M:L [--to TICK] [--max N] [--out TRACE.jsonl] [--dump TICK:PATH]... [--seed VBLANK]
 //
 // The whole engine (engine/sim, the port of tools/sim/engine.py) run free from the level's seed
 // dump on the recording's outside inputs, its state trace compared with the original's every tick
@@ -16,6 +16,7 @@
 
 #include "valor/sim/audio.h"
 #include "valor/sim/engine.h"
+#include "valor/sim/load.h"
 
 using namespace valor::sim;
 
@@ -143,13 +144,19 @@ std::vector<std::pair<I, std::vector<I>>> frames_of(const std::string& path, con
         }
     }
     if (!out.empty() && total == want.size()) return out;
-    out.clear();
+    // ticks the watch missed (a level built from the disc starts before it): by their lines' vblanks
+    std::set<I> have;
+    for (auto& [vb, ticks] : out) have.insert(ticks.begin(), ticks.end());
+    std::vector<std::pair<I, std::vector<I>>> extra;
     for (auto& d : lines) {
-        if (!out.empty() && out.back().first == d.vblank)
-            out.back().second.push_back(d.tick);
+        if (have.count(d.tick)) continue;
+        if (!extra.empty() && extra.back().first == d.vblank)
+            extra.back().second.push_back(d.tick);
         else
-            out.push_back({d.vblank, {d.tick}});
+            extra.push_back({d.vblank, {d.tick}});
     }
+    out.insert(out.end(), extra.begin(), extra.end());
+    std::stable_sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.second.front() < b.second.front(); });
     return out;
 }
 
@@ -164,11 +171,15 @@ int run_engine(int argc, char** argv) {
     I to = 0;
     int maxn = 20;
     std::string out_path;
+    I seed_arg = 0;
+    bool disc = false;
     std::map<std::string, std::string> dumps;
     for (int i = 3; i < argc; i++) {
         if (!std::strcmp(argv[i], "--to") && i + 1 < argc) to = std::atoll(argv[++i]);
         else if (!std::strcmp(argv[i], "--max") && i + 1 < argc) maxn = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out_path = argv[++i];
+        else if (!std::strcmp(argv[i], "--seed") && i + 1 < argc) seed_arg = std::atoll(argv[++i]);
+        else if (!std::strcmp(argv[i], "--disc")) disc = true;
         else if (!std::strcmp(argv[i], "--dump") && i + 1 < argc) {
             std::string a = argv[++i];
             size_t c = a.find(':');
@@ -203,11 +214,33 @@ int run_engine(int argc, char** argv) {
             lines.resize(i);
             break;
         }
-    I seed_v = seeds.at(level);
+    I seed_v = seed_arg ? seed_arg : seeds.at(level);
     std::string seed = root + "/build/engine/seed/d" + std::to_string(seed_v) + ".bin";
     Engine eng(root, level, feed);
     std::string err;
-    if (!eng.load(seed, &err)) {
+    bool ok;
+    if (disc) {
+        // the level built from the disc files (load.cpp); the save data and rand's seed from the
+        // dump taken during level_start (the vblank before the seed's)
+        Mem pre;
+        std::ifstream f(root + "/build/engine/seed/d" + std::to_string(seed_v - 1) + ".bin", std::ios::binary);
+        f.read(reinterpret_cast<char*>(pre.d.data()), 0x200000);
+        std::vector<uint8_t> game(pre.ptr(0x800385CC), pre.ptr(0x800385CC) + 0x780);
+        LevelBuild lb;
+        {
+            Engine probe(root, level, feed);
+            probe.load_disc(game, lb, &err);
+        }
+        lb.rand_seed = rand_seed_back(U(pre.u32(0x800CA2A4)), lb.rand_calls);
+        ok = eng.load_disc(game, lb, &err);
+        // the pad as the first frame's read finds it (the recording's: analog), which player_update
+        // answers with the controller configuration
+        if (feed.analog.count(level)) eng.m.w8(0x80093B78, 1);
+        // the vblanks the loading took, counted by the vblank handler (its 20-vblank timer message)
+        eng.m.w32(0x8009A5C0, pre.u32(0x8009A5C0));
+    } else
+        ok = eng.load(seed, &err);
+    if (!ok) {
         std::fprintf(stderr, "coretest --engine: %s\n", err.c_str());
         return 2;
     }

@@ -117,11 +117,13 @@ struct Stat {
 
 int run_pad(int argc, char** argv);   // pad_mode.cpp: coretest PAD.txt (export_pad.py)
 int run_pose(int argc, char** argv);  // pose_mode.cpp: coretest --pose M:L DUMP...
-int run_engine(int argc, char** argv);  // engine_mode.cpp: coretest --engine M:L (the whole engine)
+int run_engine(int argc, char** argv);
+int run_build(int argc, char** argv);  // build_mode.cpp: coretest --build M:L --against DUMP  // engine_mode.cpp: coretest --engine M:L (the whole engine)
 
 int main(int argc, char** argv) {
     if (argc >= 2 && !std::strcmp(argv[1], "--pose")) return run_pose(argc, argv);
     if (argc >= 2 && !std::strcmp(argv[1], "--engine")) return run_engine(argc, argv);
+    if (argc >= 2 && !std::strcmp(argv[1], "--build")) return run_build(argc, argv);
     if (argc >= 2) {
         std::ifstream probe(argv[1]);
         std::string magic;

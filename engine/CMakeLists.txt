@@ -54,13 +54,14 @@ add_library(valor_sim STATIC
     sim/src/player.cpp
     sim/src/enemy.cpp
     sim/src/dispatch.cpp
+    sim/src/load.cpp
 )
 target_include_directories(valor_sim PUBLIC sim/include)
 target_link_libraries(valor_sim PUBLIC valor_core)
 target_compile_options(valor_sim PRIVATE -Wall -Wextra -fno-exceptions)
 
 add_executable(coretest tools/coretest/coretest.cpp tools/coretest/pad_mode.cpp tools/coretest/pose_mode.cpp
-    tools/coretest/engine_mode.cpp)
+    tools/coretest/engine_mode.cpp tools/coretest/build_mode.cpp)
 target_link_libraries(coretest PRIVATE valor_core valor_sim)
 
 if(VALOR_GODOT)

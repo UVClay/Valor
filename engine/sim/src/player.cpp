@@ -447,6 +447,205 @@ void controls(Engine& eng, U e, U inv) {
 
 }  // namespace
 
+namespace {
+constexpr U G_ROLE_AXES = 0x800B74B0, G_ROLE_BUTTONS = 0x800B75F0, G_AXIS_CURVES = 0x800B7470;
+constexpr U G_ACTIONS = 0x800B7790, G_ACTION_EXCL = 0x800B77E0;
+constexpr U G_LOOK_MODE = 0x8009E3A0, G_AIM_PITCH_FROM_MOVE = 0x8009E398;
+constexpr U G_GAME = 0x800385CC;
+}  // namespace
+
+// role_axis_set_speed / role_button_set_speed (mode 0 set, 2 restore).
+void axis_speed(Mem& m, I port, I role, I v, I mode) {
+    U a = U(G_ROLE_AXES + port * 0xA0 + role * 0x28);
+    if (mode == 2) v = m.s32(a + 0x1C);
+    I lo = (m.u8(a + 0xE) - m.u8(a + 0xC)) & 0xFF;
+    if (!lo) lo = 1;
+    I hi = (m.u8(a + 0xD) - m.u8(a + 0xE)) & 0xFF;
+    m.w32(a + 0x14, 0x7FFF / lo);
+    if (!hi) hi = 1;
+    m.w32(a + 0x18, 0x7FFF / hi);
+    if (mode == 0) m.w32(a + 0x1C, v);
+    m.w32(a + 0x20, v);
+}
+void button_speed(Mem& m, I port, I role, I v, I mode) {
+    U a = U(G_ROLE_BUTTONS + port * 0xD0 + role * 0x34);
+    if (mode == 2) v = m.s32(a + 0x18);
+    if (m.s32(a + 0x20)) {
+        m.w32(a + 0x10, v);
+        m.w32(a + 0x14, -v);
+    } else {
+        m.w32(a + 0x10, -v);
+        m.w32(a + 0x14, v);
+    }
+    if (mode == 0) m.w32(a + 0x18, v);
+    m.w32(a + 0x1C, v);
+}
+
+// player_stand (0x80079C0C) with the controller port: the stance and the stick roles' speeds restored.
+void player_stand_port(Engine& eng, U e, I port) {
+    Mem& m = eng.m;
+    U o = U(m.u32(e + 0x388));
+    m.w32(o, m.u32(o) & ~I(2) & ~I(0x10));
+    m.w32(e + 0x2D4, m.u32(o + 0x34));
+    m.w16(e + 0x2DA, -0x64);
+    if (port < 0) return;
+    axis_speed(m, port, 0, 0, 2);
+    axis_speed(m, port, 1, 0, 2);
+    button_speed(m, port, 0, 0, 2);
+    button_speed(m, port, 1, 0, 2);
+    if (m.u32(o) & 2) {
+        eng.note("player_stand while crouched not implemented");
+    } else {
+        if (m.s32(G_SUBDIV) >= 0xFB) m.w32(G_SUBDIV, 0xFA);
+        if (m.s32(0x8009E830)) {
+            if (m.s32(0x800AA164) >= 2) m.w32(0x800AA164, 1);
+            m.w32(0x8009E830, 0);
+        }
+        m.w32(o + 0x3C, -0xF0);
+    }
+}
+
+// player_pad_config (0x8007A050) -> func_80076240: the controls by the layout option, again whenever
+// the pad turns analog or digital (player_update).
+void player_pad_config(Engine& eng, U e, U o, I port) {
+    Mem& m = eng.m;
+    U pad = U(0x80093B7C + 4 * port);
+    if (((m.u32(pad) & 0x101F) ^ 0x101F) == 0) m.w32(o, m.u32(o) | 0x10000000);
+    if (((m.u32(pad) & 0x404F) ^ 0x404F) == 0) m.w32(o, m.u32(o) | 0x20000000);
+    if (m.s32(o + 0x134)) {
+        for (U k : {0x218u, 0x21Cu, 0x220u, 0x200u}) m.w32(e + k, 0);
+        m.w32(o + 0x134, m.s32(o + 0x134) - 1);
+        return;
+    }
+    m.w8(o + 0x153, m.u8(0x80093B78 + port));
+    I layout, invert, box, a3;
+    if (port) {
+        layout = m.u32(G_GAME + 0x10C), invert = m.s32(G_GAME + 0xF0), box = m.s32(G_GAME + 0x100);
+        a3 = m.s32(G_GAME + 0xFC) == 0;
+    } else {
+        layout = m.u32(G_GAME + 0x108), invert = m.s32(G_GAME + 0xDC), box = m.s32(G_GAME + 0xEC);
+        a3 = m.s32(G_GAME + 0xE8) == 0;
+    }
+    if (box) {
+        m.w16(o + 0xB4, 0xD0);
+        m.w16(o + 0xB6, 0x56);
+        m.w32(o, m.u32(o) | 0x400000);
+    } else {
+        m.w16(o + 0xB4, 0x40);
+        m.w16(o + 0xB6, 0x1E);
+        m.w32(o, m.u32(o) & 0xFFBFFFFF);
+    }
+    m.w32(o, a3 ? (m.u32(o) | 0x80000) : (m.u32(o) & 0xFFF7FFFF));
+    if (!(layout == 2 || layout == 1 || layout == 3 || layout == 4)) layout = 0;
+    if (S8(m.u8(o + 0x153)) == 0) layout = 5;
+    // func_80076240 (port, layout, invert)
+    auto action = [&](I a, I mask, I excl) {
+        m.w32(G_ACTIONS + 4 * (port * 9 + a), mask);
+        m.w32(G_ACTION_EXCL + 4 * (port * 9 + a), excl);
+    };
+    auto axis = [&](I role, I src, I v, I inv) {
+        U a = U(G_ROLE_AXES + port * 0xA0 + role * 0x28);
+        m.w32(a, src);
+        m.w32(a + 4, 0);
+        m.w32(a + 8, 0);
+        U c = U(G_AXIS_CURVES + (port << 5) + src * 8);
+        for (int k = 0; k < 4; k++) m.w8(a + 0xC + k, m.u8(c + k));
+        m.w32(a + 0x24, inv);
+        m.w8(a + 0x10, m.u8(c + 4));
+        axis_speed(m, port, role, v, 0);
+    };
+    auto button = [&](I role, I plus, I minus, I ramp, I x, I v, I inv, I reset) {
+        U a = U(G_ROLE_BUTTONS + port * 0xD0 + role * 0x34);
+        m.w32(a + 4, minus);
+        m.w32(a, plus);
+        m.w32(a + 8, ramp);
+        m.w32(a + 0xC, x);
+        m.w32(a + 0x20, inv);
+        button_speed(m, port, role, v, 0);
+        if (reset) {
+            m.w32(a + 0x28, 0x200000);
+            m.w32(a + 0x2C, 0);
+            m.w32(a + 0x30, 2);
+        }
+    };
+    auto rate = [&](I role, I v) {
+        U a = U(G_ROLE_BUTTONS + port * 0xD0 + role * 0x34);
+        m.w32(a + 0x24, 0);
+        m.w32(a + 0x28, v);
+        m.w32(a + 0x2C, 0);
+    };
+    // the six layouts (0..4 the options, 5 a digital pad): actions {mask, exclusive}, stick roles
+    // {source, speed}, button roles {plus, minus, ramp, x, speed}; role 2 takes the invert option
+    struct Layout {
+        I acts[9][2];
+        I axes[4][2];
+        I btns[4][5];
+        I look, aim_pitch;
+    };
+    constexpr I S = -1, F = 0x3C0000;
+    static const Layout layouts[6] = {
+        {{{2, 0}, {4, 0}, {0x40, 0}, {1, 0}, {8, 0}, {8, 0}, {0x800, 0}, {0x400, 0}, {0x200, 0}},
+         {{3, S}, {2, S}, {1, F}, {0, F}},
+         {{0x1000, 0x4000, 0x10, 0, S}, {0x8000, 0x2000, 0x10, 0, S}, {0x1000, 0x4000, 0x10, 1, F}, {0x8000, 0x2000, 0x10, 1, F}},
+         1, 0},
+        {{{0x40, 0}, {0x10, 0}, {0x20, 0}, {1, 0}, {0x80, 0}, {0x80, 0}, {0x800, 0}, {0x200, 0}, {2, 0}},
+         {{3, S}, {0, S}, {1, F}, {2, F}},
+         {{0x1000, 0x4000, 0x10, 0, S}, {4, 8, 0, 0, S}, {0x1000, 0x4000, 0x10, 1, F}, {0x8000, 0x2000, 0, 0, F}},
+         1, 1},
+        {{{2, 0}, {4, 0}, {0x40, 0}, {0x400, 0}, {8, 0}, {8, 0}, {0x800, 0}, {0x80, 0}, {1, 0}},
+         {{3, S}, {0, S}, {1, F}, {2, F}},
+         {{0x1000, 0x4000, 0x20, 0, S}, {0x8000, 0x2000, 0x20, 1, S}, {0x1000, 0x4000, 0x20, 1, F}, {0x8000, 0x2000, 0x20, 0, F}},
+         1, 1},
+        {{{2, 0}, {0x40, 0}, {0x20, 0}, {4, 0}, {8, 0}, {8, 0}, {0x800, 0}, {0x400, 0}, {1, 0}},
+         {{3, S}, {2, S}, {1, F}, {0, F}},
+         {{0x1000, 0x4000, 0x10, 0, S}, {0x8000, 0x2000, 0x10, 0, S}, {0x1000, 0x4000, 0x10, 1, F}, {0x8000, 0x2000, 0x10, 1, F}},
+         1, 1},
+        {{{0x80, 0}, {0x20, 0}, {0x10, 0}, {1, 0}, {0x40, 0}, {0x40, 0}, {0x800, 0}, {0x400, 0}, {2, 0}},
+         {{3, S}, {2, S}, {1, F}, {0, F}},
+         {{0x1000, 0x4000, 0x40, 0, S}, {0x8000, 0x2000, 0, 0, S}, {0x1000, 0x4000, 0x40, 1, F}, {4, 8, 0, 0, F}},
+         1, 1},
+        {{{0x40, 0}, {0x10, 0}, {0x20, 0}, {1, 2}, {0x80, 0}, {0x80, 0}, {0x800, 0}, {3, 0}, {2, 0}},
+         {{3, S}, {2, S}, {1, 0x680000}, {0, 0x280000}},
+         {{0x1000, 0x4000, 2, 0, S}, {4, 8, 0, 1, S}, {0x1000, 0x4000, 2, 1, F}, {0x8000, 0x2000, 0, 1, F}},
+         2, 0},
+    };
+    const Layout& l = layouts[layout];
+    I spd = m.s32(0x8009E3A8);
+    for (int i = 0; i < 9; i++) action(i, l.acts[i][0], l.acts[i][1]);
+    for (int r = 0; r < 4; r++) axis(r, l.axes[r][0], l.axes[r][1] == S ? spd : l.axes[r][1], r == 2 ? invert : 0);
+    for (int r = 0; r < 4; r++) {
+        const I* b = l.btns[r];
+        button(r, b[0], b[1], b[2], b[3], b[4] == S ? spd : b[4], r == 2 ? invert : 0, 1);
+    }
+    rate(0, 0x200000), rate(1, 0x200000), rate(2, 0x20000), rate(3, 0x20000);
+    m.w32(G_LOOK_MODE + 4 * port, l.look);  // look_mode_set
+    m.w32(G_AIM_PITCH_FROM_MOVE + 4 * port, l.aim_pitch);
+    // mp_pad_config: the four stick curves {0, 0xFF, 0x5B, 0x5B, 0x5B}, every role on them reset
+    for (I s = 0; s < 4; s++) {
+        U c = U(G_AXIS_CURVES + (port << 5) + s * 8);
+        m.w8(c + 1, 0xFF);
+        m.w8(c, 0);
+        m.w8(c + 2, 0x5B);
+        m.w8(c + 3, 0x5B);
+        m.w8(c + 4, 0x5B);
+        for (I role = 0; role < 4; role++) {
+            U a = U(G_ROLE_AXES + port * 0xA0 + role * 0x28);
+            if (m.s32(a) == s) {
+                for (int k = 0; k < 5; k++) m.w8(a + 0xC + k, m.u8(c + k));
+                axis_speed(m, port, role, m.s32(a + 0x20), 1);
+            }
+        }
+    }
+    m.w32(o + 0x134, 0x1E);
+    m.w32(o, m.u32(o) & ~I(0x10));
+    I crouched = (m.u32(o) >> 1) & 1;
+    player_stand_port(eng, e, port);
+    if (crouched) eng.note("pad_config while crouched not implemented");
+}
+
+
+void player_weapon_draw(Engine& eng, U e) { weapon_draw(eng, e, U(eng.m.u32(e + 0x388))); }
+
 void fade_think(Engine& eng, U e) {
     Mem& m = eng.m;
     U o = U(m.u32(e + 0x388));
@@ -465,6 +664,8 @@ void fade_think(Engine& eng, U e) {
 void player_update(Engine& eng, U e) {
     Mem& m = eng.m;
     U inv = U(m.u32(e + 0x388));
+    I port = m.u8(inv + 0x152);
+    if (m.s8(inv + 0x153) != m.s8(ANALOG + port)) player_pad_config(eng, e, inv, port);
     if (m.s32(e + 0x210) > 0x13880000) eng.note("player fell out of the world (10000 damage) not implemented");
     if (m.u32(e + 0x38) & 0x4000)
         eng.note("player death not implemented");

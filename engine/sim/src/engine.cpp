@@ -334,6 +334,10 @@ void Engine::instance_init(U e, U model) {
 }
 
 void Engine::model_swap(U e, U model, I flags) {
+    if (swap_hook) {
+        swap_hook(e, model, flags);
+        return;
+    }
     U inst = U(m.u32(e + 0x100));
     m.w32(inst + 0x6C, 0x80);
     m.w32(inst + 0x68, 0);

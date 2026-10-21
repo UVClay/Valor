@@ -25,6 +25,11 @@ bool has_handler(const char* kind, U fn);
 // engine_objects.py: spawning from records and the world objects.
 void place(Engine& eng, U e, Record& rec);
 U model_by_hash(Engine& eng, U h);
+// weapon_draw (0x8007DD4C): the soldier's current slot's weapon in hand.
+void player_weapon_draw(Engine& eng, U e);
+// player_pad_config (0x8007A050): the controller roles by the layout option; the stance restored.
+void player_pad_config(Engine& eng, U e, U inv, I port);
+void player_stand_port(Engine& eng, U e, I port);
 U record_spawn_entity(Engine& eng, Record& rec);  // 0 when refused (queued)
 constexpr U G_LADDER_HELD = 0x8009A5B8;
 constexpr U LADDER_THINK = 0x800611D0;

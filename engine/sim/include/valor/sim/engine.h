@@ -57,6 +57,8 @@ public:
     Engine(const std::string& root, const std::string& level, const Feed& feed);
     ~Engine();
     bool load(const std::string& seed_path, std::string* err);
+    // The level's start built from the disc files and the save data (load.cpp).
+    bool load_disc(const std::vector<uint8_t>& game, struct LevelBuild& out, std::string* err);
 
     std::string root, level;
     int mission_n = 0, level_n = 0;
@@ -99,6 +101,9 @@ public:
     void entity_defaults(U e);
     void instance_init(U e, U model);
     void model_swap(U e, U model, I flags);
+    // While the level is built from the disc (load.cpp), the original's heap: model_swap releases
+    // the old pose buffer and allocates the new one exactly (model_instance_init).
+    std::function<void(U e, U model, I flags)> swap_hook;
     void remove(U e, const std::string& why = "");
 
     // -- input
