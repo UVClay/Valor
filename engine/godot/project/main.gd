@@ -7,7 +7,15 @@ extends Node3D
 ## --walk=TICKS (walk forward on its own), --place=X,Y,Z,YAW,PITCH (game units and angles), --screenshot=FILE.png --frames=N (save the frame N and quit).
 
 const RUN := 0x22DD00  # 34.863 units per tick: the keyboard's (and a full stick's) speed
-const TURN_KEYS := 60 << 16  # the d-pad's full turn, 60 units per tick
+# The pad's buttons (a fresh card's layout, controls.cpp): keys press them, and the core reads
+# them as the game does: the arrows are the d-pad (turning ramps up to 60 units per tick).
+const PAD_TRIANGLE := 0x10  # jump
+const PAD_L2 := 0x1  # crouch
+const PAD_SQUARE := 0x80  # Use, reload
+const PAD_R2 := 0x2  # aim
+const PAD_L3 := 0x200  # centre the view
+const PAD_LEFT := 0x8000
+const PAD_RIGHT := 0x2000
 const ANGLE := TAU / 4096.0
 
 @export var mouse_units_per_pixel := 3.0  # game angle units (4096 per turn) per mouse pixel
@@ -22,8 +30,7 @@ var prev_pitch := 0.0
 var cur_pitch := 0.0
 var mouse_turn := 0.0  # game units not yet given to the core
 var mouse_pitch := 0.0
-var jump_pressed := false
-var crouch_pressed := false
+var tapped := 0  # buttons pressed and released since the last tick: held for one tick
 var auto_walk := 0
 var screenshot := ""
 var screenshot_frame := 0
@@ -108,33 +115,57 @@ func _unhandled_input(event: InputEvent) -> void:
 		mouse_turn += event.relative.x * mouse_units_per_pixel
 		mouse_pitch += event.relative.y * mouse_units_per_pixel
 	elif event is InputEventKey and event.pressed and not event.echo:
-		match event.physical_keycode:
-			KEY_SPACE:
-				jump_pressed = true
-			KEY_C, KEY_CTRL:
-				crouch_pressed = true
-			KEY_ESCAPE:
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		if event.physical_keycode == KEY_ESCAPE:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		else:
+			tapped |= key_button(event.physical_keycode)
 	elif event is InputEventMouseButton and event.pressed:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		elif event.button_index == MOUSE_BUTTON_MIDDLE:
+			tapped |= PAD_L3
+
+
+func key_button(key: Key) -> int:
+	match key:
+		KEY_SPACE:
+			return PAD_TRIANGLE
+		KEY_C, KEY_CTRL:
+			return PAD_L2
+		KEY_E:
+			return PAD_SQUARE
+		KEY_LEFT:
+			return PAD_LEFT
+		KEY_RIGHT:
+			return PAD_RIGHT
+	return 0
+
+
+func held_buttons() -> int:
+	var b := 0
+	for key in [KEY_SPACE, KEY_C, KEY_CTRL, KEY_E, KEY_LEFT, KEY_RIGHT]:
+		if Input.is_physical_key_pressed(key):
+			b |= key_button(key)
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		b |= PAD_R2
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
+		b |= PAD_L3
+	return b
 
 
 func _physics_process(_delta: float) -> void:
+	# The analog roles, as the runtime's keyboard gives them: the forward role is negative forward.
 	var fwd := 0
 	var strafe := 0
 	var turn := 0
 	if Input.is_physical_key_pressed(KEY_W) or auto_walk > 0:
-		fwd += RUN
-	if Input.is_physical_key_pressed(KEY_S):
 		fwd -= RUN
+	if Input.is_physical_key_pressed(KEY_S):
+		fwd += RUN
 	if Input.is_physical_key_pressed(KEY_D):
 		strafe += RUN
 	if Input.is_physical_key_pressed(KEY_A):
 		strafe -= RUN
-	if Input.is_physical_key_pressed(KEY_RIGHT):
-		turn += TURN_KEYS
-	if Input.is_physical_key_pressed(KEY_LEFT):
-		turn -= TURN_KEYS
 	if auto_walk > 0:
 		auto_walk -= 1
 	# The mouse's turn this tick, in 16.16 game units; pitch: the core does pitch -= role / 2, and
@@ -146,9 +177,8 @@ func _physics_process(_delta: float) -> void:
 	prev_eye = cur_eye
 	prev_yaw = cur_yaw
 	prev_pitch = cur_pitch
-	game.tick(fwd, strafe, turn, pitch_role, jump_pressed, crouch_pressed)
-	jump_pressed = false
-	crouch_pressed = false
+	game.tick(held_buttons() | tapped, fwd, strafe, turn, pitch_role)
+	tapped = 0
 	cur_eye = game.get_eye_position()
 	cur_yaw = game.get_yaw()
 	cur_pitch = game.get_pitch()

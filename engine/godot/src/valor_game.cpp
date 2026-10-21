@@ -26,7 +26,7 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_texture_pages"), &ValorGame::get_texture_pages);
     ClassDB::bind_method(D_METHOD("get_level_info"), &ValorGame::get_level_info);
     ClassDB::bind_method(D_METHOD("place", "x", "y", "z", "yaw", "pitch"), &ValorGame::place);
-    ClassDB::bind_method(D_METHOD("tick", "forward", "strafe", "turn", "pitch", "jump", "crouch"), &ValorGame::tick);
+    ClassDB::bind_method(D_METHOD("tick", "buttons", "forward", "strafe", "turn", "pitch"), &ValorGame::tick);
     ClassDB::bind_method(D_METHOD("get_eye_position"), &ValorGame::get_eye_position);
     ClassDB::bind_method(D_METHOD("get_yaw"), &ValorGame::get_yaw);
     ClassDB::bind_method(D_METHOD("get_pitch"), &ValorGame::get_pitch);
@@ -135,12 +135,14 @@ Dictionary ValorGame::get_level_info() const {
     return d;
 }
 
-void ValorGame::tick(int64_t forward, int64_t strafe, int64_t turn, int64_t pitch, bool jump, bool crouch) {
+void ValorGame::tick(int64_t buttons, int64_t forward, int64_t strafe, int64_t turn, int64_t pitch) {
     if (!loaded_) return;
-    valor::PlayerInput in;
-    in.forward = valor::s32(forward), in.strafe = valor::s32(strafe), in.turn = valor::s32(turn);
-    in.pitch = valor::s32(pitch), in.jump = jump, in.crouch = crouch;
-    session_.tick(in);
+    valor::Controls& c = session_.player().controls;
+    c.pad.prev = c.pad.now;
+    c.pad.now = 0xFFFF0000u | (uint32_t(buttons) & 0xFFFF);
+    const int64_t axes[4] = {forward, strafe, pitch, turn};
+    for (int r = 0; r < 4; r++) c.axis_override[r] = true, c.axis_value[r] = valor::s32(axes[r]);
+    session_.tick();
 }
 
 void ValorGame::place(double x, double y, double z, double yaw, double pitch) {
@@ -152,8 +154,8 @@ void ValorGame::place(double x, double y, double z, double yaw, double pitch) {
 
 Vector3 ValorGame::get_eye_position() const {
     const valor::Player& player = session_.player();
-    const valor::Walker& w = player.walker();
-    return to_godot(w.pos[0] / 65536.0, w.pos[1] / 65536.0 + player.eye_offset(), w.pos[2] / 65536.0);
+    const valor::Walker& w = player.w;
+    return to_godot(w.pos[0] / 65536.0, w.pos[1] / 65536.0 + player.eye_offset, w.pos[2] / 65536.0);
 }
 
 double ValorGame::get_yaw() const { return -(session_.player().yaw() / 65536.0) * kAngle; }
@@ -161,9 +163,9 @@ double ValorGame::get_pitch() const { return (session_.player().pitch() / 65536.
 
 Dictionary ValorGame::get_state() const {
     const valor::Player& player = session_.player();
-    const valor::Walker& w = player.walker();
+    const valor::Walker& w = player.w;
     Dictionary d;
-    d["tick"] = int64_t(player.ticks());
+    d["tick"] = int64_t(player.ticks);
     d["x"] = w.pos[0] / 65536.0;
     d["y"] = w.pos[1] / 65536.0;
     d["z"] = w.pos[2] / 65536.0;

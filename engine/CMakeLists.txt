@@ -22,13 +22,14 @@ add_library(valor_core STATIC
     core/src/level.cpp
     core/src/render_data.cpp
     core/src/player.cpp
+    core/src/controls.cpp
     core/src/records.cpp
     core/src/session.cpp
 )
 target_include_directories(valor_core PUBLIC core/include)
 target_compile_options(valor_core PRIVATE -Wall -Wextra -fno-exceptions)
 
-add_executable(coretest tools/coretest/coretest.cpp)
+add_executable(coretest tools/coretest/coretest.cpp tools/coretest/pad_mode.cpp)
 target_link_libraries(coretest PRIVATE valor_core)
 
 if(VALOR_GODOT)

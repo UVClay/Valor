@@ -255,7 +255,12 @@ extern "C" void hook_rand(Cpu *c, RecompFn body) {
 // VALOR_TRACE_INPUT: what a reimplementation takes as the player's input each tick, as the game
 // sees it. 0x80075A30 role_button(port, role): "role TICK: PORT ROLE 0 VALUE" (with the stick's
 // "... 1 VALUE" from role_axis, game.cpp, when the buttons give 0); 0x8007A6B0 player_update:
-// "input VBLANK TICK: " and the pad's four words at 0x80093B7C (docs/re/movement.md).
+// "input VBLANK TICK: " and the pad's four words at 0x80093B7C (now and before, per port), then
+// the stick bytes 0x80093B70 (per port: rx, ry, lx, ly, as role_axis_curve reads them) and the
+// analog-mode bytes 0x80093B78 (docs/re/movement.md). Then "| " and the soldier as the update
+// finds it, which is how the last tick left it: position +0x20C, where entity_move left it
+// +0x3BC, the push +0x1F0, the eye height +0x2D4, contact +0x38, flags B +0x10, and inv's flags,
+// slot and weapon (+0x54), flinch (+0x154) and knockback (+0x80), in hex.
 extern "C" void hook_role_button(Cpu *c, RecompFn body) {
     uint32_t port = c->r[4], role = c->r[5];
     body(c);
@@ -263,9 +268,23 @@ extern "C" void hook_role_button(Cpu *c, RecompFn body) {
 }
 
 extern "C" void hook_player_update(Cpu *c, RecompFn body) {
-    if (trace_input())
-        log("input %llu %u: %08X %08X %08X %08X", (unsigned long long)hw::gpu.frames,
+    if (trace_input()) {
+        uint32_t e = c->r[4], inv = psx_r32(c, e + 0x388);
+        std::string st;
+        for (uint32_t o : {0x20Cu, 0x210u, 0x214u, 0x3BCu, 0x3C0u, 0x3C4u, 0x1F0u, 0x1F4u, 0x1F8u, 0x2D4u, 0x38u, 0x10u}) {
+            char buf[12];
+            snprintf(buf, sizeof buf, " %X", psx_r32(c, e + o));
+            st += buf;
+        }
+        for (uint32_t o : {0x0u, 0x54u, 0x154u, 0x80u, 0x84u, 0x88u}) {
+            char buf[12];
+            snprintf(buf, sizeof buf, " %X", psx_r32(c, inv + o));
+            st += buf;
+        }
+        log("input %llu %u: %08X %08X %08X %08X %08X %08X %08X |%s", (unsigned long long)hw::gpu.frames,
             psx_r32(c, 0x8009A5DC), psx_r32(c, 0x80093B7C), psx_r32(c, 0x80093B80),
-            psx_r32(c, 0x80093B84), psx_r32(c, 0x80093B88));
+            psx_r32(c, 0x80093B84), psx_r32(c, 0x80093B88), psx_r32(c, 0x80093B70),
+            psx_r32(c, 0x80093B74), psx_r32(c, 0x80093B78), st.c_str());
+    }
     body(c);
 }

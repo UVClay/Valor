@@ -30,7 +30,11 @@ public:
     Dictionary get_level_info() const;
 
     void place(double x, double y, double z, double yaw, double pitch);
-    void tick(int64_t forward, int64_t strafe, int64_t turn, int64_t pitch, bool jump, bool crouch);
+    // One tick from the host's input: the pad's buttons (PS1 bits: 0x10 Triangle, 0x1 L2, ...)
+    // and the analog roles' values in the game's units (16.16): forward (negative is forward),
+    // strafe, turn (yaw units added), pitch (pitch -= value / 2), as the runtime's mouse and
+    // keyboard give them.
+    void tick(int64_t buttons, int64_t forward, int64_t strafe, int64_t turn, int64_t pitch);
     Vector3 get_eye_position() const;
     double get_yaw() const;    // Godot rotation.y, radians
     double get_pitch() const;  // Godot rotation.x, radians
