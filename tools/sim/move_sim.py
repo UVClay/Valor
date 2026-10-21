@@ -576,8 +576,10 @@ def read_trace(path):
         sol = [e for e in d["ents"] if e[1] == 1]
         if not sol or "player" not in d:
             continue
+        cam = [e for e in d["ents"] if e[1] == 2]
         out.append(dict(tick=d["tick"], vblank=d["vblank"], pos=sol[0][3:6], yaw=d["player"][0],
-                        pitch=d["player"][1], flags_b=d["player"][6], health=sol[0][9]))
+                        pitch=d["player"][1], flags_b=d["player"][6], health=sol[0][9],
+                        cam=cam[0][3:6] if cam else None))
     return out
 
 
@@ -655,6 +657,18 @@ def check(args):
             world.slots = slots
         else:
             world.all_chunks()
+        if p["health"] <= 0 and t["health"] <= 0 and t["cam"] is not None:
+            # Dead (movement.md, Death): no move of his own; player_think_dead copies the death
+            # camera's position, which moved earlier in the tick (the camera is first in the list).
+            err = max(abs(t["cam"][i] - t["pos"][i]) for i in range(3))
+            stats["dead"]["ticks"] += 1
+            if err == 0:
+                stats["dead"]["exact"] += 1
+            else:
+                worst["dead"] = max(worst["dead"], err)
+                stats["dead"]["fail"] += 1
+            e = None
+            continue
         if e is None or not free:
             e = dict(pos=list(p["pos"]), vy=p["vy"], ground=p["ground"], floor=p["floor"], old=list(p["pos"]))
         # +0x3BC, the position entity_move ended with; a touch handler (objects.md, Blocking)

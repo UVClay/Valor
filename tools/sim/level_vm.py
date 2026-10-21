@@ -380,7 +380,7 @@ class Ent:
         self.removed = False
         self.zone = None          # +0x390 (this tick), +0x398/+0x39C (last tick)
         self.bits = 0
-        self.prev_zone = 0
+        self.prev_zone = 0xFFFF   # a new entity: "no zone" (as the original starts them)
         self.prev_bits = 0
         Ent._n += 1
         self.serial = Ent._n
@@ -1504,9 +1504,23 @@ class Run:
         prev_f = None
         alarm_prev = s32(obs.mem.u32(G_ALARM))
         last_now = 0
+        restart = False
         for fi, (F, gt) in enumerate(self.frames):
             if maxf and fi >= maxf:
                 break
+            if restart and tick_i < len(self.ticks):
+                # the player died: level_restart -> level_start without reloading the BSD
+                # (record variables and script bytes keep what the scripts wrote); every entity
+                # gone from the first tick after it was removed first, with its 0x1A
+                restart = False
+                sim.stats["restarts"] += 1
+                first = self.ticks[tick_i][2]
+                for h, e in list(self.ents.items()):
+                    if not e.removed and h not in first:
+                        if e.rec is not None:
+                            sim.remove(e, "restart")
+                        e.removed = True
+                sim.level_start(sim.player)
             ticks = []
             while tick_i < len(self.ticks) and self.ticks[tick_i][0] <= gt:
                 ticks.append(tick_i)
@@ -1577,6 +1591,8 @@ class Run:
                     sim.remove(e, "culled")
             sim.run_queue(limit)
             self.end_frame_alarms(om)
+            if om.u32(LEVEL_FLAGS) & 2:
+                restart = True
         return self.st
 
     def alarm(self, node_idx):
@@ -1607,6 +1623,10 @@ class Run:
                 continue
             typ, flags = last[2][h][0], last[2][h][1]
             if typ == 0x65 and self.near_player(last, h, nxt):
+                continue
+            # 1:1's timed prop removes itself in its think (variable 6 < variable 2; objects.md),
+            # which the trace can't tell from a cull: the think, as it always was when watched
+            if typ == 0x1771:
                 continue
             # dead characters are taken away by their own code (never culled in the session);
             # anything else cullable goes, dead or not (a broken window off screen)

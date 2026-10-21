@@ -699,14 +699,18 @@ def check_trigger(st, trace, fstate):
         pfs = fstate.get(trace[n - 1]["frame"])
         if not fs or not pfs:
             continue
+        # The game polls the pad for every tick (player.md, The trigger); the watch shows the
+        # frame's last two polls (0x80093B7C now, 0x80093B84 before): a frame of k ticks reads
+        # the earlier one for its first k-1 ticks, the last one for its last tick.
+        poll = fs["pad"] if trace[n]["last"] or trace[n]["nframe"] == 1 else fs["pad_prev"]
         if vb != last_vb:
             iv = fs["pre_iv"]
             cd, lat = iv[0x48 // 4], iv[0x44 // 4]
-            cur, prev = fs["pad"], prev_pad
+            cur, prev = poll, prev_pad
             prev_pad = fs["pad"]
             last_vb = vb
         else:
-            prev = cur
+            prev, cur = cur, poll
         if fs["level"] != pfs["level"] or slot != r0[1] or w != r0[2] or w in (3, 7, 10):
             continue
         m, x = fs["mask"]
@@ -719,7 +723,12 @@ def check_trigger(st, trace, fstate):
             trig = held if lat > 0 else pressed
         delay, flags, _, size = fs["weapons"][w]
         busy = (fs["pre_script"] if trace[n]["first"] else fs["script"]) in (2, 9, 10, 13, 16)
-        fire = trig and r0[3] > 0 and not flags & 1 and not busy
+        # Use (action 5) comes first in player_update: a reload it starts this tick makes the
+        # weapon script 9 before player_weapon_update looks, so the trigger's shot is lost
+        um, ux = fs["use"]
+        use = (cur & um) == um and (prev & um) != um and (ux == 0 or (cur & ux) != ux)
+        use_reload = use and r0[4] != 0 and 0 < r0[3] < size and not flags & 1 and not busy
+        fire = trig and r0[3] > 0 and not flags & 1 and not busy and not use_reload
         shot = clip == r0[3] - 1
         before = (lat, cd)
         if fire:
@@ -738,13 +747,18 @@ def check_trigger(st, trace, fstate):
         # the automatic reload: clip 0, countdown run out, rounds in reserve
         reload = clip > r0[3] and res < r0[4]
         want = (clip if fire else r0[3]) == 0 and cd <= 0 and r0[4] != 0 and not flags & 1
-        um, ux = fs["use"]
-        use = (cur & um) == um and (prev & um) != um and (ux == 0 or (cur & ux) != ux)
         if use and not want and (reload or r0[3] > 0):
             want = use and r0[4] != 0 and r0[3] < size and not flags & 1 and not busy
-            st.add("reload: on a Use press (clip not full, rounds in reserve, no weapon script)",
-                   "exact" if reload == want else "fail", f"tick {trace[n]['tick']} vblank {vb} weapon {w} "
-                   f"clip {r0[3]}->{clip} reserve {r0[4]}->{res}: predicted {want} script {fs['pre_script']}")
+            key = "reload: on a Use press (clip not full, rounds in reserve, no weapon script)"
+            if reload == want:
+                st.add(key, "exact")
+            elif not trace[n]["first"] and fs["pre_script"] != fs["script"]:
+                # a weapon script started or ended inside a frame of several ticks: the watch
+                # doesn't show in which
+                st.add(key, "within")
+            else:
+                st.add(key, "fail", f"tick {trace[n]['tick']} vblank {vb} weapon {w} "
+                       f"clip {r0[3]}->{clip} reserve {r0[4]}->{res}: predicted {want} script {fs['pre_script']}")
         elif reload or (want and r0[3] == 0):
             st.add("reload: starts the tick the countdown runs out on an empty clip",
                    "exact" if reload == want else "fail", f"tick {trace[n]['tick']} vblank {vb} weapon {w} "
@@ -1271,6 +1285,19 @@ def check_damage(st, dmg, fstate, trace):
         elif d["atype"] == 0x13F4:
             st.add("damage: enemy bullet on the player (the soldier record's value)", "within")
             st.enemy_dmg[(fs["level"] if fs else "?", d["dmg"])] += 1
+        elif d["atype"] == 0x31 and d["vtype"] == 1 and fx3(d["dmg"]) == 1000000:
+            # player_hit_part: an explosion within 300 (dist2d_approx: |dx| + |dz| - min/2) sets
+            # its part's damage to 1000 (combat.md, The player being hit)
+            near = False
+            for t in trace:
+                if t["vblank"] != d["vb"]:
+                    continue
+                pl = [e for e in t["ents"] if e[1] == 1]
+                for e in (e for e in t["ents"] if e[1] == 0x31):
+                    if pl:
+                        dx, dz = abs((pl[0][3] >> 16) - (e[3] >> 16)), abs((pl[0][5] >> 16) - (e[5] >> 16))
+                        near |= dx + dz - (min(dx, dz) >> 1) < 300
+            st.add("damage: explosion on the player within 300, 1000", "exact" if near else "fail", f"{d}")
         elif d["atype"] == 0x31:
             st.add("damage: explosion, 4.0 per tick", "exact" if fx3(d["dmg"]) == 4000 else "fail", f"{d}")
         elif d["atype"] == 0x1405:
@@ -1311,6 +1338,7 @@ def check(trace_path, log_path, seeds, to, frm, verbose, level=None):
         for k, t in enumerate(ts):
             t["last"] = k == len(ts) - 1
             t["first"] = k == 0
+            t["nframe"] = len(ts)
     seeds = sorted(seeds)
     ram = Ram()
     seeded = False
@@ -1345,14 +1373,14 @@ def check(trace_path, log_path, seeds, to, frm, verbose, level=None):
             if name == "st":
                 stats_d[addr & 0xFFF] += s32(new - old)
             ram.put32(addr, new)
-        ctx.update(ram=ram, pre=pre, models=models, vb=vb)
+        ctx.update(ram=ram, pre=pre, models=models, vb=vb, ticked=bool(ticks_at.get(vb)))
         for i, e in enumerate(SLOTS):
             check_slot(ctx, i, e, last_out)
         sol = ram.u32(0x8009D654)
         fstate[vb] = dict(pre_script=pre.s16(sol + 0x11E), script=ram.s16(sol + 0x11E), pre_iv=[pre.s32(sol + 0x3CC + o) for o in range(0, 0xA0, 4)],
                           iv=[ram.s32(sol + 0x3CC + o) for o in range(0, 0xA0, 4)],
                           ia=[ram.s32(sol + 0x55C + o) for o in range(0, 0x80, 4)],
-                          pad=ram.u32(0x80093B7C), mask=(ram.u32(0x800B7790), ram.u32(0x800B77E0)),
+                          pad=ram.u32(0x80093B7C), pad_prev=ram.u32(0x80093B84), mask=(ram.u32(0x800B7790), ram.u32(0x800B77E0)),
                           use=(ram.u32(0x800B7790 + 20), ram.u32(0x800B77E0 + 20)),
                           stats=stats_d, level=ctx["level"],
                           weapons={w: (s16(ram.u32(0x80093640 + 0x44 * w + 4)), ram.u16(0x80093640 + 0x44 * w + 0x2A),
@@ -1410,7 +1438,9 @@ def tick_targets(ctx, t):
                         health=te[9], type=te[1]))
     pl = [e for e in t["ents"] if e[1] == 1]
     cam = [e for e in t["ents"] if e[1] == 2]
-    if pl and "player_parts" in ctx:
+    # a dead player (player_death_start: flags A 0x20000, the hit and touch handlers cleared;
+    # movement.md, Death) stops nothing
+    if pl and "player_parts" in ctx and not pl[0][2] & 0x20000:
         e = pl[0]
         pt = ctx["player_parts"]
         m = rot_yxz(*[a >> 16 for a in e[6:9]])
@@ -1468,7 +1498,10 @@ def check_slot(ctx, i, e, last_out):
                 bad = [j for j in js if j < nb and js[j] != joints[j]]
                 st.add("joints from the pose (skeleton walk)", "exact" if not bad else "fail",
                        tag + f": {len(bad)} joints differ, e.g. {[(j, js[j], joints[j]) for j in bad[:2]]}")
-    # the hit parts after the frame's last tick
+    # the hit parts after the frame's last tick; a frame without one (paused, or a menu over
+    # the level) draws, rebuilding the joints, but places no parts: they keep the last tick's
+    if not ctx.get("ticked", True):
+        return
     angles = [ram.s32(e + 0x228 + 4 * k) for k in range(3)]
     pos = [ram.s32(e + 0x20C + 4 * k) for k in range(3)]
     parts, m, t, _ = slot_parts(ram, e, inst, model, angles, pos, joints, quats)

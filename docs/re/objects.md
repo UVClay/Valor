@@ -325,7 +325,10 @@ from record `+0x5C`, collision radius 100, home angles from the record (`+0x18..
   the grenade (Grenades).
 - **0x1771** (`0x80046B2C`, 1:1 only): no collision (mask 0, radius 0), runs its scripts; each
   tick its angular velocity is variables 3, 4, 5, and it removes itself when variable 6 drops
-  below variable 2 (a scripted spinning prop with a lifetime, inferred).
+  below variable 2 (a scripted spinning prop with a lifetime). Watched in a 1:1 run: spawned
+  after the level start, it travelled in a straight line (about 10 units x, 17 z per tick) until it
+  removed itself in its think; its record script (6) got no message 2,
+  so it was not culled although its flags A have 0x8000.
 - **0x1774** (`0x800905C0`; the model exists only in **9:4**, the V2: catalogue.md; the
   model lists of the 2:3 and 4:2 dumps have none): solid, scripted, with two particle systems of
   40 (smoke and fire). Variable 2 set: each tick it climbs 300 units (vertical velocity -300),
@@ -565,8 +568,7 @@ dumps from headless runs are repeatable, but they are not the recorded play past
 
 ## Open
 
-- 0x1771 (1:1's spinning prop, model 0xC2E34354) not watched in play (not spawned at the
-  level's start); 0x1774 watched only with its variable poked (above);
+- 0x1771 (1:1's prop, model 0xC2E34354): what sets its velocity (its scripts, not read); 0x1774 watched only with its variable poked (above);
   whether 0x1405 is the dog (no dump shows its model).
 - The toggling door scripts (open with 16, close with 4: 360 of 900) not watched in play: the
   doors of 3:1, 4:1 and 7:2 are spawned by triggers, not at the level's start, so a warped start

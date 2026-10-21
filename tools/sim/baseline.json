@@ -28,8 +28,8 @@
    },
    "combat": {
     "1:3": {
-     "compared": 76348,
-     "exact": 75704,
+     "compared": 76333,
+     "exact": 75689,
      "fail": 5,
      "within": 639
     },
@@ -40,9 +40,9 @@
      "within": 41
     },
     "2:2": {
-     "compared": 55387,
-     "exact": 55257,
-     "fail": 76,
+     "compared": 55318,
+     "exact": 55193,
+     "fail": 71,
      "within": 54
     }
    },
@@ -101,8 +101,87 @@
     },
     "2:2": {
      "compared": 37,
-     "exact": 36,
-     "fail": 1,
+     "exact": 37,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "m3l1": {
+  "levels": [
+   "3:1",
+   "1:1"
+  ],
+  "results": {
+   "brain": {
+    "1:1": {
+     "compared": 1632,
+     "exact": 1632,
+     "fail": 0,
+     "within": 0
+    },
+    "3:1": {
+     "compared": 1215,
+     "exact": 1215,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "1:1": {
+     "compared": 7022,
+     "exact": 6982,
+     "fail": 0,
+     "within": 40
+    },
+    "3:1": {
+     "compared": 7051,
+     "exact": 7032,
+     "fail": 0,
+     "within": 19
+    }
+   },
+   "level": {
+    "1:1": {
+     "compared": 881021,
+     "exact": 881021,
+     "fail": 0,
+     "within": 0
+    },
+    "3:1": {
+     "compared": 2254890,
+     "exact": 2254890,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "1:1": {
+     "compared": 2205,
+     "exact": 2205,
+     "fail": 0,
+     "within": 0
+    },
+    "3:1": {
+     "compared": 4520,
+     "exact": 4520,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "1:1": {
+     "compared": 20,
+     "exact": 20,
+     "fail": 0,
+     "within": 0
+    },
+    "3:1": {
+     "compared": 20,
+     "exact": 20,
+     "fail": 0,
      "within": 0
     }
    }

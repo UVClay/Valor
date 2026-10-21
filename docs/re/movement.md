@@ -415,7 +415,7 @@ When health reaches 0 (`apply_damage` sets contact flag 0x4000), the next `playe
   becomes a physical walker at the soldier's place (flags A 0x102A, gravity), mode 0x800 (its
   eye and look point follow the animation's bones), easing shift 3; its variable 2 picks the
   death animation: 30 if crouched, 20 if killed by an explosion (type 0x31), otherwise 50%
-  10–12, 50% 0–2. The soldier copies the camera's position and angles every tick.
+  10–12, 50% 0–2. The soldier copies the camera's position and angles every tick (`player_think_dead`; the camera is first in the entity list, so it is the camera's position after this tick's move: every dead tick of a 1:1 death matched it exactly; the soldier's own `+0x3BC` is stale meanwhile).
 - When the camera script ends: a 50-tick delay, then a 15-tick fade (which the game shows as
   a cut; hud.md, Fades), and the level is lost (`0x8009C840` |= 2). Without a camera
   animation: only the delay and fade.

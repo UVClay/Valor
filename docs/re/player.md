@@ -118,7 +118,12 @@ the weapon block's busy flag 0x800000) is 2, 9 (reload), 10 (lower), 13 or 16 (r
 sets `latched = refire_count = |weapon +0x04|` (an s16; the halfword at +0x06 is something
 else). "Pressed" is the fire button's mask (`0x800B7790`, port × 9 + action) down now and not
 at the previous poll (`0x80093B7C`, `0x80093B84`); the game polls again for each extra tick of
-a frame, so only a frame's first tick can see a press. So:
+a frame, so a press shows on whichever tick's poll first sees the button down: on a frame of
+several ticks that can be a later one (a monkey run in 3:1 pressed fire between the two ticks
+of a frame; the shot came on the second). Use (action 5) is handled before the trigger in
+`player_update`: a reload it starts makes the weapon script 9 before `player_weapon_update`
+looks, so a fire press in the same tick is lost (1:1, the Garand, clip 6 → 8 and no shot).
+So:
 
 - **Every gun with a positive delay is automatic when held**, the Garand and pistols too: one
   shot every **delay + 1 ticks** (measured for all of 1, 4, 5, 6, 8, 9, 11, 12: 5, 26, 51, 3,
@@ -129,7 +134,9 @@ a frame, so only a frame's first tick can see a press. So:
   script ends if the weapon has fired before (`latched` > 0); if not, it needs a new press
   (measured: fire held from inside the Thompson's first reload never fired).
 
-Checked tick by tick over the replay of 1:3, 2:1 and 2:2 (`tools/sim/combat_sim.py check`,
+Checked again on a monkey run of 3:1 and 1:1 (`tools/sim/check.py`, every tick of both: 2990
+exact) with each tick's poll from the watch's last two polls (the earlier for all but a frame's
+last tick). Checked tick by tick over the replay of 1:3, 2:1 and 2:2 (`tools/sim/combat_sim.py check`,
 stepping this rule from the refire state the watch shows at the end of the previous frame,
 with the frame's pad and the soldier's script number): a shot exactly when predicted in 16975
 of 16977 ticks; the other 2 are in frames of several ticks where the reload script ended

@@ -424,7 +424,7 @@ of kind 1..6 in table order (`0x80075208`, record context: the objective script,
 start activations...). Nothing resets the records' variable bytes (`+0x20..+0x27`) or the
 scripts' own bytes: they come from the BSD as loaded. A restart after a death
 (`level_restart` `0x800624AC`, `level_main` `0x800640B4`) runs `level_start` without reloading
-the BSD, so they keep what the scripts wrote (read from the code; the session has no death).
+the BSD, so they keep what the scripts wrote. The tick counter `g_tick` is **not** reset (1:1 in a monkey run: 1814 before, 1815 after, with 89 vblanks of fade between). Checked on that run: `level_vm.py` restarting the message system, the spawn queue, the objectives and the record states as listed, and running the 0x1A of every entity gone from the first tick after it, matches every frame after the restart.
 
 ### Checked against a reimplementation
 
@@ -544,7 +544,7 @@ test their position against their zone's records (`zones_update`, `0x800845A8` â
 `zones_mask` `0x80084400`, called by `entities_update` right after `entity_move` for entities
 with flags A & 5, and doing anything only with flags A & 0x51): the zone in `+0x390`, a bit per
 entry of the zone's list in `+0x394` (bit k = the k-th index), last tick's zone and bits in
-`+0x398` and `+0x39C`; every bit that changes is an **enter** or a **leave** (`zones_events`
+`+0x398` and `+0x39C` (a new entity starts with zone 0xFFFF, "none", in both, so its first update reports every bit set as an enter: the player starting inside a volume gets its enter on the level's first tick, as 1:1's r105 does, sending message 3 at once); every bit that changes is an **enter** or a **leave** (`zones_events`
 `0x800840E0`). The position is the integer part (`+0x20E`, `+0x212`, `+0x216`) after the move.
 Which records are tested: for the player, kind-0 records and records with an enter, leave or
 Use list; for a character, records of kind 1..6 with a character enter or leave list.

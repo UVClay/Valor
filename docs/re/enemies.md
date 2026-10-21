@@ -263,7 +263,8 @@ variable, the hit-reaction variable (0x1C, the dog's 0x13) and the hit handlers'
 0x18 (`enemy_hit_part`, in the collision pass: a corpse shot again changes them with no script
 running). A cross-fade started when the instance has no pose yet (pose cache `+0x62` = -1)
 shows a blend counter of 0 in the next dump: `pose_build` zeroes it at the draw (animation.md,
-The pose), not the VM.
+The pose), not the VM; an entity not drawn that frame (off screen: its cache still -1 after it)
+keeps the counter, which then counts down with its frames (2:2, vblank 45937: 2 → 1).
 
 Result over 51 tick pairs of the recorded replay (30 in 1:3 from vblank 2163 to 15915, 21 in
 2:1 from 20702 to 33550; 7 more pairs were dropped as not one tick apart): **95 of 95**

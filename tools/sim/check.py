@@ -265,7 +265,8 @@ def generic_thresholds(baselines):
 
 def segments(trace):
     """The levels as the replay played them: [(first vblank, end vblank)], a new one wherever the
-    tick counter starts again (a level start, or a restart after death)."""
+    tick counter starts again (a level start; a restart after death keeps the counter going,
+    so a level and its restarts are one segment: level_vm.py restarts inside it)."""
     out = []
     for k, (tick, v, _) in enumerate(trace):
         if k == 0 or tick < trace[k - 1][0]:
@@ -411,8 +412,11 @@ def main():
         d = {k: (v, path(v)) for k, v in dumps[v0].items()}
         if system == "move":
             v, p = d["seed"]
+            # the dump before the first tick too: a watch logs changes only, so until the seed
+            # the soldier's unchanged words would be the last level's
+            w, q = d["pre"]
             return ["move_sim.py", "check", trace, os.path.join(work, "move.log"), ml, "--from", str(v0),
-                    "--to", str(v1), "--ram", f"{p}@{v}", "--free"]
+                    "--to", str(v1), "--ram", f"{q}@{w}", "--ram", f"{p}@{v}", "--free"]
         if system == "combat":
             v, p = d["seed"]
             return ["combat_sim.py", "check", trace, os.path.join(work, "combat.log"), "--seed", f"{v}:{p}",

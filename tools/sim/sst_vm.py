@@ -996,8 +996,9 @@ def compare(sim, nxt, e, vm, exclude=()):
     inst = sim.u32(e + 0x100)
     for name, off in (("anim", 0x5C), ("frame", 0x5E), ("frame_min3", 0x60), ("blend", 0x3E)):
         a, b = sim.s16(inst + off), nxt.s16(inst + off)
-        if name == "blend" and a > 0 and vm.pose_cache == -1:
-            a = 0   # pose_build (the draw) zeroes a cross-fade with no pose to fade from
+        if name == "blend" and a > 0 and vm.pose_cache == -1 and nxt.s16(inst + 0x62) != -1:
+            a = 0   # pose_build (the draw) zeroes a cross-fade with no pose to fade from; an
+                    # entity not drawn (its pose cache still -1 after the frame) keeps it
         if a != b:
             diffs.append(("inst", name, a, b))
     return diffs

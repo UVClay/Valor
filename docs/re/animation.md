@@ -445,6 +445,9 @@ in entities.md.
 - An enemy on screen is hit where it was drawn the frame before, moved and turned to where it
   is now: the pose lags the animation by one tick (more when frames are dropped: up to 4 ticks
   per frame).
+- A frame drawn without a tick (paused, a menu over the level) rebuilds the joints but places
+  no parts: they keep the last tick's, a frame behind (3:1 in a monkey run, paused at an
+  animation's last frame: every part from frame 19 while the joints show 20).
 - An enemy off screen keeps the last pose it was drawn in, carried along with its position and
   heading. Only enemy bullets and explosions can hit it there (the player can't aim at it).
 - An enemy never drawn has every joint at 0, so every hit sphere sits at its origin (the feet),
