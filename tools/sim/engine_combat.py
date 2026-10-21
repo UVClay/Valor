@@ -419,9 +419,13 @@ def enemy_hit_part(eng, e, p, o, op):
                 obj = m.u32(e + 0x388) + 0x18
                 hf = m.s32(obj + 0x144 + 4)
                 if hf & 1 and not hf & 0x1E and ((eng.rand.draw(*FN["enemy_hit"]) * 100) >> 15) < 0x32:
-                    eng.note("helmet knocked off (attachment_knock_off) not implemented")
-                    apply_damage(eng, e, m.s32(e + 0xF4), o)
+                    if helmet_off(eng, e, o):
+                        snd = 0x23
+                    else:
+                        snd = 0x25
+                        apply_damage(eng, e, m.s32(e + 0xF4), o)
                     if ot != 0x31:
+                        eng.audio.play(0, snd, e, 0x20000, 0, 0x10000, 0x1800, 0, 0, 0, 0)
                         bump(m, 0x80039CC0)
                     else:
                         bump(m, 0x80039CC4, 0x80039CE8)
@@ -455,6 +459,31 @@ def enemy_hit_part(eng, e, p, o, op):
         ent = eng.ents.get(e)
         eng.logic.run_message(ent, 0, 1, "hit by a projectile")
     return 1
+
+
+def helmet_off(eng, e, o):
+    """enemy_hit_part's head hit with the helmet on: attachment 1 knocked off (the template's model
+    shown, attachment_knock_off with action 0x40000000: along the player's facing), its holder
+    cleared, flags 2 (falling), then dropped from the head's position (0x80050E34 with the
+    soldier's y). True for the two steel helmets (0x8A522920, 0xAA1714FE): the soldier survives."""
+    import engine_attach as at
+    m = eng.m
+    B, T = at.entry(m, e, 1), at.template(1)
+    h = m.u32(T + 0x20)
+    from engine import G_SOLDIER
+    who = m.u32(0x800A0000)          # the code reads g_soldier only when it swapped the model
+    if at.m_hash(eng, B) != h and h:
+        at.instance_release(eng, B + 0x94)
+        at.instance_set(eng, B + 0x94, h, 0x156)
+        who = m.u32(G_SOLDIER)
+    at.knock_off(eng, B, who, m.s32(T + 0x10), m.s32(T + 0x14), m.s32(T), m.s32(T + 8),
+                 m.s32(T + 0xC), m.s32(T + 4), m.s32(T + 0x1C), 0x40000000)
+    m.w32(B + 0xE8, 0)
+    m.w32(B + 0xEC, 0)
+    m.w32(B + 8, 0)
+    m.w32(B, m.u32(B) | 2)
+    at.fall_step(eng, B, m.s32(e + 0x210))
+    return at.m_hash(eng, B) in (0x8A522920, 0xAA1714FE)
 
 
 def player_hit_part(eng, e, p, o, op):
@@ -558,7 +587,21 @@ def player_touch(eng, e, o):
     return 0
 
 
+def walker_world_contact(eng, e, res):
+    """enemy_world_contact (0x80056250) and dog_world_contact (0x80054E14): landing (result bit 1)
+    stops the forward speed and sets +0x38 bit 2; anything else sets +0x3C bit 2."""
+    m = eng.m
+    if res & 1:
+        m.w32(e + 0x200, 0)
+        m.w32(e + 0x38, m.u32(e + 0x38) | 2)
+    else:
+        m.w32(e + 0x3C, m.u32(e + 0x3C) | 2)
+    return 0
+
+
 def register(eng):
+    eng.handlers[("world_contact", 0x80056250)] = lambda e, r: walker_world_contact(eng, e, r)
+    eng.handlers[("world_contact", 0x80054E14)] = lambda e, r: walker_world_contact(eng, e, r)
     eng.handlers[("hit_part", 0x80054C24)] = lambda e, p, o, op: dog_hit_part(eng, e, p, o, op)
     eng.handlers[("hit_part", 0x80055864)] = lambda e, p, o, op: enemy_hit_part(eng, e, p, o, op)
     eng.handlers[("hit_part", 0x8007C1D0)] = lambda e, p, o, op: player_hit_part(eng, e, p, o, op)
