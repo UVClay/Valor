@@ -20,6 +20,8 @@ bool run_think(Engine& eng, U fn, U e) {
         case PARTICLES_THINK: particles_think(eng, e); return true;
         case 0x80082E88: return true;  // the pickup's think is empty
         case LADDER_THINK: ladder_think(eng, e); return true;
+        case EXPLOSION_THINK: explosion_think(eng, e); return true;
+        case BURST_THINK: burst_think(eng, e); return true;
         default: return false;
     }
 }
@@ -43,6 +45,8 @@ bool run_hit_part(Engine& eng, U fn, U e, I p, U o, I op, I& r) {
         case 0x80055864: r = enemy_hit_part(eng, e, p, o, op); return true;
         case 0x8007C1D0: r = player_hit_part(eng, e, p, o, op); return true;
         case PROJECTILE_HIT_PART: r = projectile_hit_part(eng, e, p, o, op); return true;
+        case GRENADE_HIT_PART: r = grenade_hit_part(eng, e, p, o, op); return true;
+        case 0x8004C1B4: r = damage_from_hit(eng, e, p, o, op); return true;
         default: return false;
     }
 }

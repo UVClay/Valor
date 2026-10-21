@@ -42,7 +42,8 @@ int32_t plane_height(const CollChunk& ch, const CollFace& f, int32_t x, int32_t 
 }
 
 // 0x8005FEA0 over a leaf's faces.
-int32_t floor_pick(const CollChunk& ch, size_t start, size_t count, int32_t px, int32_t py, int32_t pz) {
+int32_t floor_pick(const CollChunk& ch, size_t start, size_t count, int32_t px, int32_t py, int32_t pz,
+                   const CollFace** face = nullptr) {
     int32_t best = kNoFloor, best_dist = 0x7FFF;
     bool best_below = false, best_above = false;
     size_t end = std::min(start + count, ch.idx.size());
@@ -66,13 +67,14 @@ int32_t floor_pick(const CollChunk& ch, size_t start, size_t count, int32_t px, 
             best_above = above;
             best_dist = dist;
             best = h;
+            if (face) *face = &f;
         }
     }
     return best;
 }
 
 // 0x80060034: the k-d descent to the leaf holding (x, z).
-Floor floor_leaf(const CollChunk& ch, int32_t px, int32_t py, int32_t pz) {
+Floor floor_leaf(const CollChunk& ch, int32_t px, int32_t py, int32_t pz, const CollFace** face = nullptr) {
     int32_t xmin = ch.rect[0], zmin = ch.rect[1];
     const CollNode* n = &ch.nodes[0];
     while (n->a >= 0) {
@@ -94,7 +96,7 @@ Floor floor_leaf(const CollChunk& ch, int32_t px, int32_t py, int32_t pz) {
             }
         }
     }
-    return {floor_pick(ch, size_t(uint16_t(n->b)), size_t(~n->a), px, py, pz), n->zone};
+    return {floor_pick(ch, size_t(uint16_t(n->b)), size_t(~n->a), px, py, pz, face), n->zone};
 }
 
 // 0x800776C0: the triangle is near the walker's segment (centre c, radius r, height h). The
@@ -512,11 +514,14 @@ Floor World::floor_find(const int32_t pos[3]) const {
     int32_t x = s16(pos[0] >> 16), y = s16(pos[1] >> 16), z = s16(pos[2] >> 16);
     int64_t best = kNoFloor;
     uint16_t zone = 0xFFFF;
+    int16_t normal[4] = {};
+    bool has = false;
     for (const CollChunk* ch : slots) {
         if (!ch) continue;
         const int16_t* r = ch->rect;
         if (x < r[0] || r[2] < x || z < r[1] || r[3] < z) continue;
-        Floor f = floor_leaf(*ch, x, y, z);
+        const CollFace* face = nullptr;
+        Floor f = floor_leaf(*ch, x, y, z, &face);
         int64_t h = f.height;
         bool take = false;
         if (best == kNoFloor) {
@@ -529,9 +534,23 @@ Floor World::floor_find(const int32_t pos[3]) const {
             else
                 take = (h - a0) < iabs(best - a0);
         }
-        if (take) best = h, zone = f.zone;
+        if (take) {
+            best = h, zone = f.zone;
+            if (h != kNoFloor && face) {
+                const V3s& n = ch->norms[face->n];
+                normal[0] = n.x, normal[1] = n.y, normal[2] = n.z, normal[3] = 0;
+                if (n.y < 0) {
+                    int32_t big = std::max(iabs(n.x), iabs(n.z));
+                    if (big > 0 && int32_t(-16 * n.y / big) < 0x1C) normal[3] = 1;
+                }
+                has = true;
+            }
+        }
     }
-    return {int32_t(best), zone};
+    Floor out{int32_t(best), zone};
+    for (int k = 0; k < 4; k++) out.normal[k] = normal[k];
+    out.has_normal = has;
+    return out;
 }
 
 void World::walls_gather(const int32_t c[3], int32_t r, int32_t h, const int32_t delta[3],

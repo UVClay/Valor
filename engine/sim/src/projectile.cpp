@@ -98,6 +98,8 @@ V3 attachment_point(Engine& eng, U B, I idx) {
     return {S16(mac[0]), S16(mac[1]), S16(mac[2])};
 }
 
+}  // namespace
+
 void gun_points(Engine& eng, U owner, I bone_a, I bone_b, U attach, U off_a, U off_b, V3& pa, V3& pb) {
     if (attach) {
         pa = attachment_point(eng, attach, bone_a);
@@ -141,8 +143,15 @@ void projectile_aim(Engine& eng, U owner, U p, I bone_a, I bone_b, const V3* tar
         return;
     }
     I t = m.s32(p + 8);
-    if (t == 0x13F3 || t == 0x13F1) {
-        eng.note("grenade/rocket aim not implemented");
+    if (t == 0x13F3 || (t == 0x13F1 && (m.u32(owner + 0xC) & 1))) {
+        // a grenade, the player's rocket: from the hand point with the thrower's angles
+        // (copy_shooter_angles 0x80044EF0)
+        V3 pa, pb;
+        gun_points(eng, owner, bone_a, bone_b, attach, off_a, off_b, pa, pb);
+        for (int k = 0; k < 3; k++) {
+            m.w32(p + 0x20C + 4 * k, S32(pb[k] << 16));
+            m.w32(p + 0x228 + 4 * k, m.u32(owner + 0x228 + 4 * k));
+        }
         return;
     }
     V3 pa, pb;
@@ -183,8 +192,13 @@ void parts_box(Mem& m, U e) {
 U projectile_create(Engine& eng, U owner, I etype, I model, I speed, I bone_a, I bone_b, const V3* a6, I, I dmg, I life, I extra,
                     U a11, U off_a, U off_b, I aimed, I fa, I fb, I mask) {
     Mem& m = eng.m;
-    U p = eng.entity_create(etype, extra + 0x90, 0, 0, 2);
-    if (model != -1) eng.note("projectile with a model not implemented");
+    U p;
+    if (model != -1) {
+        // entity_create(1, ..., the model, 0x147, 2): an instance, model_instance_init (its parts)
+        p = eng.entity_create(etype, extra + 0x90, 0, 0, 2, 0, 0, true);
+        eng.model_swap(p, U(model), 0x147);
+    } else
+        p = eng.entity_create(etype, extra + 0x90, 0, 0, 2);
     U o = U(m.u32(p + 0x388));
     m.w32(p + 0x36C, PROJECTILE_THINK);
     m.w32(p + 0x370, PROJECTILE_DRAW);
@@ -231,6 +245,8 @@ U projectile_create(Engine& eng, U owner, I etype, I model, I speed, I bone_a, I
     return p;
 }
 
+namespace {
+
 U pellet_spawn(Engine& eng, U owner, I bone_a, I bone_b, const V3* a3, U a4, U off_a, U off_b, I aimed, I etype, I fa, I fb, I mask) {
     Mem& m = eng.m;
     I speed = (((eng.rand.draw(FN("pellet")) * 0x190) >> 15) + 0x15E) << 16;
@@ -259,7 +275,8 @@ void write_contact(Mem& m, U e, const I point[3], const I normal[3]) {
     }
 }
 
-I floor_step(Engine& eng, U e, I res, I, I) {
+// entity_move's floor part for the general case (0x8006C83C): see engine_projectile.py floor_step.
+I floor_step(Engine& eng, U e, I res, I ground0, I vy16, bool walled = false) {
     Mem& m = eng.m;
     if ((m.u32(e + 0x18) & 1) || (m.u32(e + 0x10) & 0x10)) return res;
     I fa = m.u32(e + 0xC);
@@ -268,14 +285,56 @@ I floor_step(Engine& eng, U e, I res, I, I) {
     Floor fl = eng.world.floor(pos);
     m.w32(e + 0x390, fl.zone);
     I f = fl.height;
+    m.w16(G_FLOOR_LAST, f);
     if (f == -0x7FFF) {
-        m.w16(G_FLOOR_LAST, -0x7FFF);
-        if ((fa & 7) && !(m.u32(e + 0x10) & 0x10000)) eng.note("generic entity_move: no floor under a moving object not implemented");
+        if ((fa & 7) && !(m.u32(e + 0x10) & 0x10000)) {
+            for (int k = 0; k < 3; k++) m.w32(e + 0x20C + 4 * k, m.u32(e + 0x3BC + 4 * k));
+            if (!ground0) m.w32(e + 0x210, m.u32(e + 0x208));
+            res |= 2;
+            m.w32(e + 0x284, 1);
+            m.w32(e + 0x38, m.u32(e + 0x38) | 0x80008000);
+        }
         return res;
     }
-    m.w16(G_FLOOR_LAST, f);
     m.w32(e + 0x208, S32(f << 16));
-    if (m.s32(e + 0x284) || (fa & 0x20)) eng.note("generic entity_move: falling objects' floor not implemented");
+    I d = m.s16(e + 0x212) - f;
+    if (m.s32(e + 0x284)) {
+        if ((0 <= d + 0x20 && d + 0x20 < 0x121) || d >= 0)
+            m.w32(e + 0x210, S32(f << 16));
+        else if ((m.u32(e + 0x10) & 0x200000) && d < -0x39) {
+            res |= 0x80;
+            for (U k : {0x220u, 0x21Cu, 0x218u, 0x200u}) m.w32(e + k, 0);
+            for (int k = 0; k < 3; k++) m.w32(e + 0x20C + 4 * k, m.u32(e + 0x3BC + 4 * k));
+            m.w32(e + 0x284, ground0);
+            m.w32(e + 0x38, m.u32(e + 0x38) | 0x80000000);
+        } else {
+            m.w32(e + 0x284, 0);
+            m.w32(e + 0x38, m.u32(e + 0x38) | 1);
+        }
+        return res;
+    }
+    if (!(fa & 0x20)) return res;
+    if (d < 0) {
+        I lim = vy16 < 0x30 ? vy16 + 0x10 : 0x40;
+        if (lim < iabs(d)) return res;
+    }
+    if (fa & 1) {
+        if (vy16 < 0) return res;
+    } else if ((fa & 0x80) && iabs(vy16) >= 8) {
+        if (!walled && fl.has_normal)
+            for (int k = 0; k < 4; k++) m.w16(e + 0x364 + 2 * k, fl.normal[k]);
+        res |= 1;
+        m.w32(e + 0x284, 0);
+        m.w32(e + 0x210, S32(f << 16));
+        m.w32(e + 0x21C, S32(-iabs(m.s32(e + 0x21C))));
+        return res;
+    }
+    res |= 1;
+    m.w32(e + 0x284, 1);
+    m.w32(e + 0x210, S32(f << 16));
+    m.w32(e + 0x1F4, 0);
+    m.w32(e + 0x21C, 0);
+    m.w32(e + 0x38, m.u32(e + 0x38) & ~I(1));
     return res;
 }
 
@@ -494,6 +553,136 @@ U bullet_spawn(Engine& eng, U owner, I bone_a, I bone_b, const V3* a3, U a4, U o
     return p;
 }
 
+namespace {
+
+// projectile_think, a rolling grenade (0x400): on the ground, the bounce sound on a bounce tick,
+// the pitch and the yaw spin halved, obj+0x70 = 0x04000000, the speed down 3.0 a tick (1.0 at
+// 24.99 or less); below 0 it stops; off the ground (or stopped) its rolling voice is stopped.
+void rolling(Engine& eng, U e, U o, I f) {
+    Mem& m = eng.m;
+    if (m.s32(e + 0x284)) {
+        if (f & 2) {
+            I snd = ((eng.rand.draw(FN("grenade")) * 2) >> 15) + 7;
+            eng.audio->play(1, snd, e, 0x40000, 0, 0x10000, 0x40AC, 0, 0, 0, 0);
+        }
+        if (m.s32(e + 0x228)) m.w32(e + 0x228, m.s32(e + 0x228) >> 1);
+        if (m.s32(o + 0x78)) m.w32(o + 0x78, m.s32(o + 0x78) >> 1);
+        m.w32(o + 0x70, 0x04000000);
+        I sp = m.s32(e + 0x200);
+        sp = S32(sp - ((sp > 0x18FFFF ? 3 : 1) << 16));
+        m.w32(e + 0x200, sp);
+        if (sp >= 0) return;
+        for (U k : {0x220u, 0x218u, 0x23Cu, 0x238u, 0x234u, 0x200u}) m.w32(e + k, 0);
+        for (U k : {0x7Cu, 0x78u, 0x74u, 0x68u}) m.w32(o + k, 0);
+        m.w16(o + 0x38, m.u16(o + 0x38) & 0xFBFF);
+    }
+    if (m.s32(o + 0x30) > 0) m.w32(o + 0x30, 0);  // voice_stop: sound only
+}
+
+// projectile_world_contact, a bouncing projectile (0x208) not rolling (engine_projectile.py bounce).
+void bounce(Engine& eng, U e, U o, I res) {
+    Mem& m = eng.m;
+    I f = m.u16(o + 0x38);
+    if (!(f & 0x800)) {
+        I sp = m.s32(e + 0x200);
+        sp = S32(sp - cdiv(sp, 3));
+        m.w32(e + 0x200, imax(sp, 0));
+        if ((res & 1) && m.s32(e + 0x208) < S32(m.s32(e + 0x210) + m.s32(e + 0x21C) + m.s32(o + 0x34) + m.s32(e + 0x1F4))) {
+            m.w16(o + 0x38, (m.u16(o + 0x38) & 0xFFF6) | 0x400);
+            m.w32(e + 0x284, 1);
+            m.w32(e + 0x21C, 0);
+            m.w32(e + 0x228, 0);
+            m.w32(e + 0xC, (m.u32(e + 0xC) & ~I(0x80)) | 0x28);
+            m.w32(o + 0x74, 0);
+            if (m.s32(e + 0x200) <= 0x1DFFFF) {
+                m.w32(o + 0x80, 0x1E0000);
+                m.w32(e + 0x200, 0x1E0000);
+            }
+        }
+    }
+    if (m.s32(e + 8) != 0x13F3) {
+        I snd = (eng.rand.draw(FN("grenade")) * 7) >> 15;
+        eng.audio->play(0, snd, e, 0x30000, 0, 0x10000, 0x7FFF, 0, 0, 3, 0);
+    } else {
+        I snd = ((eng.rand.draw(FN("grenade")) * 2) >> 15) + 7;
+        eng.audio->play(1, snd, e, 0x40000, 0, 0x10000, 0x40AC, 0, 0, 0, 0);
+    }
+    if (!(m.u16(o + 0x38) & 0x800)) {
+        m.w32(o + 0x34, 0xA0000);
+        m.w32(e + 0x21C, m.s32(e + 0x21C) >> 2);
+    }
+}
+
+// A rolling grenade's first contact: every living soldier and dog within 1200 gets +0x3C 0x40;
+// the nearest 0x80 if a dog or within 1000 (fewer than three near), else 0x20 if three or more;
+// then the grenade's hit part kind 7.
+void warn_soldiers(Engine& eng, U e) {
+    Mem& m = eng.m;
+    U near = 0;
+    I best = 0x7FFFFFFF, n = 0;
+    for (U o : m.entities()) {
+        I t = m.s32(o + 8);
+        if ((t != 0x1402 && t != 0x1405) || (m.u32(o + 0xC) & 0x20080000)) continue;
+        I d = dist2d_approx(m, e, o) & 0xFFFFFFFF;
+        if (d < 0x4B0) {
+            n++;
+            m.w32(o + 0x3C, m.u32(o + 0x3C) | 0x40);
+            if (!near || d < best) near = o, best = d;
+        }
+    }
+    if (!near) return;
+    if (m.s32(near + 8) == 0x1405 || ((n & 0xFF) < 3 && best < 0x3E8))
+        m.w32(near + 0x3C, m.u32(near + 0x3C) | 0x80);
+    else if ((n & 0xFF) >= 3)
+        m.w32(near + 0x3C, m.u32(near + 0x3C) | 0x20);
+    else
+        return;
+    U pp = U(m.u32(e + 0x304));
+    for (I i = 0; i < m.u16(e + 0x36); i++) m.w32(pp + 0x48 * i + 8, 7);
+}
+
+// projectile_world_contact, 0x200: the speed, the spin, and the heading reflected about the
+// contact normal (engine_projectile.py bounce_turn).
+void bounce_turn(Engine& eng, U e, U o, I res) {
+    Mem& m = eng.m;
+    if (!(m.u32(e + 0xC) & 0x80)) m.w32(e + 0x200, m.u32(o + 0x80));
+    I f = m.u16(o + 0x38);
+    if (!(f & 0x800)) {
+        if (f & 0x400) {
+            I sp = m.s32(e + 0x200);
+            sp = S32(sp - (sp >> 1));
+            m.w32(e + 0x200, imax(sp, 0));
+            if (f & 0x4000) {
+                warn_soldiers(eng, e);
+                m.w16(o + 0x38, m.u16(o + 0x38) & 0xBFFF);
+            }
+        } else if (res & 2) {
+            I sp = m.s32(e + 0x200);
+            sp = S32(sp - cdiv(sp, 3));
+            m.w32(e + 0x200, imax(sp, 0));
+        }
+        m.w32(o + 0x74, m.s32(o + 0x74) >> 1);
+        m.w32(o + 0x78, m.s32(o + 0x78) >> 1);
+    }
+    I d[3] = {m.s16(e + 0x344), 0, m.s16(e + 0x350)};
+    I n[3] = {m.s16(e + 0x364), m.s16(e + 0x366), m.s16(e + 0x368)};
+    I dot = S32(d[0] * n[0] + d[2] * n[2]);
+    I k0 = -(dot >> 17);
+    I t[3];
+    for (int k = 0; k < 3; k++) t[k] = sat16i((k0 * n[k]) >> 12);
+    d[0] = S16(d[0] + t[0]), d[2] = S16(d[2] + t[2]);
+    m.w32(e + 0x22C, S32(I(eng.gte.ratan2(int32_t(d[0]), int32_t(d[2]))) << 16));
+    m.w32(e + 0x228, 0);
+    m.w32(e + 0x230, 0);
+    if ((m.s32(e + 0x228) ^ m.s32(o + 0x68)) >= 0) m.w32(o + 0x74, S32(-m.s32(o + 0x74)));
+    if ((m.s32(e + 0x22C) ^ m.s32(o + 0x6C)) >= 0) m.w32(o + 0x78, S32(-m.s32(o + 0x78)));
+    if (m.s32(o + 0x74) == 0 && m.s32(o + 0x78) == 0)
+        for (int k = 0; k < 3; k++) m.w32(o + 0x68 + 4 * k, m.u32(e + 0x228 + 4 * k));
+    if (m.s32(e + 0x228) > 0) m.w32(e + 0x21C, iabs(m.s32(e + 0x21C)));
+}
+
+}  // namespace
+
 void projectile_think(Engine& eng, U e) {
     Mem& m = eng.m;
     U o = U(m.u32(e + 0x388));
@@ -510,14 +699,24 @@ void projectile_think(Engine& eng, U e) {
         if (!c) m.w32(e + 0x14, m.u32(o + 0x3C));
     }
     parts_box(m, e);
-    if (m.s32(e + 8) == 0x13F3) eng.note("grenade_soldier_bits not implemented");
+    if (m.s32(e + 8) == 0x13F3) grenade_soldier_bits(eng, e);
     if (m.u16(o + 0x38) & 0x40) {
         I t = m.u8(o + 0x41);
         if (t) {
             t--;
             m.w8(o + 0x41, t);
             if (!t) {
-                eng.note("projectile fuse (explosion) not implemented");
+                if (m.u32(o + 0x44))
+                    eng.note("projectile fuse callback (obj+0x44) not implemented");
+                else if (m.u16(o + 0x38) & 0x100) {
+                    // the fuse: the explosion (8, 10, 85), sparks, the sound
+                    for (int k = 0; k < 3; k++) m.w16(e + 0x364 + 2 * k, 0);
+                    explosion_spawn(eng, e, 8, 0xA, 0x55, 0x10000, 0x1000, 0x40000, 5, 0);
+                    I n = ((eng.rand.draw(FN("grenade")) * 5) >> 15) + 0xF;
+                    V3 pos = {m.s32(e + 0x20C), m.s32(e + 0x210), m.s32(e + 0x214)};
+                    particles_spawn(eng, pos, 5, n, 0x28, 0x19, 0x50, 0x1E, 0x3FF, 0x3F, 0x3E0, 0xFF, 1, 0x10000, 0, 0);
+                    explosion_sound(eng, e);
+                }
                 eng.remove(e, "fuse");
                 return;
             }
@@ -525,12 +724,14 @@ void projectile_think(Engine& eng, U e) {
     }
     U att = eng.resolve(m.u32(e + 0x30));
     if (att && m.s8(e + 0x34) >= 0) {
-        eng.note("projectile attached to a bone not implemented");
+        // held on a bone (entities_update places it): no velocity, no spin, behaviour & 0xFDF6
+        for (U k : {0x23Cu, 0x238u, 0x234u, 0x220u, 0x21Cu, 0x218u, 0x200u}) m.w32(e + k, 0);
+        m.w16(o + 0x38, m.u16(o + 0x38) & 0xFDF6);
         return;
     }
     for (int k = 0; k < 3; k++) m.w32(o + 0x68 + 4 * k, S32(m.s32(o + 0x68 + 4 * k) + m.s32(o + 0x74 + 4 * k)));
     I f = m.u16(o + 0x38);
-    if (f & 0x400) eng.note("rolling projectile (0x400) not implemented");
+    if (f & 0x400) rolling(eng, e, o, f);
     f = m.u16(o + 0x38);
     if (f & 1) {
         if (!(f & 2))
@@ -576,6 +777,7 @@ I generic_move(Engine& eng, U e) {
     U world = U(m.u32(G_WORLD));
     if (world && (m.u32(e + 0x14) & m.u32(world + 0xC))) {
         I fb = m.u32(e + 0x10);
+        bool walled = false;
         if ((fa & 8) && !(fa & 1) && !(fb & 1)) {
             if (!(fb & 0x44))
                 eng.note("generic entity_move: walker_slide for a non-walker not implemented");
@@ -583,6 +785,7 @@ I generic_move(Engine& eng, U e) {
                 I nw[3], old[3], point[3], normal[3];
                 for (int k = 0; k < 3; k++) nw[k] = m.s32(e + 0x20C + 4 * k) >> 16, old[k] = pos0[k] >> 16;
                 if (eng.world.sweep(nw, old, point, normal)) {
+                    walled = true;
                     write_contact(m, e, point, normal);
                     if (normal[1] >= 0x801 && vy16 < 0 && m.s32(e + 0x21C) > 0) {
                         m.w32(e + 0x21C, 0);
@@ -595,12 +798,15 @@ I generic_move(Engine& eng, U e) {
                     m.w32(e + 0x38, m.u32(e + 0x38) | 0x8000);
                     if (!(fa & 0x80)) {
                         for (int k = 0; k < 3; k++) m.w32(e + 0x20C + 4 * k, S32(point[k] << 16));
-                    } else
-                        eng.note("generic entity_move: bouncing (flags A 0x80) not implemented");
+                    } else {
+                        // a bouncer: back to the old x, z plus the normal << 5, rounded to units
+                        for (int k : {0, 2})
+                            m.w32(e + 0x20C + 4 * k, S32(pos0[k] + (((normal[k] << 5) + 0x8000) & 0xFFFF0000)));
+                    }
                 }
             }
         }
-        res = floor_step(eng, e, res, ground0, vy16);
+        res = floor_step(eng, e, res, ground0, vy16, walled);
     }
     for (int k = 0; k < 3; k++) {
         m.w32(e + 0x1F0 + 4 * k, 0);
@@ -638,15 +844,22 @@ I projectile_world_contact(Engine& eng, U e, I res) {
         f |= 2;
         if ((f & 4) && (res & 1))
             m.w32(e + 0xC, m.u32(e + 0xC) & ~I(0x80));
-        else if (f & 0x208)
-            eng.note("bouncing projectile (0x208) not implemented");
-        if (m.u16(o + 0x38) & 0x200) eng.note("rolling projectile (0x200) not implemented");
+        else if ((f & 0x208) && !(f & 0x400))
+            bounce(eng, e, o, res);
+        f = m.u16(o + 0x38);
+        if ((f & 0x10) && (res & 1)) eng.note("projectile smoke trail (0x10) on the ground not implemented");
+        if (f & 0x200) bounce_turn(eng, e, o, res);
     }
     f = m.u16(o + 0x38);
     if (!(f & 0x40)) {
-        if (f & 0x100)
-            eng.note("explosive round's explosion not implemented");
-        else
+        if (f & 0x100) {
+            // an explosive round or a rocket hitting the world: the explosion (10, 12, 130)
+            explosion_spawn(eng, e, 0xA, 0xC, 0x82, 0x10000, 0x1000, 0x40000, 5, 0);
+            I n = ((eng.rand.draw(FN("grenade")) * 5) >> 15) + 0xF;
+            V3 pos = {m.s32(e + 0x20C), m.s32(e + 0x210), m.s32(e + 0x214)};
+            particles_spawn(eng, pos, 5, n, 0x28, 0x19, 0x50, 0x1E, 0x3FF, 0x3F, 0x3E0, 0xFF, 1, 0x17FFF, 0, 0);
+            explosion_sound(eng, e);
+        } else
             impact_sound(eng, e);
         I y = S32(m.s32(e + 0x22C) + ((((eng.rand.draw(FN("grenade")) & 0x3FF) - 0x200) << 16) + 0x08000000));
         if (y > 0x10000000) y -= 0x10000000;

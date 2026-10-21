@@ -6,6 +6,8 @@
 
 namespace valor::sim {
 
+bool segment_sphere(Mem& m, U e, U o, const V3& u, I& key);
+
 namespace {
 constexpr U G_STAT_HITS = 0x80039CAC;
 constexpr U G_STAT_WOUNDED = 0x80039CB0;
@@ -64,18 +66,6 @@ bool parts_touch(Mem& m, U a, U b, I& fi, I& fj) {
     return first;
 }
 
-bool segment_sphere(Mem& m, U e, U o, const V3& u, I& key) {
-    I r = m.u16(o + 0x2E8);
-    if (!r) return false;
-    V3 start = {m.s16(e + 0x25A), m.s16(e + 0x25E), m.s16(e + 0x262)};
-    V3 c0 = centre(m, o);
-    V3 d;
-    for (int k = 0; k < 3; k++) d[k] = S32(c0[k] - start[k]);
-    V3 c = gop({S16(d[0]), S16(d[1]), S16(d[2])}, u, 12);
-    if (r * r < c[0] * c[0] + c[1] * c[1] + c[2] * c[2]) return false;
-    key = dist_cheap(d[0], d[1], d[2]);
-    return true;
-}
 
 I segment_parts(Mem& m, U e, const V3& u, I len2, U o) {
     V3 start = {m.s16(e + 0x25A), m.s16(e + 0x25E), m.s16(e + 0x262)};
@@ -232,6 +222,19 @@ void set_var(Mem& m, U e, I v, I x) { m.w32(e + 0x4C + 4 * v, S32(x)); }
 void bump(Mem& m, U a) { m.w32(a, m.u32(a) + 1); }
 
 }  // namespace
+
+bool segment_sphere(Mem& m, U e, U o, const V3& u, I& key) {
+    I r = m.u16(o + 0x2E8);
+    if (!r) return false;
+    V3 start = {m.s16(e + 0x25A), m.s16(e + 0x25E), m.s16(e + 0x262)};
+    V3 c0 = centre(m, o);
+    V3 d;
+    for (int k = 0; k < 3; k++) d[k] = S32(c0[k] - start[k]);
+    V3 c = gop({S16(d[0]), S16(d[1]), S16(d[2])}, u, 12);
+    if (r * r < c[0] * c[0] + c[1] * c[1] + c[2] * c[2]) return false;
+    key = dist_cheap(d[0], d[1], d[2]);
+    return true;
+}
 
 I call_touch(Engine& eng, U fn, U e, U other) {
     if (!fn) return 0;
@@ -523,9 +526,15 @@ I player_hit_part(Engine& eng, U e, I p, U o, I op) {
         return 0;
     }
     I hp0 = m.s32(e + 0xF4);
-    if (ot == 0x31)
-        eng.note("player hit by an explosion not implemented");
-    else if (!(m.u32(G_CHEATS) & 0x80))
+    if (ot == 0x31) {
+        // an explosion whose fireballs still hold, within 300: its part's damage is 1000.0 for
+        // this hit
+        U q = part_of(m, o, op);
+        I save = m.u32(q + 0x10);
+        if (dist2d_approx(m, e, o) < 0x12C && m.s16(m.u32(o + 0x388) + 0xC + 6) > 0) m.w32(q + 0x10, 0x03E80000);
+        if (!(m.u32(G_CHEATS) & 0x80)) damage_from_hit(eng, e, p ? p : 1, o, op);
+        m.w32(q + 0x10, save);
+    } else if (!(m.u32(G_CHEATS) & 0x80))
         damage_from_hit(eng, e, p, o, op);
     if (hp0 != m.s32(e + 0xF4)) {
         m.w16(e + 0x2E8, 0xC8);

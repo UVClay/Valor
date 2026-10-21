@@ -126,6 +126,9 @@ constexpr U BULLET_TOUCH = 0x80043AD4;
 constexpr U CASING_THINK = 0x80087FA0;
 constexpr U IMPACT_THINK = 0x800701DC;
 constexpr U PARTICLES_THINK = 0x80073B08;
+constexpr U GRENADE_HIT_PART = 0x80044014;
+constexpr U EXPLOSION_THINK = 0x800715D4;
+constexpr U BURST_THINK = 0x800702A4;
 void handle_store(Mem& m, U dst, U ent);
 bool handle_same(Engine& eng, U ptr, U ent);
 void fire_gun(Engine& eng, U e, U inv, I fire);
@@ -143,6 +146,22 @@ void casing_think(Engine& eng, U e);
 I bullet_touch(Engine& eng, U e, U other);
 I projectile_hit_part(Engine& eng, U e, I part, U other, I opart);
 void rumble_set(Mem& m, I port, I a, I b, I c, I d);
+void gun_points(Engine& eng, U owner, I bone_a, I bone_b, U attach, U off_a, U off_b, V3& pa, V3& pb);
+U projectile_create(Engine& eng, U owner, I etype, I model, I speed, I bone_a, I bone_b, const V3* a6, I a7, I dmg, I life, I extra,
+                    U a11, U off_a, U off_b, I aimed, I fa, I fb, I mask);
+void parts_box(Mem& m, U e);
+bool segment_sphere(Mem& m, U e, U o, const V3& u, I& key);
+
+// Grenades and explosions (grenade.cpp; engine_grenade.py, engine_explosion.py).
+I dist2d_approx(Mem& m, U a, U b);
+U grenade_spawn(Engine& eng, U owner, U model_hash, I bone_a, I bone_b, I fuse, I speed, U off_a, U off_b);
+void throw_weapon(Engine& eng, U e, I bone_a, I bone_b, I fire, I charge);
+void grenade_soldier_bits(Engine& eng, U e);
+I grenade_hit_part(Engine& eng, U e, I part, U other, I opart);
+U explosion_spawn(Engine& eng, U src, I fireballs, I puffs, I spread, I scale, I var0, I damage, I reach, U rec);
+void explosion_think(Engine& eng, U e);
+void burst_think(Engine& eng, U e);
+void explosion_sound(Engine& eng, U e);
 
 // engine_sense.py
 // model_bone_point (0x8008DABC): a bone's joint (+ its rotation times off) into the world.

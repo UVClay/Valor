@@ -877,7 +877,8 @@ void player_weapon_update(Engine& eng, U e) {
     if (!(m.u32(e + 0x38) & 0x4000)) {
         I w = m.u8(inv + 0x55);
         if (w == 3 || w == 10) {
-            if ((get_var(m, e, 1) & 0xFF) || m.s32(inv + 0x124)) eng.note("throw_weapon not implemented");
+            U wt = U(0x80093640 + 0x44 * w);
+            throw_weapon(eng, e, m.s16(wt + 0xC), m.s16(wt + 0xE), get_var(m, e, 1) & 0xFF, m.s32(inv + 0x11C));
         } else if (w == 7) {
             if (get_var(m, e, 1)) {
                 I d = m.s32(inv + 0x40);

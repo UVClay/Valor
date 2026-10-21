@@ -45,6 +45,7 @@ add_library(valor_sim STATIC
     sim/src/planes.cpp
     sim/src/attach.cpp
     sim/src/projectile.cpp
+    sim/src/grenade.cpp
     sim/src/combat.cpp
     sim/src/sense.cpp
     sim/src/scripts.cpp

@@ -39,6 +39,10 @@ struct CollChunk {
 struct Floor {
     int32_t height;  // whole units, kNoFloor if none
     uint16_t zone;   // 0xFFFF if none
+    // the chosen face's normal and steep flag (floor_in_chunk 0x80060138: ny < 0 and
+    // -16 ny / max(|nx|, |nz|) < 28); has_normal false when no face was chosen
+    int16_t normal[4]{};
+    bool has_normal = false;
 };
 
 // A plane the walker's move goes into.

@@ -464,8 +464,18 @@ void Engine::update(U e) {
         m.w32(e + 0x38, 0);
         m.w32(e + 0x3C, 0);
         m.w32(e + 0x40, 0);
+        // attached (+0x30): to a stale or removed target it is let go; else it sits on the
+        // target's bone +0x34 (model_bone_point) and does not move itself
         U attach = resolve(m.u32(e + 0x30));
-        if (attach) note("attached entities not implemented");
+        if (attach) {
+            if (handle_dead(m.u32(e + 0x30)) || (m.u32(attach + 0xC) & REMOVED))
+                m.w32(e + 0x30, 0);
+            else {
+                V3 p = model_bone_point(*this, attach, m.s8(e + 0x34), nullptr);
+                for (int k = 0; k < 3; k++) m.w32(e + 0x20C + 4 * k, S32(S16(p[k]) << 16));
+            }
+        }
+        attach = resolve(m.u32(e + 0x30));
         if (!attach && !(m.u32(e + 0xC) & 0x20000)) {
             I res = entity_move(*this, e);
             if (m.u32(e + 0xC) & 5) zones_update(e);
