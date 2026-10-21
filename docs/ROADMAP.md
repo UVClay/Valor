@@ -18,37 +18,31 @@ check every finding.
    levels, cheat flags (docs/re/player.md)
 2. [x] **Entities**: the struct, lists and handles, the tick, movement, world and entity
    collisions, sphere hitboxes (docs/re/entities.md)
-3. [x] **Combat**: firing, bullets, hit tests, damage (flat per weapon; a head hit kills unless one of two helmet models is knocked off), the
-   player being hit, statistics (docs/re/combat.md)
-4. [ ] **Enemies**: done: the script VM (all 74 opcodes) and a disassembler, variables and
-   every sensor, spawning from level records, firing and aim error, the brain (seek, flee,
-   paths, walking with wall avoidance, points and cover nodes). and the soldier's scripts read into
-   behaviour (docs/re/enemies.md, soldier.md). Left: soldier.md's open points
-5. [ ] **Levels**: done: files, the level header, records and how each kind spawns, models and
-   entity types, the level script VM fully (with a disassembler that folds scripts into
-   statements), objectives, the rating, campaign slots and career totals, the world collision
-   (TSP chunks: a k-d tree of triangles). Left: what record kinds 0, 1, 5 are, walkers' and
-   floor collision in detail, the TAF files (docs/re/levels.md)
+3. [x] **Combat**: firing, bullets, hit tests, damage (flat per weapon; a head hit kills unless
+   one of two helmet models is knocked off), the player being hit, statistics (docs/re/combat.md)
+4. [x] **Enemies**: the script VM (all 74 opcodes) with a disassembler, variables and every
+   sensor, spawning, firing and aim error, the brain, sight and hearing, the soldier's scripts
+   read into behaviour, the dog and the mounted gun, every level's script set (docs/re/enemies.md,
+   soldier.md, enemy_types.md)
+5. [x] **Levels**: files and header, records, their state and properties, the level script VM and
+   every message (with a disassembler checked on all 24 levels), triggers and zones, objectives,
+   the rating, campaign slots, world collision, a catalogue of every level (docs/re/levels.md,
+   messages.md, catalogue.md)
+6. [x] **Animation**: skeletons, frames and playback, blending, root motion, hit spheres from the
+   pose, every soldier and first-person animation (docs/re/animation.md)
+7. [x] **Player movement in full**: speeds, crouch, jump, steps and falls, turning, aim mode, the
+   camera, use, death (docs/re/movement.md)
+8. [x] **World objects**: doors, switches, destructibles, the mounted gun, explosions, grenades and
+   rockets, the random number generator and the order of a tick (docs/re/objects.md)
+9. [x] **Sound**: the voice driver, banks, what plays when, 3D falloff and panning, music
+   (docs/re/audio.md)
+10. [x] **Asset formats**: every file type on the disc, what a new engine needs to load a level
+    (docs/re/formats.md)
+11. [x] **Front end and HUD**: the campaign flow, saves, options, passwords and cheats, death and
+    restart, the HUD's state (docs/re/shell.md, hud.md)
 
-Tools: `tools/recon/fn.py c ADDR` decompiles with m2c (clone it into `build/m2c`).
-
-### What an engine recreation still needs
-
-The five areas above cover the rules of combat and the AI's decisions. Rebuilding the game from
-them needs, roughly in order of how much they decide the feel:
-
-6. [ ] **Animation**: skeletons, animation data and playback (frames, blending, root motion).
-   Enemies move by their animations' root motion and their hit spheres ride the bones, so this
-   decides both movement and what a shot hits (docs/re/animation.md)
-7. [ ] **Player movement in full**: acceleration, gravity, jumping and falling, crouching, eye
-   height and view bob, the camera, using things, dying (docs/re/movement.md)
-8. [ ] **World objects**: doors, moving and destructible objects, grenades' flight and bounces,
-   the remaining entity types, the random number generator and the tick order (docs/re/objects.md)
-9. [ ] **Sound**: what plays when, 3D volume and panning, music and voice cues (docs/re/audio.md)
-10. [ ] **Asset formats**: the archives, models, world geometry, textures, sound banks, TAF, so a
-    new engine can load the original files (docs/re/formats.md)
-11. [ ] **Front end**: the campaign flow, saves (memory card layout), options, cheat codes,
-    briefings (docs/re/shell.md)
+docs/re/ENGINE.md ties them together for a rebuild. What's left is listed in each document's
+"Open" section: mostly confirming script-read behaviour in play and a few unread fields.
 
 Out of scope for now: the two-player mode (LEVEL2P.BIN), video playback (standard MDEC).
 
