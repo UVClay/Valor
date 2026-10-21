@@ -563,7 +563,7 @@ skipped changes, none with a subscriber, so the session can't tell them apart.
 |---|---|---|
 | The player (flags A 1) | send each message of the list at `+0x38` (a count, then the messages: `send_event(message, 0, record, entity)`) | the list at `+0x3C` |
 | Characters (flags A 0x50) | `+0x40` | `+0x44` |
-| The player pressing Use (`player_use` `0x80084670`, from `player_update` on action 5 pressed, and from the mounted gun's touch → `record_use_send`) | the list at `+0x4C` of every record of kind 1..6 whose bit is set in `+0x394`: the bits of the last zone update, since the think that reads the pad runs before the move | |
+| The player pressing Use (`player_use` `0x80084670`, from `player_update` on action 5 pressed, and from the mounted gun's touch → `record_use_send`) | the list at `+0x4C` of every record of kind 1..6 whose bit is set in `+0x394`: the bits of the last zone update, since the think that reads the pad runs before the move. Use is whatever button the controller configuration gives action 5 (`0x800B7790 + 5*4`, shared with reload, action 4): 0x80 (Square) by default, 0x08 in the recorded session's configuration (read from its RAM), which is why its pad word shows Use as 0x08 | |
 | Kind-0 records (the player; `record_enter_kind0` `0x80074E10`, `0x80074DC4`) | by class: 0x4D078F23 **streams the world** (`0x80054378` → `0x8005439C`: the record says which TSP chunk to load into which slot, replacing the one there), 0x3011B913 a **ladder** (`record_spawn_type(0x4C)`: an entity of type 0x4C, below, only while the record's bit 0 is clear), 0xD1BA7D1E would end the level (`0x8009C840` \|= 0x24) and 0x271BD574 does nothing, but no record on the disc has either class | 0x3011B913: the ladder is **held** (below); nothing is spawned |
 
 **Ladders**: the ladder entity (type 0x4C, `ladder_spawn` `0x80061244`) holds the record's
@@ -705,9 +705,6 @@ same gathering also sorts the walls ahead/left/right for steering (enemies.md).
 - Record `+0x50` (a sixth relocated list offset, read by nothing found); the record fields
   behind properties 21, 24, 25, 27, 28 and soldiers' 33..37, 40.
 - `0x8006A3BC`, the "near the player" test that stops the cull countdown (message 2).
-- The Use button: action 5's mask in the action table (`0x800B7790`) is 0x80, but in the
-  recorded session's pad word (`0x80093B7C`) every Use the queue proves shows as 0x08, and 0x80
-  never appears (`level_vm.py` reads Use from 0x08).
 - Effects of most `set_flags` bits on soldiers (`s40`, soldier.md) and on doors and switches
   (their model scripts).
 - The BSD header's +0x544..+0x588 sections and the TAF files (formats.md).
