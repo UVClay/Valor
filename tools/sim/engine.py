@@ -415,6 +415,75 @@ class Engine:
             m.w32(e + 0x270 + 4 * k, m.u32(model + 0xA4 + 4 * k))
         m.w32(e + 0x2D4, m.u32(model + 0xA0))
 
+    def model_swap(self, e, model, flags):
+        """func_8006B234 + func_8006B1C4 -> model_instance_init (0x8006A96C) on a live entity (the
+        player's weapon change): the instance rebuilt for the new model with fresh pose buffers
+        (frame 0's quaternions in +0x8C and +0x90, none current), the root offset (+0x98..), the
+        static vertices (+0x2C), no animation; the entity's eye height, scale, part count and
+        parts from the model's templates (animation.md, The instance)."""
+        m = self.m
+        inst = m.u32(e + 0x100)
+        m.w32(inst + 0x6C, 0x80)
+        m.w32(inst + 0x68, 0)
+        m.w32(inst + 4, flags)
+        m.w32(inst + 8, model)
+        tbl = m.u32(model + 8)
+        nb = m.u8(m.u32(tbl + 4) + 1) if tbl else 0
+        buf = self.alloc(max(0x18 * nb, 0x10))
+        m.w32(inst, buf)
+        if tbl:
+            m.w16(inst + 0x70, m.u16(tbl))
+            m.w32(inst + 0x78, tbl + 4)
+            m.w16(inst + 0x72, nb)
+            m.w32(inst + 0x74, tbl)
+            m.w32(inst + 0x7C, m.u32(model + 0x38))
+            m.w32(inst + 0x80, m.u32(model + 0x84))
+            m.w32(inst + 0x90, buf)
+            m.w32(inst + 0x8C, buf + 8 * nb)
+            m.w32(inst + 0x94, buf + 16 * nb)
+            m.w32(inst + 0x84, m.u32(model + 0x9C))
+            first = m.u32(tbl + 4)
+            m.copy(buf + 8 * nb, m.u32(first + 0x10), 8 * nb)
+            m.copy(buf, m.u32(first + 0x10), 8 * nb)
+            m.w32(inst + 0x88, 0)
+            w = m.u32(first + 4)
+            m.w16(inst + 0x98, s32(w << 22) >> 22)
+            m.w16(inst + 0x9A, s32(w << 11) >> 21)
+            m.w16(inst + 0x9C, s32(w << 1) >> 22)
+        else:
+            for o in (0x74, 0x7C, 0x84, 0x88, 0x90, 0x78, 0x80, 0x8C, 0x94):
+                m.w32(inst + o, 0)
+            m.w16(inst + 0x70, 0)
+            m.w16(inst + 0x72, 0)
+        m.w16(inst + 0x3C, m.u16(model + 0x8C))
+        if flags & 2:
+            m.w32(inst + 0x2C, m.u32(model + 0x88))
+        m.w16(inst + 0x42, m.u16(model + 0x8E))
+        m.w16(inst + 0x5C, -1)
+        m.w16(inst + 0x5E, 0)
+        m.w32(inst + 0x54, 0)
+        m.w32(inst + 0x58, 0)
+        m.w32(e + 0x2D4, m.u32(model + 0xA0))
+        for k in range(3):
+            m.w32(e + 0x270 + 4 * k, m.u32(model + 0xA4 + 4 * k))
+        n = m.u16(model + 0xBE)
+        m.w16(e + 0x36, n)
+        pp, tp = m.u32(e + 0x304), m.u32(model + 0xC0)
+        for i in range(n):
+            q, t = pp + 0x48 * i, tp + 0x48 * i
+            m.w32(q + 4, m.u32(t + 4))
+            m.w32(q + 8, m.u32(t + 0xC))
+            m.w32(q + 0xC, m.u32(t + 0xC))
+            m.w16(q + 0x1C, m.u16(t + 0x1C))
+            m.w16(q + 0x1E, m.u16(t + 0x1E))
+            for o in (0x34, 0x30, 0x38, 0x10, 0x14):
+                v = m.u32(t + o)
+                m.w32(q + o, s32(v * 2) if flags & 0x200 and o in (0x30, 0x34, 0x38) else v)
+            for o in (0x40, 0x42, 0x44):
+                m.w16(q + o, m.u16(t + o))
+            m.w32(q + 0x18, inst)
+            m.w32(q + 0x3C, 0)
+
     def remove(self, e, why=""):
         """entity_remove (0x8006B8F0): flagged, the record's state and messages, unlinked, the
         handle flagged for the end of the frame, the destructor."""

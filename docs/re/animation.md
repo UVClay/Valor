@@ -120,6 +120,20 @@ joints of the soldier at `0x800BA31C` (mid_14000) from its quaternions and the b
 gives the joints in RAM within 22 units in total with the transposed matrix, 1244 with the
 textbook one.
 
+**`model_instance_init`** (`0x8006A96C(inst, model, flags, entity)`), what the logic reads:
+`+0x6C` = 0x80, `+0x68` = 0, `+4` = flags, `+8` = the model; with an animation table: `+0x70`
+its count, `+0x78` its entries, `+0x72` the bones (first entry's byte 1), `+0x74`, `+0x7C`
+(model +0x38), `+0x80` (+0x84), `+0x84` the root bone (+0x9C), pose buffers from the pool
+(`+0x90`, `+0x8C` = +0x90 + 8·bones, `+0x94` = +0x8C + 8·bones), frame 0's quaternions copied
+into `+0x8C` and `+0x90`, `+0x88` = 0, and frame 0's packed root offset unpacked into
+`+0x98..+0x9C` (10, 11, 10 signed bits); flags 2: `+0x2C` = the model's static vertices
+(+0x88); `+0x3C`, `+0x42` the model's +0x8C, +0x8E; animation -1 frame 0; `+0x54`, `+0x58`
+cleared. With an entity: its eye height `+0x2D4` = the model's word at +0xA0, scale
+`+0x270..+0x278` = +0xA4.., the part count `+0x36` = +0xBE and each part from the model's
+templates (+4, kind +8 and default +0xC both from the template's +0xC, bones +0x1C/+0x1E,
+radius +0x34, default radius +0x30, radius² +0x38 (all doubled with flags 0x200), damage
++0x10/+0x14, offset +0x40..+0x44, +0x18 = the instance, +0x3C = 0).
+
 **A point on a bone** (`model_bone_point`, `0x8008DABC(e, inst, bone, out, offset)`): without
 joints (instance `+0x84` 0) the entity's integer position. Otherwise the bone's joint (instance
 `+0x94`, 8 bytes per bone), plus, with an offset, the bone's quaternion matrix (from `+0x88`)

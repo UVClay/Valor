@@ -168,6 +168,22 @@ Action 2 (`weapon_holster` `0x80080380`): the soldier's script 10 lowers the wea
 count + 2 ticks), the weapon changes, then script 16 raises the new one (frame count ticks) or,
 if its clip is empty, script 9 reloads it. Measured lengths in ticks:
 
+Exactly (`tools/sim/engine_player.py`): the switch is pressed (action 2) while neither busy
+(`inv+0x13C`) nor winding up a throw (`+0x124`): `weapon_holster` finds the next carried slot
+(`0x8007A290`: after the current one, wrapping over `0x8009E874` slots, the first whose reserve
+`inv+0x56+2·slot` isn't -1; none: nothing happens), sets `inv` 0x800, plays the weapon's lower
+sound (+0x1C, bank +0x1E; pitch 0.5, spread 0x3334), starts script 10 (not forced) and sets
+`+0x13C` = 1. When the script sets variable 0x11, `player_update` takes the next slot again
+(skipped once more if it is grenades with clip and reserve 0) and calls `weapon_draw`
+(`0x8007DD4C`): out of the scope/zoom (`inv+0xA4` / 4, at least 400; flags 0x40, 0x200000
+off), aim flag 0x20 off, `inv+0x55` = the slot's weapon, `+0x156` = its +0x28, the refire delay
+`+0x40` = its +4, **the arms model swapped** (`model_instance_init(inst, weapon model, 0x147)`:
+the new model's eye height `+0x2D4`, scale and hit parts too; animation.md), script 2 started
+(forced) and run once, variable 0x10 (reload) = 1 when the clip is empty and the weapon reloads,
+the soldier's sounds faded over 10 frames, the raise sound (+0x18, bank +0x1A), variable 0x11
+and `+0x13C` = 0, crouched: eye height 80, part 0's damage `+0x10`/`+0x14` = 5.0. A slot showing
+empty grenades also draws the next weapon at once.
+
 | # | Weapon | Ticks between shots (held) | Clip | Reload | Lower | Raise | Spread | Notes |
 |---|---|---|---|---|---|---|---|---|
 | 0 | .45 pistol (3:x) | 13 (code) | 8 | - | - | - | none | not measured (3:2 didn't start warped) |

@@ -88,15 +88,21 @@ def player_update(eng, e):
         else:
             m.w32(inv, m.u32(inv) & 0xFF7FFFFF)
         if m.s32(inv + 0x13C) == 0 and m.s32(inv + 0x124) == 0 and eng.action_pressed(SWITCH):
-            eng.note("weapon_holster not implemented")
+            weapon_holster(eng, e, inv)
         if get_var(m, e, 0x11):
-            eng.note("weapon draw (variable 0x11) not implemented")
+            slot = next_slot(m, inv)
             set_var(m, e, 0x11, 0)
+            m.w8(inv + 0x54, slot)
+            w = m.u8(G_SLOT_WEAPON + slot)
+            if w in (3, 10) and m.s16(inv + 0x66 + 2 * slot) == 0 and m.s16(inv + 0x56 + 2 * slot) == 0:
+                m.w8(inv + 0x54, next_slot(m, inv))
+            weapon_draw(eng, e, inv)
         else:
             slot = m.s8(inv + 0x54)
             w = m.u8(G_SLOT_WEAPON + slot)
             if w in (3, 10) and m.s16(inv + 0x66 + 2 * slot) == 0 and m.s16(inv + 0x56 + 2 * slot) == 0:
-                eng.note("weapon draw (empty grenades) not implemented")
+                m.w8(inv + 0x54, next_slot(m, inv))
+                weapon_draw(eng, e, inv)
         if eng.action_pressed(USE):
             eng.zones_use(e)
             slot = m.s8(inv + 0x54)
@@ -302,6 +308,90 @@ def crouch(eng, e, inv):
     elif m.u32(inv) & 2 and eng.handle_dead(m.u32(e + 0x2C)):
         m.w32(e + 0x2D4, 0x500000)
         m.w16(e + 0x2DA, 0)
+
+
+G_SLOT_COUNT = 0x8009E874
+
+
+def next_slot(m, inv):
+    """0x8007A290: the next slot after the current one (wrapping) whose reserve isn't -1 (not
+    carried); -1 when none."""
+    cur = m.u8(inv + 0x54)
+    n = m.s32(G_SLOT_COUNT)
+    i = cur + 1 if cur + 1 < n else 0
+    while i != cur:
+        if m.s16(inv + 0x56 + 2 * i) != -1:
+            return i
+        i = i + 1 if i + 1 < n else 0
+    return -1
+
+
+def weapon_holster(eng, e, inv):
+    """weapon_holster (0x80080380): with another weapon to change to, inv |= 0x800, the weapon's
+    holster sound (+0x1C, bank +0x1E), script 10 (the lowering animation; it sets variable 0x11
+    when done), +0x13C = 1 (busy)."""
+    m = eng.m
+    if next_slot(m, inv) == -1:
+        return
+    m.w32(inv, m.u32(inv) | 0x800)
+    w = G_WEAPONS + 0x44 * m.u8(inv + 0x55)
+    snd = m.s16(w + 0x1C)
+    if snd >= 0:
+        bank = m.s16(w + 0x1E)
+        if bank < 0:
+            bank = m.u16(m.u32(m.u32(e + 0x100) + 8) + 0xC8)
+        eng.audio.play(bank, snd, e, 0x10000, 0, 0x8000, 0x3334, 0, 0, 0, (m.u16(w + 0x2A) >> 3) & 2)
+    from engine_scripts import EVM
+    EVM(eng, e).script_start(0xA, 0, 0)
+    m.w32(inv + 0x13C, 1)
+
+
+def weapon_draw(eng, e, inv):
+    """weapon_draw (0x8007DD4C): out of the scope/aim zoom (aim distance /4, at least 400), the
+    slot's weapon current, its arms model swapped in (flags 0x147), its refire delay, script 2
+    started and run once, variable 0x10 (reload) when the clip is empty and the weapon reloads,
+    the entity's sounds faded (10 frames), the raise sound (+0x18, bank +0x1A), variable 0x11 and
+    +0x13C cleared, the crouched eye height 80, the muzzle flash set up (drawing), the first hit
+    part's damage 5.0."""
+    m = eng.m
+    if m.u32(inv) & 0x200040:
+        v = (m.u32(inv + 0xA4) >> 2) & 0xFFFFFFFF
+        m.w32(inv + 0xA4, max(v, 0x190))
+        m.w32(0x800AA168, 0xFA)                  # g_subdiv_dist (drawing)
+        m.w32(inv, m.u32(inv) & ~0x40 & 0xFFDFFFFF)
+    m.w32(inv, m.u32(inv) & ~0x20)
+    slot = m.s8(inv + 0x54)
+    w = m.u8(G_SLOT_WEAPON + slot)
+    m.w8(inv + 0x55, w)
+    wa = G_WEAPONS + 0x44 * w
+    m.w16(inv + 0x156, m.u16(wa + 0x28))
+    m.w32(inv + 0x40, m.s16(wa + 4))
+    from engine_objects import model_by_hash
+    model = model_by_hash(eng, m.u32(wa))
+    if model:
+        eng.model_swap(e, model, 0x147)
+    else:
+        eng.note("weapon model missing", f"{m.u32(wa):08X}")
+    from engine_scripts import EVM
+    vm = EVM(eng, e)
+    vm.script_start(2, 1, 0)
+    vm.run_a()
+    empty = m.s16(inv + 0x66 + 2 * slot) == 0 and not m.u16(G_WEAPONS + 0x44 * m.u8(G_SLOT_WEAPON + slot) + 0x2A) & 1
+    set_var(m, e, 0x10, 1 if empty else 0)
+    eng.audio.fade_entity(e, 10)
+    snd = m.s16(wa + 0x18)
+    if snd >= 0:
+        bank = m.s16(wa + 0x1A)
+        if bank < 0:
+            bank = m.u16(m.u32(m.u32(e + 0x100) + 8) + 0xC8)
+        eng.audio.play(bank, snd, e, 0x10000, 0, 0x8000, 0x3334, 0, 0, 0, (m.u16(wa + 0x2A) >> 3) & 2)
+    set_var(m, e, 0x11, 0)
+    m.w32(inv + 0x13C, 0)
+    if m.u32(inv) & 2:
+        m.w32(e + 0x2D4, 0x500000)
+    pp = m.u32(e + 0x304)
+    m.w32(pp + 0x10, 0x50000)
+    m.w32(pp + 0x14, 0x50000)
 
 
 def weapon_reload(eng, e, inv):
