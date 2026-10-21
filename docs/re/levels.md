@@ -372,7 +372,7 @@ arguments in push order, as lvs.py prints them; the routines are named in messag
 | 3 | set_flags | 1 | the entity's `+0x40` \|= value (`0x800660F4`); soldiers read it as `s40` (soldier.md) |
 | 4 | activate | 2 | (entity, object): `record_activate(object)`; every use on the disc is `activate(self, self_obj)` in record context |
 | 5 | remove_entity | 1 | (entity) |
-| 6 | explosion | 1 | (kind): sound, particles, damage around the script's entity |
+| 6 | explosion | 1 | (kind): sound, particles, damage around the script's entity (`lvl_explosion` `0x80052F14`, at the entity or else its record's position, kept in `0x800AB920`): 0 and 5 an explosion (4, 4, 60) with a burst of sparks (5 spread, rand·5 >> 15 + 15), 0 also its sound; 1 and 6 sparks with smoke (rand·3 >> 15 + 2 sparks, rand·4 >> 15 + 6 puffs), 1 then half the time (rand·100 >> 15 < 50) sound rand % 4 (bank 0, 0xCCCC, pitch 0.5, spread 0x2000); 2 an entity from the record (`0x80074A60`) placed there; 3 a burst of sparks only (5 spread, rand·5 >> 15 + 15, colour 15 + 100); 4 a large explosion (18, 30, 800; mask 0x88004450) with its sound and a screen flash; 7 and 8 a small explosion (6, 10, 15) with sparks and smoke, 7 also its sound |
 | 7 | entity_test | 3 → 1 | (entity, object, n): the level function table `0x80098630`: 0 the entity is the player (flags A 1), 1 it is dead (flags A 0x20000000). Only 1 is used. (Formerly `level_func`) |
 | 8 | show_text | 1 | message-table text (`0x80098188`) on screen (`text_add`) |
 | 9 | has_tag | 3 → 1 | (entity, object, value): the record has a tag whose **low byte** is the value |

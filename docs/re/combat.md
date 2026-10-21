@@ -19,7 +19,9 @@ fire through the same spawners. With an empty clip it does nothing.
      (below), and the recoil climb `inv+0x50` += 1.0, at most 1.0.
    - Weapon 4 (shotgun): six pellets, `pellet_spawn` `0x80045F14` (type `0x13F7`, damage 2.0
      each; flags B `0x24`: swept but **not** nearest-first, below); its fire sound's volume
-     0x20000.
+     0x20000. Each pellet: speed (rand·400 >> 15) + 350 drawn first, `projectile_create` as for
+     bullets (life 15, flags A 0x2000), touch `bullet_touch`, the tracer, then three draws:
+     pitch, yaw and roll += ((rand & 0x3FFF) - 0x2000) << 9.
    - Weapon 2 (bazooka): a rocket, `0x80045CA0` (type `0x13F1`).
    - Weapons 3, 7, 10: nothing here (thrown: `throw_weapon`; 7 has its own case in
      `player_weapon_update`).
