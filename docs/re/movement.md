@@ -26,9 +26,11 @@ every tick (30 Hz):
   if not on ground: vy = min(vy + 2, 75)
   move = rotate_y(yaw) · (strafe, vy, forward)       # set from the input every tick: no
   pos += move                                         # acceleration, no friction, full air control
-  slide against walls (horizontal push-out only)
+  walls: only if the whole-unit position changed; push out horizontally (levels.md, Walkers);
+         still in a wall after the pushes → the whole move is undone this tick
   floor: on ground and floor within 32 below/any distance above (found up to 32 above) → snap
          airborne and moving down and floor within min(dy+16, 64) below → land, vy = 0
+         no floor under the new position → nothing: keep it, height unchanged
 camera: eye = feet + 240 (80 crouched, eased 20/tick), at last tick's position; no bob
 ```
 
@@ -212,12 +214,14 @@ only height death is y > +5000 (falling out of the world).
 
 **Ceilings don't stop a jump.** Measured in 1:3 (`tools/recon/mv_column.py` found a flat ceiling
 491 above the floor at (-3246, 2596), walked there, jumped): the full 24, 22, ..., 2 rise, apex
-156, the same 23-tick arc as in the open, and no contact flag (`+0x38` 0x8000) at all. Read from
-the code: `walker_slide`'s push-out is horizontal only, so a flat ceiling (no horizontal normal)
-moves nothing; and `entity_move`'s one ceiling branch (on a wall contact: if the contact normal's
-vertical part ≥ 0x801, the move went up, **and** the vertical speed is positive (down): vy = 0,
-y back) needs a falling speed while moving up, which only a rolled entity could have: **dead for
-the player**. With the capsule's top 444 above the feet standing (levels.md), a jump pushes it
+156, the same 23-tick arc as in the open, and no contact flag (`+0x38` 0x8000) at all; but that
+ceiling was never touched (contact needs it within the radius, 100, of the segment's top, 224
+above the feet: 480 above the floor at the apex). Read from the code: a down-facing plane does
+count as a wall (levels.md, Walkers), but its push is horizontal only, so a flat ceiling moves him
+by little or nothing (the session's 1:3 tick 258: face 187 of `1_3_C2.TSP`, ny 0.98, two pushes of
+a few units, matched by the simulator) and the rise goes on; the re-check that could undo the
+move looks below the feet. `entity_move`'s one ceiling branch tests the move's whole-unit
+vertical delta (`lh 0x42(sp)`) against 0x801, not a normal: **dead for the player**. With the capsule's top 444 above the feet standing (levels.md), a jump pushes it
 into ceilings lower than ~600; the camera (eye) can reach 396 above the floor, so a ceiling
 lower than that would be seen through (inferred; none tested). A sloped ceiling's horizontal
 normal does push the walker sideways like a wall.
@@ -231,8 +235,13 @@ takes floors below the feet or at most **32** above them. Then, with `d` = feet 
 - `d ≥ -32` (floor up to 32 below, or above): feet = floor. **Steps up and down of up to 32
   are taken instantly**, no smoothing (the camera follows one tick later).
 - Floor more than 32 below: the soldier leaves the ground and falls.
-- No floor at all (-0x7FFF): the move is undone (the player can't walk off the collision
-  mesh).
+- No floor at all (-0x7FFF): **nothing happens for the player**: the position is kept, at the
+  same height, still on the ground or still falling. `entity_move` would undo the move (and, in
+  the air, put the feet back on the last floor `+0x208`) only for entities without flags B
+  0x10000, and the player's flags B are 0x21000 in every traced tick (the 1:1 runs and the whole
+  session). Checked: 71 such ticks in the session (most in 2:1) and the simulator, keeping the
+  position, matched them all. The old text ("the move is undone") was read from the branch
+  without the flag test.
 
 The steep flag (floors steeper than ~30°, `floor_in_chunk` `0x80060138`) is **read by nothing**:
 it is the fourth halfword of the normal that `floor_find` copies out, and none of its four
@@ -240,26 +249,47 @@ callers (`entity_move`, `destructible_spawn`, the pickup drop `0x800833A0`, `obj
 reads that halfword back (`fn.py show`; their stack copies are never loaded). Inferred:
 how steep a slope can be climbed is set by the 32-unit step rule and the wall push-out of
 `walker_slide`, not by an angle; at full run a rise of more than 32 per 34.9 (about 43°) per
-tick finds no floor ahead. Observed: walking crouched up a gentle slope in 1:1, every fourth
-tick the soldier was pushed back ~25 units and down 10; standing on another slope it climbed
-smoothly. **Cause** (read from `walker_slide`'s plane test `0x80078BCC`, inferred, not
-re-measured): a plane facing up is tested at the capsule's centre, `eye - 16` above the feet,
-less the radius (100). Standing that point is 224 up, and a floor plane through the feet is
-only "penetrated" when steeper than ~63° (224·cos θ < 100). Crouched it is 64 up, so **every
-sloped floor triangle within the radius counts as a wall**, and the push-out moves the soldier
-horizontally along that triangle's normal, downhill; flat floors (no horizontal normal) push
-nothing. The floor snap then puts him back on the slope, lower: the "back 25, down 10".
+tick finds no floor ahead. Observed: walking crouched up a gentle slope in 1:1, the soldier slid sideways every tick and
+every fourth tick was pushed back ~25 units and down. **Cause** (the simulator reproduces every
+tick of it, `build/sim/t1`, vblanks 10341..10420): not the slope's own triangles, which are
+floor-like and never count as walls for the player (levels.md, Walkers), but two steep
+triangles beside and ahead of the path (faces 124 and 100 of `1_1_C1.TSP`, 73° and 63°, rising
+40 to 200 units above the feet). Crouched, the walker's segment is only 4..64 above the feet and
+reaches into their lower edge; each tick 124 pushed him sideways, and every few ticks 100 pushed
+him back twice along its normal (a sloped plane's push is scaled by its horizontal part, so it
+repeats), then the floor snap put him lower on the slope. The earlier explanation (every
+sloped floor triangle acts as a wall when crouched) was wrong.
 
 ## Collision shape
 
-The soldier is a walker (flags A 0x8; `walker_slide`, levels.md): a vertical capsule of radius
-`+0x2EC` = **100** (the 1:3 dump; soldiers have 60), whose height comes from the eye height
-`+0x2D6` (centre `eye - 16` above the feet, half-height `eye - 20` in `walker_slide`; the shape
-is detailed in levels.md): 240 standing, 80 crouched, **188 standing after any weapon
-switch** (Crouching, the eye height). Ceilings never stop it (Jumping and falling). Walls push it out horizontally (it slides
-along them; measured: about 32 per tick along a wall hit at an angle). The entity sphere
-(touching pickups, triggers, enemies) has radius `+0x2E8` = 200 and centre 100 above the feet
-standing, at the feet crouched.
+The soldier is a walker (flags A 0x8; `walker_slide`, levels.md has the full rules): radius
+`+0x2EC` = **100** (soldiers 60) and a vertical segment from `eye - 16` above the feet down to 4
+above them (eye = `+0x2D6`: 240 standing, 80 crouched, **188 standing after any weapon switch**,
+Crouching). Distances to a plane are taken at the feet for up-facing planes and at the
+segment's top for the others, less the radius:
+
+- Only the planes the move goes into, and only when the whole-unit position changed.
+- Floors and slopes up to 45° are never walls; steeper triangles, walls and ceilings are.
+- Out-pushes are horizontal only, to radius + 4 along the plane's normal, nearest plane at the
+  old position first, repeated: he slides along walls (measured: about 32 per tick along a wall
+  hit at an angle) and never climbs them; height comes only from the floor.
+- If, after the pushes, a plane is still too near, the **whole move is undone** for the tick
+  (position and on-ground back to the start; seen 99 times in the session, all matched). The
+  re-check gathers its planes around a segment that runs from the feet *down* to eye - 20 below
+  them (the first gather's centre minus fp is not applied; inferred to be a slip), so it fires
+  mostly against walls reaching below the floor level, e.g. steep banks.
+
+The entity sphere (touching pickups, triggers, enemies) has radius `+0x2E8` = 200 and centre
+100 above the feet standing, at the feet crouched.
+
+**Against soldiers and dogs** (the player's touch handler `0x8007C030`, in the contact phase
+after every move): when a soldier (0x1402) or dog (0x1405) whose model instance `+0x6C` is 0x80
+overlaps him (horizontal distance, as max + min/4 of |dx|, |dz|, below the sum of the two
+`+0x2EC` radii), the player gets a push of the overlap (at most 65) away from it in `+0x1F0`,
+used by the **next** tick's move, and `+0x200`, `+0x218`, `+0x220` are cleared (no effect on the
+next tick, which sets them from the input again). The push can round to 0 while still clearing
+the speeds. Against objects (doors, crates) the same handler pushes him out of their planes
+directly (objects.md, Blocking), after `entity_move` has stored `+0x3BC`.
 
 ## Ladders
 
@@ -403,11 +433,45 @@ after 30 ticks of `inv+0x134` with the velocity held at 0):
 - Options from `g_game` (+0xE8/+0xEC/+0xDC.. for port 0): the slow aim turning (0x80000), the
   big crosshair box (0x400000), the button layout.
 
+## Checked against a reimplementation
+
+`tools/sim/move_sim.py` steps the player's movement as written here and in levels.md
+(Collision): the move (yaw rotation with PsyQ's `rcossin_tbl`, which is round(4096·sin), and the
+velocity cut to 1/16 unit), gravity, jump, the floor search, steps and falls, landing, walls,
+ladders, aim-mode pinning and lean, the hit flinch and the soldier push. It reads the level's
+TSP chunks from the extracted disc, in the slots the game had loaded, and takes as inputs what
+the control function produced each tick (`+0x200`, `+0x218`, the jump's -26, the eye height
+`+0x2D6`, the look yaw) from a `VALOR_WATCH` log plus a RAM dump per level; it compares its
+position with `+0x3BC` (where `entity_move` left the soldier) from `VALOR_TRACE_STATE`. Run (the
+watch spec is in the script):
+
+```
+move_sim.py check TRACE.jsonl WATCH.log 1:3 --from 1714 --to 20490 --ram build/sim/rec_1720.bin [--free]
+```
+
+Results (`--free`: the simulator's own state carried from tick to tick, only object touches
+taken from the game; every tick of each range):
+
+| Run | Ticks | Exact |
+|---|---|---|
+| Session 1:3 (vblanks 1714..20490) | 7,106 | all |
+| Session 2:1 (20510..40730) | 7,416 | all, 446 of them on ladders |
+| Session 2:2 (40736..61370) | 5,611 | all, 310 aiming |
+| Scripted 1:1 (`build/sim/t1`, `t2b`): run, diagonal, d-pad, turn, jump, crouch, crouched slope, the basin's walls | 980 | all |
+
+Exercised and exact among them: 2,000 wall-push ticks, 99 moves undone in a wall, 244
+landings, 21 walk-offs, 71 ticks with no floor, 3,900 steps up or down, jumps, ladders, the
+flinch, aiming. "Exact" is to the 16.16 bit.
+
+What the inputs needed: `+0x218` (and `+0x200`, after a soldier touch) read 0 at the end of a
+tick that cleared them, so on about 2% of ticks the strafe/forward value was recovered by trying
+the keyboard values (0, ±34.863, ±8.716 crouched) and keeping the one that matches; and a
+tick's watch state counts only if the frame was drawn before the next tick (the game runs 2 ticks
+in a frame now and then). Not simulated: objects' touch handlers (doors, crates: they move the
+player after `+0x3BC` is stored, so they never enter the comparison), riding a parent, death.
+
 ## Open
 
-- The crouched slope push-back is explained from the code, not re-measured against a slope's
-  normal; the walkers' plane gathering (`0x8007848C`, `0x80078350`) wasn't read in full (which
-  triangles count as near).
 - A ceiling lower than the eye (396 above the floor at a jump's apex): whether the view passes
   through it (no such place was looked for).
 

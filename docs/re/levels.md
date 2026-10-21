@@ -518,27 +518,86 @@ the ends (t = |d0| / (|d0| + |d1|), in 1/4096) and the crossing point is inside 
 (three edge cross products against the normal). The nearest hit wins: its point, normal and
 face (`-1`: nothing hit).
 
-**The floor** (`floor_find`, `0x80060474` → `0x8006028C`, from `entity_move` and spawning):
-for each chunk whose rectangle holds the point, the tree is descended to the leaf holding (x, z)
-(a split's low side is child a). The leaf's fourth halfword is a **zone id**, kept in the
-entity's `+0x390`. Among the leaf's triangles that hold (x, z) (`0x8005FC00`), the height on
-each plane (`0x8005FDCC`) is a candidate if it's below the feet or at most 32 units above them
-(y points down); the floor is the candidate nearest the feet, or the highest of those below
-when none is above. A floor whose normal's vertical part is less than 1.75 times its largest
-horizontal part (steeper than about 30°) is flagged steep (`0x80060138`). No floor: -0x7FFF.
+**The floor** (`floor_find`, `0x80060474` → `0x8006028C`, from `entity_move` and spawning).
+Every rule below is reproduced by `tools/sim/move_sim.py` (`floor_find`), which matched the
+original on every tick of the recorded session's three levels (movement.md, Checked against a
+reimplementation); integer coordinates are the 16.16 position's whole parts.
 
-**Walkers** (`walker_slide`, `0x80078F60`: the player and characters, flags A 0x8) are a
-vertical capsule: radius `+0x2EC` (60 for soldiers), height from the collision sphere's
-(`+0x2D6` - 16). The triangles of the leaves within the radius of the new position, in every
-chunk holding it, are gathered as planes (`0x80078E2C` → `0x800787C0` → `0x8007848C`, at most
-32). Then, repeatedly, of the planes the capsule now penetrates (`0x80078BCC`: the plane's
-distance to the capsule's lowest or highest point, by the normal's vertical sign, less the
-radius), the one it was farthest from at the old position (touched first) pushes the position
-back out along the plane's normal, horizontally only (`0x80078C4C`): walkers slide along walls
-and never climb them; height comes only from the floor. The planes are gathered again at the
-result and checked once more (contact flags: 1 still touching a wall, 2 not). While the brain's
-walk goal is on, the same gathering also sorts the walls ahead/left/right for steering
-(enemies.md).
+- **Chunks**: the loaded slots in slot order (`0x80090DE8`, skipping the one being streamed,
+  `0x800AA184`) whose rectangle holds (x, z), bounds included.
+- **Leaf** (`floor_leaf`, `0x80060034`): from the root, a split on x goes to child b (and the
+  cell's x min becomes x min + split) when x >= x min + split, else to child a; a split on z goes
+  to child a when z < z min + split, else to ~b (z min moves up). Split offsets are relative to
+  the current cell, not the chunk. The leaf's fourth halfword is a **zone id**, kept in the
+  entity's `+0x390`.
+- **Triangle holds (x, z)** (`0x8005FC00`): its normal's y must be <= 0 (facing up or vertical);
+  then a box test that is **not symmetric**: x below v0's x, or above the larger of v1's and
+  v2's x, rejects (v0 alone is taken as the minimum); z outside the three vertices' true min and
+  max rejects; then GTE NCLIP of (v0, v1, P), (v1, v2, P), (v2, v0, P) on (x, z) pairs must all be
+  <= 0.
+- **Height** (`0x8005FDCC`): `y = -(nx·x + nz·z + (d << 15)) / ny`, a C division (towards
+  zero), kept as s16; a plane with |ny| <= 0x100 gives v0's y instead.
+- **Choice in a leaf** (`floor_pick`, `0x8005FEA0`), faces in leaf order: a height is a
+  candidate if it is below the feet (y < h) or at most 32 above them (h + 32 >= y). The first
+  candidate is taken; after that, if the best so far is below the feet, an "above" candidate
+  always replaces it and a "below" one only if higher (smaller y); if the best so far is above,
+  any candidate nearer the feet (|h - y|) replaces it.
+- **Choice between chunks** (`floor_search`): the first chunk's result is taken; a later chunk's
+  (if any) replaces it by the same nearer/below logic, except that the game compares the
+  whole-unit heights with the feet's **16.16** y (`lw 4(s2)`), a unit bug that only matters where
+  two loaded chunks overlap.
+- A floor whose normal's vertical part is less than 1.75 times its largest horizontal part
+  (steeper than about 30°) is flagged steep (`0x80060138`); nothing reads the flag
+  (movement.md). No floor: -0x7FFF.
+
+**Walkers** (`walker_slide`, `0x80078F60`: the player and characters, flags A 0x8). Read from
+the code and reproduced exactly by `move_sim.py` (`walker_slide`) on 2,700 wall-contact ticks of
+the recorded session and two scripted 1:1 runs. With r = `+0x2EC` (100 for the player, 60 for
+soldiers), e = `+0x2D6` (the eye height: 240, 188, 80) and fp = e - 16:
+
+1. **Only if the whole-unit position changed**: the move's delta `(new - old)` in whole units
+   (old = `+0x3BC`, where the last `entity_move` ended) is part of every test below; a plane is
+   kept only when the delta goes into it (`delta · normal < 0`, GTE MVMVA, 32-bit). Standing
+   still (or moving less than a unit) gathers nothing.
+2. **Gather** (`walls_gather` `0x80078E2C` → `walls_gather_chunk` `0x800787C0` →
+   `walls_gather_leaf` `0x8007848C`), around a vertical segment from c = (x, y - fp, z) down to
+   y - 4 (half-height h = e - 20): every loaded chunk whose rectangle holds (x, z), or whose
+   rectangle's nearest edge point is within r (`0x80078AA4`; for a coordinate inside the
+   rectangle's range it takes the nearer edge, not the coordinate itself). In a chunk, the tree is
+   walked to every leaf whose cell comes within r of (x, z) (both sides of a split when the split
+   is within r, the far side kept on a stack of at most 8, dropped beyond that). In a leaf, a
+   triangle is kept when (`0x800776C0`, `plane_crosses_capsule` `0x80078350`):
+   - its box comes within r of (x, z) (x again judged against v0's x as the minimum and the larger
+     of v1/v2 as the maximum) and its y range reaches into [c.y, c.y + h];
+   - and it is **not an up-facing floor-like triangle** (ny < 0 and |ny| >= max(|nx|, |nz|), i.e.
+     floors and slopes up to 45°, are never walls for the player);
+   - a wall-like triangle (|ny| < max(|nx|, |nz|)) counts if one of its vertices strictly inside
+     the segment's height range is within r horizontally, else by a box test (`0x8007711C`): seen
+     along its main horizontal axis (x-y when |nx| < |nz|, else z-y), the corner of the 2r × h box
+     around (c, c.y + h/2) facing each edge must be on the inner side of all three edges (NCLIP);
+     a down-facing (ceiling-like) triangle by the same idea seen from above, with the 2r square
+     around (x, z);
+   - the plane crosses the segment, or the segment's top is in front and the point r towards the
+     plane (x ∓ r, z ∓ r by the normal's signs) is behind or crosses it;
+   - not already gathered from this chunk; at most 32.
+3. **Push** (`wall_first_hit` `0x80078D1C`, `wall_push` `0x80078C4C`): the signed distance of a
+   plane (`0x80078BCC`, 16.16) is taken at the feet for up-facing planes and at fp above the feet
+   for the others, less an offset. Among the planes now nearer than r, the one **nearest at the
+   old position** (offset 0; the most negative wins) pushes: `v = dist(r + 4) >> 8`,
+   `x -= (nx >> 7)·v`, `z -= (nz >> 7)·v`: out to r + 4 along the normal's horizontal part, scaled
+   by the full 3D distance, so a sloped plane needs several pushes. This repeats up to n + 1 times
+   (n planes gathered); planes stay in the list and can push again.
+4. **Re-check**: if anything pushed, the planes are gathered again with the new delta, but
+   **centred on the feet** (c.y = y, the segment running from the feet down to e - 20 below them:
+   apparently a slip for the centre), and if one of them is still nearer than r the result is 1,
+   else 2. Nothing pushed: 2 (gathered but clear) or 0 (nothing gathered).
+
+`entity_move` then, for the player: result 1 → the **whole move is undone** (position = old,
+on-ground restored), the soldier stops dead for that tick; result 2 → contact flag 0x8000; any
+plane in the re-check → `+0x218` and `+0x220` (the strafe and forward speeds) cleared and the
+delta stored at `+0x364`. Its "ceiling" branch needs a whole-unit vertical delta of 0x801 or more
+(`lh 0x42(sp)` is the delta, not a normal) and never runs. While the brain's walk goal is on, the
+same gathering also sorts the walls ahead/left/right for steering (enemies.md).
 
 ## Open
 
@@ -548,5 +607,4 @@ walk goal is on, the same gathering also sorts the walls ahead/left/right for st
 - `0x8006A3BC`, the "near the player" test that stops the cull countdown (message 2).
 - Effects of most `set_flags` bits on soldiers (`s40`, soldier.md) and on doors and switches
   (their model scripts).
-- The walkers' cylinder test and the floor search in detail; (the BSD header's
-  +0x544..+0x588 sections and the TAF files: formats.md).
+- The BSD header's +0x544..+0x588 sections and the TAF files (formats.md).
