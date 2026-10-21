@@ -420,10 +420,38 @@ numbers). The stubs are filled and ~100 scripts are inserted: 1:3's 195/196/197 
 Health is 4.0 in 2:1 (6.0 in 1:3) and some soldiers have range 2250; the behaviour scripts
 otherwise match.
 
+## The player's concealment flags
+
+Two of the player's flags B bits that the soldiers test come from **level volumes**, through the
+player's model script and a level script:
+
+- The player's body script 2 (its model's script list, started by `player_update`) registers
+  events on its `+0x40` word: 1 → variable 0x8A = 1, 2 → 0x8A = 0, 4 → 0x8B = 1, 8 → 0x8B = 0.
+  Variables 0x80 + n are bit n of flags B, so these set and clear **0x400** and **0x800**.
+- Level script 13 (the same in every level dumped: 1:3, 2:3, 3:2) handles the player's messages
+  and calls `set_flags` (built-in 3: `+0x40` |= value): message 8 → 1, 9 → 2; message 0xD counts
+  up and sets 4, message 0xE counts down and sets 8 when the count is back to zero (it starts at
+  128; message 0x9D resets it and sets 8).
+- The messages come from kind-1 trigger boxes (class 0xB81C10E3, shape 2) whose player enter and
+  leave lists hold 0xD/0xE or 8/9. 2:3 has nine 0xD/0xE boxes and one 8/9 box; a mission 1
+  level (the replay at vblank 30000) two 0xD/0xE boxes; 1:3 and 3:2 none.
+
+So **0x800 means "in a concealment zone"** (overlapping zones counted): sight checks against
+the player use half the sweep (query 0xB). **0x400 means "undetectable"**: soldiers' detection
+(44) skips sight and proximity (hearing still counts) and Panzerfaust soldiers fire straight
+ahead (fire 3) instead of aiming. Neither changed in a replay of the recorded session up to
+vblank 96,000 (it never entered such a zone); found by reading the scripts (`lvs.py`,
+`sst.py`) and the records' lists (`+0x38`/`+0x3C`, u32 count then u32 messages, read by
+`0x80083DE8`). What the zones are in the world (shadows, foliage) is not checked.
+
+The player's `+0x11E` (sensor 0x66) is its **body script number** (channel 0's current script,
+set by `script_start`; -1 when none). In 1:3 the player's model has 17 scripts; 13 is the jump
+(it sets variable 0x13, the vertical velocity, to 400 then 200 over its frames). The replay
+showed 0, 7, 13, 8, 10, 9, 16, 12, 1, 15 and 14.
+
 ## Open
 
-- The player's flags B 0x400 (blocks detection, turns Panzerfaust shots into fire 3) and
-  `+0x11E` = 8; flags B 0x800 as crouching.
+- Which of the player's actions its body scripts 3, 4 and 8 are in 2:1 (`+0x11E`, above).
 - Bits 1, 2, 3, 7 of `+0xEC`: who sets them (the level?), and v22 > 200 paths.
 - `s3C` 0x1 (reload?), 0x2 (abort; explosions' landing), 0x8000, 0x10000; `s40` bits from level
   messages; `send_event` 0x1B, 0x4, 0x1E, 0x33, 0x75.
