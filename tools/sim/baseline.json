@@ -20,8 +20,8 @@
      "within": 0
     },
     "2:2": {
-     "compared": 22576,
-     "exact": 22576,
+     "compared": 22577,
+     "exact": 22577,
      "fail": 0,
      "within": 0
     }
@@ -75,8 +75,8 @@
     },
     "2:1": {
      "compared": 7422,
-     "exact": 7421,
-     "fail": 1,
+     "exact": 7422,
+     "fail": 0,
      "within": 0
     },
     "2:2": {
@@ -138,9 +138,9 @@
     },
     "3:1": {
      "compared": 7051,
-     "exact": 7032,
+     "exact": 7033,
      "fail": 0,
-     "within": 19
+     "within": 18
     }
    },
    "level": {
@@ -181,6 +181,918 @@
     "3:1": {
      "compared": 20,
      "exact": 20,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w12": {
+  "levels": [
+   "1:2"
+  ],
+  "results": {
+   "brain": {
+    "1:2": {
+     "compared": 10476,
+     "exact": 10476,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "1:2": {
+     "compared": 35718,
+     "exact": 35554,
+     "fail": 1,
+     "within": 163
+    }
+   },
+   "level": {
+    "1:2": {
+     "compared": 3806467,
+     "exact": 3806467,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "1:2": {
+     "compared": 8116,
+     "exact": 8116,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "1:2": {
+     "compared": 27,
+     "exact": 27,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w23": {
+  "levels": [
+   "2:3"
+  ],
+  "results": {
+   "brain": {
+    "2:3": {
+     "compared": 8056,
+     "exact": 8056,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "2:3": {
+     "compared": 40084,
+     "exact": 40071,
+     "fail": 0,
+     "within": 13
+    }
+   },
+   "level": {
+    "2:3": {
+     "compared": 4075189,
+     "exact": 4075189,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "2:3": {
+     "compared": 8159,
+     "exact": 8159,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "2:3": {
+     "compared": 40,
+     "exact": 40,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w24": {
+  "levels": [
+   "2:4"
+  ],
+  "results": {
+   "brain": {
+    "2:4": {
+     "compared": 23121,
+     "exact": 23120,
+     "fail": 1,
+     "within": 0
+    }
+   },
+   "combat": {
+    "2:4": {
+     "compared": 103329,
+     "exact": 103049,
+     "fail": 2,
+     "within": 278
+    }
+   },
+   "level": {
+    "2:4": {
+     "compared": 2392897,
+     "exact": 2392897,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "2:4": {
+     "compared": 7708,
+     "exact": 7708,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "2:4": {
+     "compared": 60,
+     "exact": 60,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w32": {
+  "levels": [
+   "3:2"
+  ],
+  "results": {
+   "brain": {
+    "3:2": {
+     "compared": 21945,
+     "exact": 21945,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "3:2": {
+     "compared": 55421,
+     "exact": 55213,
+     "fail": 1,
+     "within": 207
+    }
+   },
+   "level": {
+    "3:2": {
+     "compared": 3623277,
+     "exact": 3623277,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "3:2": {
+     "compared": 7317,
+     "exact": 7317,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "3:2": {
+     "compared": 36,
+     "exact": 36,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w33": {
+  "levels": [
+   "3:3"
+  ],
+  "results": {
+   "brain": {
+    "3:3": {
+     "compared": 6208,
+     "exact": 6206,
+     "fail": 2,
+     "within": 0
+    }
+   },
+   "combat": {
+    "3:3": {
+     "compared": 22113,
+     "exact": 22017,
+     "fail": 3,
+     "within": 93
+    }
+   },
+   "level": {
+    "3:3": {
+     "compared": 4723164,
+     "exact": 4723164,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "3:3": {
+     "compared": 8163,
+     "exact": 8163,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "3:3": {
+     "compared": 26,
+     "exact": 26,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w34": {
+  "levels": [
+   "3:4"
+  ],
+  "results": {
+   "brain": {
+    "3:4": {
+     "compared": 29196,
+     "exact": 29196,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "3:4": {
+     "compared": 99880,
+     "exact": 99729,
+     "fail": 5,
+     "within": 146
+    }
+   },
+   "level": {
+    "3:4": {
+     "compared": 2720039,
+     "exact": 2720035,
+     "fail": 0,
+     "within": 4
+    }
+   },
+   "move": {
+    "3:4": {
+     "compared": 8059,
+     "exact": 8059,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "3:4": {
+     "compared": 57,
+     "exact": 57,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w41": {
+  "levels": [
+   "4:1"
+  ],
+  "results": {
+   "brain": {
+    "4:1": {
+     "compared": 9516,
+     "exact": 9516,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "4:1": {
+     "compared": 50156,
+     "exact": 49793,
+     "fail": 3,
+     "within": 360
+    }
+   },
+   "level": {
+    "4:1": {
+     "compared": 4764209,
+     "exact": 4764209,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "4:1": {
+     "compared": 8056,
+     "exact": 8056,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "4:1": {
+     "compared": 40,
+     "exact": 40,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w42": {
+  "levels": [
+   "4:2"
+  ],
+  "results": {
+   "brain": {
+    "4:2": {
+     "compared": 15603,
+     "exact": 15600,
+     "fail": 3,
+     "within": 0
+    }
+   },
+   "combat": {
+    "4:2": {
+     "compared": 35284,
+     "exact": 35130,
+     "fail": 11,
+     "within": 143
+    }
+   },
+   "level": {
+    "4:2": {
+     "compared": 5461042,
+     "exact": 5461042,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "4:2": {
+     "compared": 8092,
+     "exact": 8092,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "4:2": {
+     "compared": 29,
+     "exact": 29,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w43": {
+  "levels": [
+   "4:3"
+  ],
+  "results": {
+   "brain": {
+    "4:3": {
+     "compared": 13198,
+     "exact": 13198,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "4:3": {
+     "compared": 59804,
+     "exact": 59605,
+     "fail": 1,
+     "within": 198
+    }
+   },
+   "level": {
+    "4:3": {
+     "compared": 3471676,
+     "exact": 3471676,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "4:3": {
+     "compared": 8178,
+     "exact": 8178,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "4:3": {
+     "compared": 40,
+     "exact": 40,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w51": {
+  "levels": [
+   "5:1"
+  ],
+  "results": {
+   "brain": {
+    "5:1": {
+     "compared": 6824,
+     "exact": 6824,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "5:1": {
+     "compared": 31641,
+     "exact": 31328,
+     "fail": 2,
+     "within": 311
+    }
+   },
+   "level": {
+    "5:1": {
+     "compared": 6419429,
+     "exact": 6419429,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "5:1": {
+     "compared": 8210,
+     "exact": 8210,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "5:1": {
+     "compared": 40,
+     "exact": 40,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w52": {
+  "levels": [
+   "5:2"
+  ],
+  "results": {
+   "brain": {
+    "5:2": {
+     "compared": 23205,
+     "exact": 23205,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "5:2": {
+     "compared": 75217,
+     "exact": 74913,
+     "fail": 14,
+     "within": 290
+    }
+   },
+   "level": {
+    "5:2": {
+     "compared": 3713502,
+     "exact": 3713502,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "5:2": {
+     "compared": 7641,
+     "exact": 7641,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "5:2": {
+     "compared": 32,
+     "exact": 32,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w53": {
+  "levels": [
+   "5:3"
+  ],
+  "results": {
+   "brain": {
+    "5:3": {
+     "compared": 18219,
+     "exact": 18217,
+     "fail": 2,
+     "within": 0
+    }
+   },
+   "combat": {
+    "5:3": {
+     "compared": 70947,
+     "exact": 70436,
+     "fail": 5,
+     "within": 506
+    }
+   },
+   "level": {
+    "5:3": {
+     "compared": 4333979,
+     "exact": 4333979,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "5:3": {
+     "compared": 7860,
+     "exact": 7860,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "5:3": {
+     "compared": 54,
+     "exact": 53,
+     "fail": 1,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w54": {
+  "levels": [
+   "5:4"
+  ],
+  "results": {
+   "brain": {
+    "5:4": {
+     "compared": 15950,
+     "exact": 15950,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "5:4": {
+     "compared": 67081,
+     "exact": 66600,
+     "fail": 26,
+     "within": 455
+    }
+   },
+   "level": {
+    "5:4": {
+     "compared": 4251257,
+     "exact": 4251257,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "5:4": {
+     "compared": 7976,
+     "exact": 7976,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "5:4": {
+     "compared": 40,
+     "exact": 40,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w71": {
+  "levels": [
+   "7:1"
+  ],
+  "results": {
+   "brain": {
+    "7:1": {
+     "compared": 11636,
+     "exact": 11633,
+     "fail": 3,
+     "within": 0
+    }
+   },
+   "combat": {
+    "7:1": {
+     "compared": 50552,
+     "exact": 50223,
+     "fail": 2,
+     "within": 327
+    }
+   },
+   "level": {
+    "7:1": {
+     "compared": 4045961,
+     "exact": 4045961,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "7:1": {
+     "compared": 8016,
+     "exact": 8016,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "7:1": {
+     "compared": 36,
+     "exact": 36,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w72": {
+  "levels": [
+   "7:2"
+  ],
+  "results": {
+   "brain": {
+    "7:2": {
+     "compared": 13710,
+     "exact": 13710,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "7:2": {
+     "compared": 49071,
+     "exact": 48828,
+     "fail": 5,
+     "within": 238
+    }
+   },
+   "level": {
+    "7:2": {
+     "compared": 3371128,
+     "exact": 3371128,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "7:2": {
+     "compared": 8062,
+     "exact": 8062,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "7:2": {
+     "compared": 46,
+     "exact": 46,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w73": {
+  "levels": [
+   "7:3"
+  ],
+  "results": {
+   "brain": {
+    "7:3": {
+     "compared": 15914,
+     "exact": 15914,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "7:3": {
+     "compared": 60978,
+     "exact": 60768,
+     "fail": 4,
+     "within": 206
+    }
+   },
+   "level": {
+    "7:3": {
+     "compared": 3759040,
+     "exact": 3759040,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "7:3": {
+     "compared": 7926,
+     "exact": 7926,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "7:3": {
+     "compared": 40,
+     "exact": 40,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w91": {
+  "levels": [
+   "9:1"
+  ],
+  "results": {
+   "brain": {
+    "9:1": {
+     "compared": 14376,
+     "exact": 14376,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "combat": {
+    "9:1": {
+     "compared": 60341,
+     "exact": 59197,
+     "fail": 25,
+     "within": 1119
+    }
+   },
+   "level": {
+    "9:1": {
+     "compared": 3750537,
+     "exact": 3750537,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "9:1": {
+     "compared": 7183,
+     "exact": 7183,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "9:1": {
+     "compared": 36,
+     "exact": 36,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w92": {
+  "levels": [
+   "9:2"
+  ],
+  "results": {
+   "brain": {
+    "9:2": {
+     "compared": 12593,
+     "exact": 12590,
+     "fail": 2,
+     "within": 1
+    }
+   },
+   "combat": {
+    "9:2": {
+     "compared": 26868,
+     "exact": 26183,
+     "fail": 8,
+     "within": 677
+    }
+   },
+   "level": {
+    "9:2": {
+     "compared": 3929302,
+     "exact": 3929302,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "move": {
+    "9:2": {
+     "compared": 7965,
+     "exact": 7965,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "9:2": {
+     "compared": 23,
+     "exact": 23,
+     "fail": 0,
+     "within": 0
+    }
+   }
+  },
+  "sst_pairs": 20
+ },
+ "w94": {
+  "levels": [
+   "9:4"
+  ],
+  "results": {
+   "brain": {
+    "9:4": {
+     "compared": 25637,
+     "exact": 25635,
+     "fail": 2,
+     "within": 0
+    }
+   },
+   "combat": {
+    "9:4": {
+     "compared": 73293,
+     "exact": 72602,
+     "fail": 2,
+     "within": 689
+    }
+   },
+   "level": {
+    "9:4": {
+     "compared": 2774405,
+     "exact": 2773931,
+     "fail": 0,
+     "within": 474
+    }
+   },
+   "move": {
+    "9:4": {
+     "compared": 8059,
+     "exact": 8059,
+     "fail": 0,
+     "within": 0
+    }
+   },
+   "sst": {
+    "9:4": {
+     "compared": 44,
+     "exact": 44,
      "fail": 0,
      "within": 0
     }

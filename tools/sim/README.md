@@ -36,6 +36,55 @@ The recorded session, to 2:3's start (version 1 recordings part from the recordi
 Its results are the table above, but for the script VM: `check.py` picks its own 20 tick pairs
 per level (106 thinks), one of which (2:2) still differs: an animation instance's blend field.
 
+## Coverage: every single-player level
+
+Besides the recorded session, `baseline.json` holds monkey runs of the other 21 single-player
+levels (the same `check.py`; random input from a seed, made by `monkey_tape.sh`, so they hit
+deaths and restarts, pauses, wall-strafing with analog sticks, every weapon the level gives):
+
+    tools/sim/monkey_tape.sh M L $((M * 10 + L)) 25000 wML     # e.g. 4 2 42 25000 w42
+    python3 tools/sim/check.py build/simcheck/tapes/wML
+
+(`m3l1`: 3:1 then 1:1, seed 7, stop 30000.) The tapes stay in `build/`; a monkey run replays its
+own recording exactly. Fails per level after the fixes they led to (counts of compared items
+that differ; "within" ones, a documented range, a random draw or timing, are not counted):
+
+| Level | move | sst | brain | combat | level |
+|---|---|---|---|---|---|
+| 1:1 | 0 | 0 | 0 | 0 | 0 |
+| 1:2 | 0 | 0 | 0 | 1 | 0 |
+| 1:3 | 0 | 0 | 2 | 5 | 0 |
+| 2:1 | 0 | 0 | 0 | 3 | 1 |
+| 2:2 | 0 | 0 | 0 | 71 | 1 |
+| 2:3 | 0 | 0 | 0 | 0 | 0 |
+| 2:4 | 0 | 0 | 1 | 2 | 0 |
+| 3:1 | 0 | 0 | 0 | 0 | 0 |
+| 3:2 | 0 | 0 | 0 | 1 | 0 |
+| 3:3 | 0 | 0 | 2 | 3 | 0 |
+| 3:4 | 0 | 0 | 0 | 5 | 0 |
+| 4:1 | 0 | 0 | 0 | 3 | 0 |
+| 4:2 | 0 | 0 | 3 | 11 | 0 |
+| 4:3 | 0 | 0 | 0 | 1 | 0 |
+| 5:1 | 0 | 0 | 0 | 2 | 0 |
+| 5:2 | 0 | 0 | 0 | 14 | 0 |
+| 5:3 | 0 | 1 | 2 | 5 | 0 |
+| 5:4 | 0 | 0 | 0 | 26 | 0 |
+| 7:1 | 0 | 0 | 3 | 2 | 0 |
+| 7:2 | 0 | 0 | 0 | 5 | 0 |
+| 7:3 | 0 | 0 | 0 | 4 | 0 |
+| 9:1 | 0 | 0 | 0 | 25 | 0 |
+| 9:2 | 0 | 0 | 2 | 8 | 0 |
+| 9:4 | 0 | 0 | 2 | 2 | 0 |
+
+1:3, 2:1 and 2:2 are the recorded session, 3:1 and 1:1 `m3l1`, the rest one run each. What the
+remaining fails are: move none; sst one think in 5:3 (channel 1 took an event the dump before
+didn't hold; unexplained, perhaps another entity's op 0x3F in the same tick, which the pairs,
+stepping each entity alone, can't show); brain a few ticks seeking a grenade (not in the watch)
+or a script decision the next state doesn't show; combat mostly enemy-bullet edge cases and
+soldiers pushed after their parts were placed (animation.md), 2:2's 71 from the session as
+before; level the session's two single zone-bit frames. Level "within": the order of records
+waiting together in the spawn queue, which is the frames' idle time (levels.md, Spawning).
+
 ## How they are fed
 
 The original's side comes from a replay of a recording (`tools/recon/run.sh NAME SECONDS LOG
