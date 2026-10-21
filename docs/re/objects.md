@@ -277,6 +277,41 @@ Per-level counts of model types (a scan of every BSD for model entries with a ty
 but six single-player levels, 2:3, 3:4, 4:1, 4:3, 9:1 and 9:4, have no record that spawns one:
 catalogue.md), 0x1776 doors in 1:1, 2:1..2:3, 3:1, 4:1, 4:2, 5:1, 5:2, 5:4, 7:2, 9:1, 9:2.
 
+### Plane boxes, exactly (`tools/sim/engine_planes.py`)
+
+- **The box** (`0x8004A8F8(e, min, max, -1)`; destructibles pass the model's `+0x44`/`+0x7C`,
+  the generic spawner the record's half sizes): `+0x2EE` = 6 plane records of 0x1C bytes at
+  `+0x300` copied from the template at `0x8003A238` (top (0, -32767, 0), bottom, -x, +x, -z, +z;
+  +0 flags, +4 the normal, +0xA the distance, +0xC/+0x14 the masks of the planes a hit point
+  must be inside: every other plane but the opposite one), each distance = |that side's
+  coordinate| - 1; the sphere: radius (largest side + 30) / 2 at the box's centre (`+0x2D8`,
+  local; `0x8005D238` alone gives scenery and 0x1779 just this); the box at `+0x2F0`/`+0x2F8`.
+- **A segment against it** (`0x8004B0F0`): both ends into the object's frame
+  (`RotMatrixYXZ(-angles)` · (p - position), GTE >> 12, low halves), per plane d0 = (n·a >> 15) - d
+  and d1 likewise; among planes with flags & 3 crossed from the front (d0 ≥ 0, signs differ),
+  the one with the smallest |d0| (not t) whose point a + ((t·(b-a)) >> 12), t = |d0| << 12 /
+  (|d0| + |d1|), is inside the planes its masks name (n·p >> 15 - d < 0 for each); the point back
+  through the object's matrix and translation, the normal rotated; the plane's flags.
+- **Projectiles** (`bullet_touch` with flags B 4, `0x8004B624`: the path `+0x258` → `+0x20C`,
+  integers; skipped while attached): on a hit (not type 0x1777) the projectile is moved to the
+  point, `+0x364` = the reversed normal, explosive rounds explode, a target with flags B 0x4000
+  gives the impact sound and sparks (two draws: count, smoke), a soldier the ricochet sound 12,
+  it is removed and the target's own touch runs; on 0x1777 only the target's touch runs and the
+  bullet flies on.
+- **`destructible_touch`** (`0x8005D32C`, the object touched by another): a projectile from a
+  flags-A-4 owner (enemies' rounds) only makes the material sound; the player's melee part
+  (kind 5, in front, within reach) or a projectile does its damage (`+0xF8`), and so does an
+  explosion (type 0x31, no sound); then message 1 to the object's level script at once, and at
+  its death (once, flags A 0x100000) the counter `0x80039D10` and a drop (`0x800838AC`) when the
+  record's `+0x68` is set; the sound by the model: wood 0x23 (0x69960D1C, 0x4D682091,
+  0x5C8D7E20), metal 0x25 (0xD2E7F597, 0xE68BC914, 0xEBF2A379, 0xA1EBF698, 0x4A4B9B8A), glass 0x27
+  (0x5151A6DA), volume 0x20000, spread 0x4000, class 1.
+- **The generic spawner** (`0x8005E7B0`, types other than the ones with their own): no
+  instance, type from the model, group `0x80099ECC`, health from the record's `+0x5C`, position
+  and angles (`+0x264`), cull counters 5, draw handler `0x8005E760`; 0x1779: flags A
+  0x13028000, B 0x40213, mask 0, a sphere only; others: flags A 0x13028400, B 0x44011, mask
+  0x88214051, `destructible_touch`, the box.
+
 ## World animations (built-ins 18, 21)
 
 The world's TSP chunks carry animated pieces (per loaded chunk, `0x80099098` + 0x288 × chunk:
