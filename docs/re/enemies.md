@@ -254,7 +254,7 @@ instruction's address, and a flag (`0x80099EC0`) tells the runner to yield.
 | 43 | send_event | Broadcast level message N with the soldier as sender (`0x800662CC` → `msg_send`; 0x1B alerts the sender's tagged group: enemy_types.md, Messages) |
 | 44 | to_spawn | imm high byte 0: back to the spawn point and its facing, 1: the point only, 2: the facing only; the facing also into variable imm low byte |
 | 45 | has_anim | Raw word V = 1 if the model has animation X |
-| 46 | follow | Place relative to another entity (the heading into a variable) |
+| 46 | follow | Place relative to another entity (the heading into a variable): `0x8005C398`, target W1 & 0xFFFF, distance imm, sideways offset W2 & 0xFFFF, variable (W2 >> 16) & 0xFFF, mode W2 >> 28. Mode 0: u = VectorNormalSS(target - self, y 0), yaw = ratan2(ux, uz) into the variable and `+0x22C`; mode 1: u = the target's forward column, yaw its `+0x22C`; other modes nothing. Then x, z = (offset ≠ 0: the target's matrix and translation applied to (offset, 0, 0); else the target's position) - u·distance >> 12 |
 | 47 | clear_events | Zero the condition word of every record of the running channel's table |
 | 48 | run_message | Run a level-script message on an entity at once (`0x8005C698` → `script_run_message`); used by no model on the disc (catalogue.md) |
 | 49 | alarm | If none is up: spawn the alarm, flag every living soldier (+0x3C 0x100), send event 0x2B to the zone's entities |

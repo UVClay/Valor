@@ -53,7 +53,48 @@ def world_op(vm, op, pc, w, mask, imm, O, W):
         r = es.probe(eng, e, O(2, imm_hi), s16(O(3, W(1))))
         vm.set_var(s16(O(1, imm_lo)), r)
         return pc + 8
-    if op in (0x36, 0x46):
+    if op == 0x46:      # 0x8005C398: follow
+        return follow(vm, pc, O, W, imm)
+    if op == 0x36:
         eng.note(f"script op {op:X} not implemented")
         return None
     return None
+
+
+def follow(vm, pc, O, W, imm):
+    """Op 46 (0x8005C398): place the entity at a distance from another. Operands: the target
+    (W1 & 0xFFFF), the distance (imm), a sideways offset (W2 & 0xFFFF), a variable (W2 >> 16 &
+    0xFFF), a mode (W2 >> 28). Mode 0: the direction from the entity to the target (VectorNormalSS
+    of dx, 0, dz), the entity faces it (yaw into the variable and +0x22C); mode 1: the target's
+    forward column and yaw. Then the position x, z = (with an offset: the target's matrix and
+    translation applied to (offset, 0, 0); else the target's position) - direction * distance."""
+    import engine_gte as gt
+    import combat_sim as cs
+    m, e = vm.m, vm.e
+    dist = O(2, imm)
+    tgt = O(1, W(1) & 0xFFFF) & 0xFFFFFFFF
+    off = O(3, W(2) & 0xFFFF)
+    var = O(4, (W(2) >> 16) & 0xFFF)
+    mode = O(5, (W(2) >> 28) & 0xF)
+    if mode == 0:
+        u = gt.vector_normal([s16(m.s16(tgt + 0x20E) - m.s16(e + 0x20E)), 0,
+                              s16(m.s16(tgt + 0x216) - m.s16(e + 0x216))])
+        yaw = s32(cs.ratan2(u[0], u[2]) << 16)
+    elif mode & 1:
+        u = [m.s16(tgt + 0x344), 0, m.s16(tgt + 0x350)]
+        yaw = m.s32(tgt + 0x22C)
+    else:
+        return pc + 0xC
+    vm.set_var(var, yaw)
+    m.w32(e + 0x22C, yaw)
+    if s16(off):
+        M = [[m.s16(tgt + 0x340 + 6 * i + 2 * k) for k in range(3)] for i in range(3)]
+        T = [m.s32(tgt + 0x354 + 4 * k) for k in range(3)]
+        mac, _ = gt.mul(M, [s16(off), 0, 0], T, 12)
+        p = [s16(x) for x in mac]
+        m.w32(e + 0x20C, s32((((-s16(u[0]) * dist) >> 12) + p[0]) << 16))
+        m.w32(e + 0x214, s32((((-s16(u[2]) * dist) >> 12) + p[2]) << 16))
+    else:
+        m.w32(e + 0x20C, s32(m.s32(tgt + 0x20C) + (((-s16(u[0]) * dist) >> 12) << 16)))
+        m.w32(e + 0x214, s32(m.s32(tgt + 0x214) + (((-s16(u[2]) * dist) >> 12) << 16)))
+    return pc + 0xC

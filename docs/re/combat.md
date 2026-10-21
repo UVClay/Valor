@@ -144,8 +144,8 @@ Every tick the player's controls (`player_controls`, `0x8007F300`) end in `aim_u
 1. **The aim point.** A ray from the camera through the crosshair (its screen position
    `inv+0x190`/`+0x192`, the aim distance `inv+0xA4`) is swept against the world in three
    pieces (`world_sweep`); the first wall hit ends it. Every entity it passes (not dead, not
-   flagged 0x206 in flags B) is tested against its sphere, and for characters (flags A 0x10400,
-   with a box) more exactly (`0x8004B0F0`); the nearest one shortens the ray to it. The end is
+   flagged 0x206 in flags B) is tested against its sphere, and for characters and objects (flags A 0x10400) more exactly: objects with plane shapes by the
+   segment-box test (`0x8004B0F0`, objects.md, from the camera to the aim point), the rest by their parts; the nearest one shortens the ray to it. The end is
    the aim point (`inv+0x1A4..+0x1AC`).
 2. **Aim friction.** If the nearest entity on the ray is a character (flags A & 0x50) at least
    1200 units away, `inv` flag 0x100000 is set, and past 2750 units also bit 31: the turning

@@ -81,8 +81,8 @@ def aim_update(eng, e, inv):
         ok = True
         if m.u32(o + 0xC) & 0x10400:
             if m.u16(o + 0x2EE):
-                eng.note("aim ray against an object's box (0x8004B0F0) not implemented")
-                ok = False
+                from engine_planes import segment_box
+                ok = segment_box(eng, Ci, aim, o) is not None
             else:
                 pp = m.u32(o + 0x304)
                 parts = [([m.s32(pp + 0x48 * i + 0x20 + 4 * k) for k in range(3)], m.s32(pp + 0x48 * i + 0x38),
