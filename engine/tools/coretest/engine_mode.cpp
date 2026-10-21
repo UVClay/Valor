@@ -1,0 +1,243 @@
+// coretest --engine M:L [--to TICK] [--max N] [--out TRACE.jsonl] [--dump TICK:PATH]...
+//
+// The whole engine (engine/sim, the port of tools/sim/engine.py) run free from the level's seed
+// dump on the recording's outside inputs, its state trace compared with the original's every tick
+// (tools/sim/engine_cmp.py): the player's look, weapon, ammo and flags B, and every entity's
+// handle, type, flags A, position, angles, health, animation and frame, entities matched by order
+// within their type. Inputs, as engine.py reads them: build/engine/orig.log (the replay's
+// VALOR_TRACE_INPUT / RAND / idle work), orig.jsonl (its state trace), frames.log, timing.log,
+// drawn.log and seed/dV.bin.
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <map>
+#include <set>
+
+#include "valor/sim/audio.h"
+#include "valor/sim/engine.h"
+
+using namespace valor::sim;
+
+namespace {
+
+const char* kPlayer[] = {"look yaw", "look pitch", "slot", "weapon", "clip", "reserve", "flags B"};
+const char* kEnt[] = {"handle", "type", "flags A", "x", "y", "z", "pitch", "yaw", "roll", "health", "animation", "frame"};
+
+struct Compare {
+    std::map<I, const StateLine*> orig;
+    int maxn = 20, shown = 0;
+    std::map<std::string, I> first, count;
+    std::map<std::string, std::string> example;
+    I ticks = 0, identical = 0, first_any = -1;
+
+    void kind(const std::string& w, I tick, const std::string& detail) {
+        if (!first.count(w)) first[w] = tick;
+        count[w]++;
+        if (!example.count(w)) example[w] = "tick " + std::to_string(tick) + ": " + detail;
+    }
+
+    void line(const StateLine& e) {
+        auto it = orig.find(e.tick);
+        if (it == orig.end()) return;
+        const StateLine& o = *it->second;
+        ticks++;
+        std::set<std::string> kinds;
+        std::vector<std::string> diffs;
+        for (size_t k = 0; k < e.player.size() && k < o.player.size() && k < 7; k++)
+            if (e.player[k] != o.player[k]) {
+                std::string w = std::string("player ") + kPlayer[k];
+                kinds.insert(w);
+                diffs.push_back(w + ": " + std::to_string(e.player[k]) + " / " + std::to_string(o.player[k]));
+            }
+        std::vector<I> ta, tb;
+        for (auto& x : e.ents) ta.push_back(x[1]);
+        for (auto& x : o.ents) tb.push_back(x[1]);
+        if (ta != tb) {
+            kinds.insert("entity list (types in order)");
+            std::map<I, I> ca, cb;
+            for (I t : ta) ca[t]++;
+            for (I t : tb) cb[t]++;
+            std::string d = "list: engine only {";
+            for (auto& [t, n] : ca)
+                if (n > cb[t]) d += std::to_string(t) + ":" + std::to_string(n - cb[t]) + " ";
+            d += "}, original only {";
+            for (auto& [t, n] : cb)
+                if (n > ca[t]) d += std::to_string(t) + ":" + std::to_string(n - ca[t]) + " ";
+            diffs.push_back(d + "}");
+        }
+        std::map<I, std::vector<const std::vector<I>*>> ba, bb;
+        for (auto& x : e.ents) ba[x[1]].push_back(&x);
+        for (auto& x : o.ents) bb[x[1]].push_back(&x);
+        for (auto& [typ, vb] : bb) {
+            auto& va = ba[typ];
+            for (size_t i = 0; i < va.size() && i < vb.size(); i++) {
+                if (typ == 0x32 || typ == 0x23 || typ == 0x66) continue;
+                const auto& u = *va[i];
+                const auto& v = *vb[i];
+                for (int k = 1; k < 12; k++)
+                    if (u[size_t(k)] != v[size_t(k)]) {
+                        char w[64];
+                        std::snprintf(w, sizeof w, "type %llX %s", (unsigned long long)typ, kEnt[k]);
+                        kinds.insert(w);
+                        diffs.push_back(std::string(w) + " #" + std::to_string(i) + ": " + std::to_string(u[size_t(k)]) + " / " +
+                                        std::to_string(v[size_t(k)]));
+                    }
+                if (u[0] != v[0]) kinds.insert("handles");
+            }
+        }
+        for (const std::string& w : kinds) {
+            std::string d;
+            for (auto& x : diffs)
+                if (x.rfind(w, 0) == 0 || w.rfind("entity list", 0) == 0) {
+                    d = x;
+                    break;
+                }
+            kind(w, e.tick, d);
+        }
+        kinds.erase("handles");
+        if (kinds.empty())
+            identical++;
+        else if (first_any < 0)
+            first_any = e.tick;
+        if (!diffs.empty() && shown < maxn) {
+            shown++;
+            std::printf("tick %lld:", (long long)e.tick);
+            for (size_t i = 0; i < diffs.size() && i < 8; i++) std::printf("%s %s", i ? ";" : "", diffs[i].c_str());
+            std::printf("%s\n", diffs.size() > 8 ? " ..." : "");
+        }
+    }
+
+    void report() {
+        std::printf("\n%lld ticks compared, %lld identical (handles aside); first difference at tick %lld\n", (long long)ticks,
+                    (long long)identical, (long long)first_any);
+        std::vector<std::pair<I, std::string>> order;
+        for (auto& [w, t] : first) order.push_back({t, w});
+        std::sort(order.begin(), order.end());
+        for (auto& [t, w] : order)
+            std::printf("  %-36s first at tick %6lld, %6lld ticks   %s\n", w.c_str(), (long long)t, (long long)count[w], example[w].c_str());
+    }
+};
+
+// engine.py frames_of: the frames of the level's ticks from the frame-counter watch.
+std::vector<std::pair<I, std::vector<I>>> frames_of(const std::string& path, const std::vector<StateLine>& lines) {
+    std::vector<std::pair<I, std::vector<I>>> out;
+    if (lines.empty()) return out;
+    std::set<I> want;
+    for (auto& d : lines) want.insert(d.tick);
+    I lo = lines.front().vblank - 2, hi = lines.back().vblank + 2;
+    std::ifstream f(path);
+    std::string line;
+    size_t total = 0;
+    while (std::getline(f, line)) {
+        long long vb;
+        unsigned a, b;
+        if (std::sscanf(line.c_str(), "watch %lld fc+4: %X -> %X", &vb, &a, &b) != 3) continue;
+        if (!(lo <= vb && vb <= hi)) continue;
+        std::vector<I> ticks;
+        for (I t = I(a) + 1; t <= I(b); t++)
+            if (want.count(t)) ticks.push_back(t);
+        if (!ticks.empty()) {
+            total += ticks.size();
+            out.push_back({vb, ticks});
+        }
+    }
+    if (!out.empty() && total == want.size()) return out;
+    out.clear();
+    for (auto& d : lines) {
+        if (!out.empty() && out.back().first == d.vblank)
+            out.back().second.push_back(d.tick);
+        else
+            out.push_back({d.vblank, {d.tick}});
+    }
+    return out;
+}
+
+}  // namespace
+
+int run_engine(int argc, char** argv) {
+    if (argc < 3) {
+        std::fprintf(stderr, "usage: coretest --engine M:L [--to TICK] [--max N] [--out TRACE.jsonl] [--dump TICK:PATH]...\n");
+        return 2;
+    }
+    std::string level = argv[2];
+    I to = 0;
+    int maxn = 20;
+    std::string out_path;
+    std::map<std::string, std::string> dumps;
+    for (int i = 3; i < argc; i++) {
+        if (!std::strcmp(argv[i], "--to") && i + 1 < argc) to = std::atoll(argv[++i]);
+        else if (!std::strcmp(argv[i], "--max") && i + 1 < argc) maxn = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out_path = argv[++i];
+        else if (!std::strcmp(argv[i], "--dump") && i + 1 < argc) {
+            std::string a = argv[++i];
+            size_t c = a.find(':');
+            dumps[a.substr(0, c)] = a.substr(c + 1);
+        }
+    }
+    static const std::map<std::string, I> seeds = {{"1:3", 1714}, {"2:1", 20496}, {"2:2", 40737}};
+    if (!seeds.count(level)) {
+        std::fprintf(stderr, "coretest --engine: no seed for %s\n", level.c_str());
+        return 2;
+    }
+    std::string root = ".";
+    Feed feed;
+    if (!feed.load(root, root + "/build/engine/orig.log")) {
+        std::fprintf(stderr, "coretest --engine: build/engine/orig.log or the recompiler's tables missing\n");
+        return 2;
+    }
+    std::vector<StateLine> trace = read_trace(root + "/build/engine/orig.jsonl");
+    // level_lines: the original's lines of this level (the marks split them)
+    I lo = -1, hi = I(1) << 40;
+    for (size_t k = 0; k < feed.marks.size(); k++)
+        if (feed.marks[k].second == level) {
+            lo = feed.marks[k].first;
+            if (k + 1 < feed.marks.size()) hi = feed.marks[k + 1].first;
+            break;
+        }
+    std::vector<StateLine> lines;
+    for (auto& d : trace)
+        if (lo <= d.vblank && d.vblank < hi) lines.push_back(d);
+    for (size_t i = 1; i < lines.size(); i++)
+        if (lines[i].tick < lines[i - 1].tick) {
+            lines.resize(i);
+            break;
+        }
+    I seed_v = seeds.at(level);
+    std::string seed = root + "/build/engine/seed/d" + std::to_string(seed_v) + ".bin";
+    Engine eng(root, level, feed);
+    std::string err;
+    if (!eng.load(seed, &err)) {
+        std::fprintf(stderr, "coretest --engine: %s\n", err.c_str());
+        return 2;
+    }
+    I t0 = eng.tick_no;
+    std::vector<StateLine> before, after;
+    for (auto& d : lines) (d.tick <= t0 ? before : after).push_back(d);
+    eng.frames = frames_of(root + "/build/engine/frames.log", after);
+    eng.dumps = dumps;
+    I vb0 = before.empty() ? seed_v - 1 : before.back().vblank;
+    eng.vblank_prev = vb0;
+    eng.world.skip_to(vb0);
+    eng.audio->adopt(vb0);
+    eng.logic->run_queue();
+    eng.handles_free_removed();
+    Compare cmp;
+    cmp.maxn = maxn;
+    for (auto& d : after) cmp.orig[d.tick] = &d;
+    std::ofstream out;
+    if (!out_path.empty()) out.open(out_path);
+    eng.run(to, [&](const StateLine& l) {
+        if (out) out << state_json(l) << "\n";
+        cmp.line(l);
+    });
+    std::printf("ran to tick %lld\n", (long long)eng.tick_no);
+    for (auto& [k, v] : eng.stats)
+        if (k.rfind("think", 0) == 0 || k.find("not") != std::string::npos) {
+            std::printf("  %s: %lld [", k.c_str(), (long long)v);
+            for (auto& [t, d] : eng.notes[k]) std::printf(" (%lld %s)", (long long)t, d.c_str());
+            std::printf(" ]\n");
+        }
+    cmp.report();
+    return 0;
+}

@@ -35,8 +35,33 @@ add_library(valor_core STATIC
 target_include_directories(valor_core PUBLIC core/include)
 target_compile_options(valor_core PRIVATE -Wall -Wextra -fno-exceptions)
 
-add_executable(coretest tools/coretest/coretest.cpp tools/coretest/pad_mode.cpp tools/coretest/pose_mode.cpp)
-target_link_libraries(coretest PRIVATE valor_core)
+# The closed-loop engine (tools/sim/engine*.py ported), on the original's memory layout.
+add_library(valor_sim STATIC
+    sim/src/feed.cpp
+    sim/src/engine.cpp
+    sim/src/level.cpp
+    sim/src/audio.cpp
+    sim/src/objects.cpp
+    sim/src/planes.cpp
+    sim/src/attach.cpp
+    sim/src/projectile.cpp
+    sim/src/combat.cpp
+    sim/src/sense.cpp
+    sim/src/scripts.cpp
+    sim/src/brain.cpp
+    sim/src/anim.cpp
+    sim/src/camera.cpp
+    sim/src/player.cpp
+    sim/src/enemy.cpp
+    sim/src/dispatch.cpp
+)
+target_include_directories(valor_sim PUBLIC sim/include)
+target_link_libraries(valor_sim PUBLIC valor_core)
+target_compile_options(valor_sim PRIVATE -Wall -Wextra -fno-exceptions)
+
+add_executable(coretest tools/coretest/coretest.cpp tools/coretest/pad_mode.cpp tools/coretest/pose_mode.cpp
+    tools/coretest/engine_mode.cpp)
+target_link_libraries(coretest PRIVATE valor_core valor_sim)
 
 if(VALOR_GODOT)
     add_subdirectory(godot)

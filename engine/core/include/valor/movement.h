@@ -34,6 +34,8 @@ struct Walker {
     uint32_t contact = 0;
     uint32_t events = 0;  // MoveEvent bits
     int wall_pushes = 0;
+    int slide_planes = 0, slide_result = 0;  // walker_slide's
+    int32_t delta[3]{};                      // the move's delta (whole units)
 };
 
 enum MoveEvent : uint32_t {

@@ -111,6 +111,8 @@ void entity_move(const World& world, Walker& w) {
     w.contact = 0;
     if (w.walls) {
         Slide s = walker_slide(world, w, delta, old);
+        w.slide_planes = s.planes, w.slide_result = s.result;
+        std::copy(delta, delta + 3, w.delta);
         if (w.wall_pushes) w.events |= kEvWallPush;
         if (s.result == 1) {
             w.events |= kEvStillInWall;
