@@ -104,4 +104,7 @@ The recompilation is the reference. A recording (`./play --record`) replays exac
 (`./play --replay`, with or without a display), and `VALOR_WATCH`, `VALOR_TRACE_DAMAGE`,
 `VALOR_TRACE_SHOTS` and `--dump-ram` show any value at any tick (README.md, Tools). Feeding the
 same inputs to a new engine and comparing positions, health and enemy states tick by tick is
-the test of "feels identical".
+the test of "feels identical": `VALOR_TRACE_STATE=FILE` writes the original's state after every
+tick (a JSON line: the player's look and weapon, every entity's position, angles, health,
+animation and frame, exact), and `tools/recon/trace_cmp.py` finds the first tick and field where
+another engine's trace in the same format departs from it.

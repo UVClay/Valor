@@ -51,6 +51,9 @@ Run inside the container (`./dev ...`).
 - `tools/recon/tspcol.py FILE.TSP...` checks TSP chunks' collision blocks; `--obj` exports the
   triangles.
 - `VALOR_TRACE_DAMAGE=1` logs every damage event (victim, attacker, damage, health).
+- `VALOR_TRACE_STATE=FILE` writes the game's state after every tick as JSON lines (the player's
+  look and weapon, every entity's handle, type, flags, position, angles, health, animation and
+  frame, all exact); `tools/recon/trace_cmp.py A B` reports where two traces first differ.
 - `VALOR_TRACE_SHOTS=1` logs every player bullet with the aim point and the camera;
   `tools/recon/shots.py LOG` measures them.
 - `VALOR_WATCH="name=EXPR:LEN;..."` makes the runtime log, every game tick, what changed in

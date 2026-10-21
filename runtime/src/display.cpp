@@ -440,7 +440,11 @@ void gpu_present() {
         }
     }
     tape_vblank();
-    if (headless) return;
+    if (headless) {
+        // Nothing to show, but a replay still ends where the recording does.
+        if (tape_replaying() && !tape_replay_presents([](double) {})) throw Halt("replay finished");
+        return;
+    }
 
     auto save_window = [](const char *name) {
         int ww, wh;

@@ -4,7 +4,11 @@
 // VALOR_WATCH="name=EXPR:LEN;..." where EXPR is a hex address, [EXPR] (the word there), or
 // EXPR+HEX / EXPR-HEX; e.g. "inv=[8009D654]+3CC:80". Each tick, every changed aligned word is
 // logged as "watch VBLANK name+OFF: OLD -> NEW" (VALOR_WATCH_HALF=1: halfwords, signed decimal).
+//
+// State: VALOR_TRACE_STATE=FILE writes the game's state after every tick as a JSON line (below),
+// a reference for checking a reimplementation tick by tick against the original.
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -159,4 +163,47 @@ extern "C" void hook_bullet_spawn(Cpu *c, RecompFn body) {
         pos(bullet + 0x20C, 0), pos(bullet + 0x20C, 1), pos(bullet + 0x20C, 2), pos(inv + 0x1A4, 0),
         pos(inv + 0x1A4, 1), pos(inv + 0x1A4, 2), pos(cam + 0x20C, 0), pos(cam + 0x20C, 1),
         pos(cam + 0x20C, 2));
+}
+
+// 0x8005F69C texts_update, called once per tick after the entities' moves and collisions
+// (docs/re/objects.md, The frame and the tick). VALOR_TRACE_STATE=FILE writes, after it, one JSON
+// line per tick, every value exact as the game holds it (16.16 fixed point, 4096 angle units per
+// turn as 16.16):
+//   {"tick":g_tick, "vblank":N,
+//    "player":[look yaw, look pitch, slot, weapon, clip, reserve, flags B],
+//    "ents":[[handle, type, flags A, x, y, z, pitch, yaw, roll, health, animation, frame], ...]}
+// "ents" follows the entity list (g_entities, 0x8009D64C) in order; animation and frame are -1
+// without a model instance (docs/re/entities.md, animation.md).
+extern "C" void hook_texts_update(Cpu *c, RecompFn body) {
+    body(c);
+    static FILE *out = [] {
+        const char *path = getenv("VALOR_TRACE_STATE");
+        FILE *f = path ? fopen(path, "w") : nullptr;
+        if (path) log(f ? "trace: state to %s" : "trace: can't write %s", path);
+        return f;
+    }();
+    if (!out) return;
+    auto r32 = [&](uint32_t a) { return psx_r32(c, a); };
+    auto s32 = [&](uint32_t a) { return int32_t(psx_r32(c, a)); };
+    auto s16 = [&](uint32_t a) { return int16_t(psx_r16(c, a)); };
+    auto in_ram = [](uint32_t a) { return (a & 0xFFE00003) == 0x80000000; };
+    fprintf(out, "{\"tick\":%u,\"vblank\":%llu", r32(0x8009A5DC), (unsigned long long)hw::gpu.frames);
+    uint32_t soldier = r32(0x8009D654);
+    if (in_ram(soldier)) {
+        uint32_t look = r32(soldier + 0x388), inv = soldier + 0x3CC;
+        int slot = psx_r8(c, inv + 0x54);
+        fprintf(out, ",\"player\":[%d,%d,%d,%d,%d,%d,%u]", in_ram(look) ? s32(look + 0x184) : 0,
+                in_ram(look) ? s32(look + 0x178) : 0, slot, int(psx_r8(c, inv + 0x55)),
+                s16(inv + 0x66 + 2 * slot), s16(inv + 0x56 + 2 * slot), r32(soldier + 0x10));
+    }
+    fputs(",\"ents\":[", out);
+    int n = 0;
+    for (uint32_t e = r32(0x8009D64C); in_ram(e) && n < 1024; e = r32(e + 4), n++) {
+        uint32_t inst = r32(e + 0x100);
+        bool anim = in_ram(inst);
+        fprintf(out, "%s[%u,%d,%u,%d,%d,%d,%d,%d,%d,%d,%d,%d]", n ? "," : "", r32(e), s32(e + 8), r32(e + 0xC),
+                s32(e + 0x20C), s32(e + 0x210), s32(e + 0x214), s32(e + 0x228), s32(e + 0x22C), s32(e + 0x230),
+                s32(e + 0xF4), anim ? s16(inst + 0x5C) : -1, anim ? s16(inst + 0x5E) : -1);
+    }
+    fputs("]}\n", out);
 }

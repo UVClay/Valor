@@ -60,6 +60,8 @@ seeds = []
 "0x8004AC58" = "hook_apply_damage"
 # bullet_spawn: VALOR_TRACE_SHOTS logs the player's shots against the view (runtime/src/watch.cpp).
 "0x80045A78" = "hook_bullet_spawn"
+# texts_update, once per tick after collisions: VALOR_TRACE_STATE writes the state (watch.cpp).
+"0x8005F69C" = "hook_texts_update"
 
 [hooks.exe]
 # World polygon visibility: polygons reaching behind the camera are near-clipped instead.
