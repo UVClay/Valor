@@ -123,6 +123,13 @@ extern "C" void hook_idle_round(Cpu *c, RecompFn body) {
     body(c);
 }
 
+// 0x80090B80 frame_wait_vblank: the start of a frame's wait ("idlef TICK"), so the idle work
+// above can be told apart per frame (paused frames run it with the same tick).
+extern "C" void hook_frame_wait(Cpu *c, RecompFn body) {
+    if (trace_idle()) log("idlef %u", r32(0x8009A5DC));
+    body(c);
+}
+
 // 0x80076008 role_axis_alt(port, source role, role, ?): with the port's "pitch from the move
 // stick" option (0x8009E398) the role's curve applied to the source role's stick. Traced (source
 // 2) so a reimplementation can take it as input like the other roles.

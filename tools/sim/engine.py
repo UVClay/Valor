@@ -659,7 +659,8 @@ class Engine:
         the vblank. How many of each ran is real time: taken from the recording's trace."""
         from engine_draw import draw_pass
         draw_pass(self)
-        jobs = self.feed.idle.get((self.level, self.tick_no))
+        frames = self.feed.idle.get((self.level, self.tick_no))
+        jobs = frames.pop(0) if frames else None
         if jobs is None:
             self.note("idle work: no record of the frame (all messages, spawns, handles)")
             self.logic.run_queue()
@@ -708,7 +709,7 @@ class Engine:
         """Every frame of the recording's level: vblanks advance the timer, ticks run."""
         f = open(out, "w") if out else None
         for vb, ticks in self.frames:
-            if to and ticks[0] > to:
+            if to and ticks and ticks[0] > to:
                 break
             # vblanks since the last frame feed the 1/3-second counter (the vblank handler)
             if self.vblank_prev is not None:
@@ -718,6 +719,10 @@ class Engine:
             self.chunks_at(vb)
             from engine_enemy import char_pool_update
             char_pool_update(self)
+            if not ticks:
+                # a paused frame (no tick due): the timer reset, then the draw and the idle work
+                # all the same (game_frame, objects.md)
+                self.m.w32(G_VBL_TIMER, 0)
             for i, t in enumerate(ticks):
                 if t != self.tick_no + 1:
                     self.note("tick numbering", f"{t} after {self.tick_no}")
@@ -779,6 +784,7 @@ def level_lines(trace, feed, level):
 
 
 FRAMES_LOG = os.path.join(ROOT, "build", "engine", "frames.log")
+FRAME_ONLY = re.compile(r"^watch (\d+) fc\+0: ")
 FRAME_WATCH = re.compile(r"^watch (\d+) fc\+4: ([0-9A-F]+) -> ([0-9A-F]+)")
 
 
@@ -804,6 +810,15 @@ def frames_of(lines):
             if ticks:
                 out.append((vb, ticks))
         if out and sum(len(t) for _, t in out) == len(want):
+            # frames with no tick between the level's first and last (paused): the frame
+            # counter (fc+0) moved, the tick counter did not
+            ticked = {vb for vb, _ in out}
+            first, last = out[0][0], out[-1][0]
+            for line in open(FRAMES_LOG, errors="replace"):
+                mm = FRAME_ONLY.match(line)
+                if mm and first < int(mm[1]) < last and int(mm[1]) not in ticked:
+                    out.append((int(mm[1]), []))
+            out.sort(key=lambda f: f[0])
             return out
     out = []
     for d in lines:

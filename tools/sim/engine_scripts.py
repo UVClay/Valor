@@ -179,7 +179,8 @@ class EVM(sv.VM):
         W = lambda k: m.s32(pc + 4 * k)
         if op == 0x02:
             # op_sound (0x80058420): the five words go to script_operand whole (sst_vm.py keeps
-            # only their low bytes)
+            # only their low bytes); it does not yield
+            self.ch, self.ctx, self.yielded = ch, ctx, 0
             self.calls.append((ch, op, "sound", [O(1, imm & 0xFF)] + [O(k + 2, W(k + 1)) for k in range(5)]
                                + [(imm >> 8) & 0xFF]))
             return pc + 0x18

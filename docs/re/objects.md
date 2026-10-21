@@ -77,7 +77,9 @@ the count (World animations), and the alarm entity (`0x8005EDF8`) times itself w
 2. `0x8008A580`, `0x8008EAC8` (sound/streaming upkeep).
 3. `input_poll` (`0x8004DE3C`).
 4. Paused (`g_paused`, `0x8009A5E0`): only `input_poll` once per tick due; the 1/3-second
-   timer below is reset. Nothing else moves.
+   timer below is set to 0. No entity moves, but the frame is still drawn and waited for
+   (step 6): the out-of-sight counters count down and `entities_draw` removes what reaches 0,
+   and the idle work runs (1:3: 16 paused frames after tick 6950 counted a pickup out).
 5. Otherwise, for each tick due (1 + `g_ticks_dropped`, at most 4):
    1. `g_tick` (`0x8009A5DC`) += 1.
    2. `entities_update(g_entities)`: every entity's think, move, triggers (below).
@@ -103,7 +105,8 @@ the count (World animations), and the alarm entity (`0x8005EDF8`) times itself w
      only the one `frame_idle_job` (1:3's slow frames at ticks 2210..2215 freed the removed
      handles only every third frame). A reimplementation that must match the original's
      handle slots replays the recorded sequence (the runtime traces each call under
-     `VALOR_TRACE_INPUT`: `idle TICK: STATE`, `idle2 TICK`); otherwise running all messages,
+     `VALOR_TRACE_INPUT`: `idlef TICK` at each frame's `frame_wait_vblank`, then `idle TICK:
+     STATE` and `idle2 TICK` per call; paused frames repeat the tick); otherwise running all messages,
      all spawn retries and the handle freeing each frame is the fast-machine behaviour.
    - then the ticks due for the next frame: `g_ticks_dropped` = (vblanks since the last frame
      + parity) / 2 - 1, so a frame that took 2 vblanks runs one tick, 4 vblanks two, and so
