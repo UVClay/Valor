@@ -702,6 +702,24 @@ reimplementation); integer coordinates are the 16.16 position's whole parts.
   (steeper than about 30°) is flagged steep (`0x80060138`); nothing reads the flag
   (movement.md). No floor: -0x7FFF.
 
+**The floor nearest a point** (`func_8003EE30`, from falling attachments `0x80050E34`, the
+camera's placement `camera_place` and `0x800579F4`) is a second, simpler search over the same
+data, with an integer point (the 16.16 position's whole parts). With the flags those callers pass
+(0, 0):
+- **Chunks** (`0x8003EC04`, `0x8003EC78`): the chunk slots in order, the one being streamed
+  left out, whose rectangle holds (x, z), bounds included.
+- **Leaf** (`0x8003DABC`): the same descent as `floor_leaf`.
+- **Choice in a leaf** (`0x8003D938`), faces in leaf order: a triangle that holds (x, z)
+  (`0x8003D698`, the same test as `0x8005FC00`), its height (`0x8003D864`, the same as
+  `0x8005FDCC`); the one with the smallest |height + 16 - y| (strictly: the first of equals). No
+  window above or below the point: a point just under a floor still finds it. (Flag 1 would also
+  require a floor-like normal, ny < -0x5A80; flag 2 a height at or below the point.)
+- **Choice between chunks**: the largest height (the lowest, y down); -0x7FFF none.
+
+`floor_find` would give no floor for a falling gun a few units under the floor it is crossing;
+this search gives it the floor and its fall ends there (1:3, tick 4689, the gun of the soldier
+killed at 4676).
+
 **Walkers** (`walker_slide`, `0x80078F60`: the player and characters, flags A 0x8). Read from
 the code and reproduced exactly by `move_sim.py` (`walker_slide`) on 2,700 wall-contact ticks of
 the recorded session and two scripted 1:1 runs. With r = `+0x2EC` (100 for the player, 60 for

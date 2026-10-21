@@ -247,11 +247,10 @@ def fall_step(eng, B, feet):
 
 
 def point_floor(eng, p):
-    """func_8003EE30(point, ...): the highest floor among the loaded chunks under (x, z), by the
-    chunk's own leaf pick (0x8003D938); taken here as floor_find's (levels.md, The floor)."""
+    """func_8003EE30 at the 16.16 point p (its integer parts): the floor nearest it (levels.md,
+    The floor nearest a point); -0x7FFF none."""
     m = eng.m
-    f, _ = eng.world.floor([m.s32(p + 4 * k) for k in range(3)])
-    return -0x7FFF if f is None else f
+    return eng.world.point_floor([m.s16(p + 2 + 4 * k) for k in range(3)])
 
 
 def attachments_update(eng, e):

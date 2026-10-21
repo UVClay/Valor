@@ -879,9 +879,8 @@ knock-off speed (16.16; -1: keep the motion it had), +0x14 its vertical speed, +
   draws; the product is the low word of a 32-bit `mult`, so with k = 2.0 (0x20000) a draw of
   16384 or more wraps: 1:3's tick 1066 draws 993, 16521, 11936 give -123128, -129976, -166656). Fall ticks, drag, gravity from the template, bounces made 0, allowed = template +4.
 - **Each think** (`0x80055198`, after `enemy_weapon`): a falling one steps (`0x80050E34`: the
-  previous position kept; ticks - 1, at 0: y = the floor under it - 15, angles wrapped to ±0x800,
-  flags (| 0x14) & ~2; else angles += spin, x and z += velocity ∓ drag, y += vertical; no floor
-  under the new point: back, and x/z velocities reversed; vertical += gravity up to 75.0; below
+  previous position kept; ticks - 1, at 0: y = the floor nearest it - 15 (levels.md, The floor nearest a point), angles wrapped to ±0x800,
+  flags (| 0x14) & ~2; else angles += spin, x and z += velocity ∓ drag, y += vertical; no floor near the new point (the same search): back, and x/z velocities reversed; vertical += gravity up to 75.0; below
   the holder's feet y: held there and, while bounces remain, a bounce (gravity /2, vertical
   -1/4, x, z, drag, y spin /4, x and z spin -1/4, count + 1: the sound plays at volume 0x10000 >>
   (bounces - 1)), else ticks 0; slow (|vx|, |vz| ≤ 1.0): ticks 0). An attached one of a soldier

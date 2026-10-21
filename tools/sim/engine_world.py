@@ -94,6 +94,23 @@ class Collision:
     def floor(self, pos):
         return ms.floor_find(self.w, pos)
 
+    def point_floor(self, p):
+        """func_8003EE30(point, 0, 1, &normal, 0, 0), integer point: over the loaded chunks (slot
+        order, the loading one left out) whose rectangle holds (x, z), the chunk's leaf
+        (0x8003DABC, floor_leaf's descent) and in it the up-facing triangle holding (x, z)
+        (0x8003D698, as tri_holds) whose height (0x8003D864) + 16 is nearest y, the first of
+        equals (0x8003D938, no other test with these flags); between chunks the largest height
+        (the lowest). -0x7FFF: none."""
+        x, y, z = p
+        best = ms.NONE
+        for ch in self.w.loaded():
+            if not in_rect(ch.rect, x, z):
+                continue
+            h = nearest_floor(ch, x, y, z)
+            if best < h:
+                best = h
+        return best
+
     # -- sweeping a segment (world_sweep, 0x8003EF5C; levels.md, Collision)
     def sweep(self, frm, to):
         """world_sweep(from, to) with integer points: every loaded chunk whose rectangle holds
@@ -111,6 +128,37 @@ class Collision:
         if out is None:
             return None
         return out[1], out[2], out[3]
+
+
+def nearest_floor(ch, x, y, z):
+    """0x8003DABC -> 0x8003D938 with flags 0: the leaf's triangle nearest y (height + 16)."""
+    xmin, zmin = ch.rect[0], ch.rect[1]
+    n = ch.nodes[0]
+    while n[0] >= 0:
+        a, b, split, _ = n
+        if b >= 0:
+            sp = s16(xmin + split)
+            if x >= sp:
+                xmin, n = sp, ch.nodes[b]
+            else:
+                n = ch.nodes[a]
+        else:
+            sp = s16(zmin + split)
+            if z < sp:
+                n = ch.nodes[a]
+            else:
+                zmin, n = sp, ch.nodes[~b]
+    count, start = ~n[0], n[1]
+    best, dist = ms.NONE, 0x7FFF
+    for fi in ch.idx[start:start + count]:
+        f = ch.faces[fi]
+        if not ms.tri_holds(ch, f, x, z):
+            continue
+        h = ms.plane_height(ch, f, x, z)
+        d = abs(h + 0x10 - y)
+        if d < dist:
+            best, dist = h, d
+    return best
 
 
 def in_rect(r, x, z):
