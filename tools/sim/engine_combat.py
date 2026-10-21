@@ -19,3 +19,8 @@ def enemy_aim_hook(eng, e):
 
 def attachments_hook(eng, e):
     pass
+
+
+def fire_gun(eng, e, inv, fire):
+    if fire:
+        eng.note("fire_gun not implemented")

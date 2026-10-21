@@ -79,7 +79,11 @@ def model_bone_point(eng, e, bone, off=None):
             j = [s16(r[k] + j[k]) for k in range(3)]
     M = ent_matrix(m, e)
     t = [m.s32(e + 0x354 + 4 * k) for k in range(3)]
-    return [s16(v) for v in cs.to_world(M, t, j)]
+    w = [s16(v) for v in cs.to_world(M, t, j)]
+    if m.s32(e + 8) == 1:
+        # the player's first-person model hangs from the eye: the camera's eye offset is added
+        w[1] = s16(w[1] + m.u16(m.u32(m.u32(G_PLAYER) + 0x388) + 0x94))
+    return w
 
 
 def vector_normal_ss(v):

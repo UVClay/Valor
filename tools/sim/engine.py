@@ -510,6 +510,9 @@ class Engine:
             player_weapon_update(self, e)
         from engine_anim import entity_bounds
         entity_bounds(self, e)
+        if t == 2:
+            from engine_camera import camera_setup
+            camera_setup(self, e)
 
     def matrix(self, e):
         """0x8006A76C: +0x340 = RotMatrixYXZ of the angles (enemies.md, The brain)."""
@@ -518,6 +521,12 @@ class Engine:
         rot = bs.rot_yxz(s16(m.s32(e + 0x228) >> 16), s16(m.s32(e + 0x22C) >> 16), s16(m.s32(e + 0x230) >> 16))
         for k in range(9):
             m.w16(e + 0x340 + 2 * k, rot[k])
+
+    def zones_use(self, e):
+        """player_use (0x80084670): the Use lists of the records whose bits are set."""
+        ent = self.ents.get(e)
+        if ent is not None:
+            self.logic.use(ent)
 
     def zones_update(self, e):
         """zones_update (0x800845A8): only for flags A & 0x51 (levels.md, Triggers)."""

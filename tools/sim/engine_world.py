@@ -95,110 +95,158 @@ class Collision:
         return ms.floor_find(self.w, pos)
 
     # -- sweeping a segment (world_sweep, 0x8003EF5C; levels.md, Collision)
-    def sweep(self, a, b):
-        """The nearest hit of the segment a -> b (integer points) against every loaded chunk whose
-        rectangle holds either end or is crossed: (point, normal, face) or None."""
-        best = None
+    def sweep(self, frm, to):
+        """world_sweep(from, to) with integer points: every loaded chunk whose rectangle holds
+        either end or is crossed (0x8003EC78, 0x8003ECE4) is walked from `to` toward `from`
+        (0x8003EACC swaps them) by chunk_sweep; the chunk with the smallest t wins (strictly).
+        Returns (hit point, normal, face) or None."""
+        best, out = 0x7FFF, None
         for ch in self.w.loaded():
-            if not seg_rect(ch.rect, a, b):
+            r = ch.rect
+            if not (in_rect(r, frm[0], frm[2]) or in_rect(r, to[0], to[2]) or crosses(r, frm, to)):
                 continue
-            hit = sweep_chunk(ch, a, b)
-            if hit and (best is None or hit[0] < best[0]):
-                best = hit
-        if best is None:
+            hit = chunk_sweep(ch, to, frm)
+            if hit is not None and hit[0] < best:
+                best, out = hit[0], hit
+        if out is None:
             return None
-        t, p, n, f = best
-        return p, n, f
+        return out[1], out[2], out[3]
 
 
-def seg_rect(r, a, b):
+def in_rect(r, x, z):
+    return r[0] <= x <= r[2] and r[1] <= z <= r[3]
+
+
+def crosses(r, a, b):
+    """0x8003ECE4: the segment a -> b (x, z) crossing the rectangle, as its code tests it."""
+    t1, t0 = s16(a[0]), s16(a[2])
+    t5, t6 = s16(b[0]), s16(b[2])
+    t2 = t5 - t1
+    a1 = t6 - t0
     x0, z0, x1, z1 = r
-    for p in (a, b):
-        if x0 <= p[0] <= x1 and z0 <= p[2] <= z1:
-            return True
-    # the segment crossing the rectangle (Liang-Barsky on x/z)
-    t0, t1 = 0.0, 1.0
-    dx, dz = b[0] - a[0], b[2] - a[2]
-    for p, q in ((-dx, a[0] - x0), (dx, x1 - a[0]), (-dz, a[2] - z0), (dz, z1 - a[2])):
-        if p == 0:
-            if q < 0:
-                return False
-        else:
-            t = q / p
-            if p < 0:
-                t0 = max(t0, t)
-            else:
-                t1 = min(t1, t)
-    return t0 <= t1
+    lo = (x1 - t1) * a1
+    t4 = (z1 - t0) * t2 - lo
+    t7 = (z0 - t0) * t2 - lo
+    if (t4 ^ t7) <= 0 and x1 < t1 and t5 < x1:
+        return True
+    t3 = (z1 - t0) * t2 - (x0 - t1) * a1
+    if not ((t4 ^ t3) > 0 or z1 >= t0 or t6 >= z1):
+        return True
+    v1 = (z0 - t0) * t2 - (x0 - t1) * a1
+    if (v1 ^ t3) <= 0 and not (x0 >= t1 or t5 >= x0):
+        return True
+    if (v1 ^ t7) <= 0 and not (z0 >= t0 or not (t6 < z0)):
+        return True
+    return False
 
 
-def sweep_chunk(ch, a, b):
-    """Every face of the leaves the segment passes (the tree walk is replaced by testing the
-    leaves whose cells the segment's box touches, which visits a superset): a face is hit where
-    its plane's distance changes sign between the ends, t = |d0| / (|d0| + |d1|) in 1/4096, and
-    the point is inside the triangle (edge cross products against the normal)."""
-    best = None
-    xmin, xmax = min(a[0], b[0]), max(a[0], b[0])
-    zmin, zmax = min(a[2], b[2]), max(a[2], b[2])
-    seen = set()
-    for start, count in leaves_in(ch, xmin, zmin, xmax, zmax):
-        for fi in ch.idx[start:start + count]:
-            if fi in seen:
-                continue
-            seen.add(fi)
-            f = ch.faces[fi]
-            n = ch.norms[f[3]]
-            d0 = ((n[0] * a[0] + n[1] * a[1] + n[2] * a[2]) >> 15) + f[4]
-            d1 = ((n[0] * b[0] + n[1] * b[1] + n[2] * b[2]) >> 15) + f[4]
-            if (d0 < 0) == (d1 < 0) or d0 == d1:
-                continue
-            t = (abs(d0) << 12) // (abs(d0) + abs(d1))
-            p = tuple(a[k] + (((b[k] - a[k]) * t) >> 12) for k in range(3))
-            if not inside(ch, f, n, p):
-                continue
-            if best is None or t < best[0]:
-                best = (t, p, n, (ch.name, fi))
-    return best
-
-
-def inside(ch, f, n, p):
-    v = [ch.verts[f[k]] for k in range(3)]
-    sign = 0
-    for k in range(3):
-        e = [v[(k + 1) % 3][i] - v[k][i] for i in range(3)]
-        q = [p[i] - v[k][i] for i in range(3)]
-        c = (e[1] * q[2] - e[2] * q[1], e[2] * q[0] - e[0] * q[2], e[0] * q[1] - e[1] * q[0])
-        d = c[0] * n[0] + c[1] * n[1] + c[2] * n[2]
-        if d == 0:
-            continue
-        s = 1 if d > 0 else -1
-        if sign == 0:
-            sign = s
-        elif s != sign:
-            return False
-    return True
-
-
-def leaves_in(ch, xmin, zmin, xmax, zmax):
-    """The k-d leaves whose cells meet the box: (face index start, count)."""
-    out = []
-    stack = [(0, ch.rect[0], ch.rect[2], ch.rect[1], ch.rect[3])]
-    while stack:
-        node, x0, x1, z0, z1 = stack.pop()
+def chunk_sweep(ch, start, end):
+    """chunk_sweep (0x8003E3F0): the k-d tree walked along the segment (x, z), the near half
+    first, up to 8 far halves deferred (LIFO); at each leaf the faces are tested (leaf_sweep,
+    0x8003DC10) with the best t of the chunk so far; the first leaf with a hit ends the walk.
+    Returns (t, point, normal, face) or None."""
+    sx, ex, sz, ez = s16(start[0]), s16(end[0]), s16(start[2]), s16(end[2])
+    x0, z0, x1, z1 = ch.rect
+    stack = []
+    node = 0
+    best = [0x7FFF, None]
+    miny, maxy = min(start[1], end[1]), max(start[1], end[1])
+    while True:
         a, b, split, _ = ch.nodes[node]
-        if a < 0:
-            out.append((b, ~a))
+        if a >= 0:
+            if b >= 0:
+                sp = s16(x0 + split)
+                if sx < sp:
+                    if sp < ex and len(stack) < 8:
+                        f = _frac(sp - sx, ex - sx)
+                        nz = s16(sz + (((ez - sz) * f) >> 16))
+                        stack.append((b, sp, x1, z0, z1, sp, ex, nz, ez))
+                        x1, ex, ez = sp - 1, sp, nz
+                    else:
+                        x1 = sp - 1
+                    node = a
+                else:
+                    if ex < sp and len(stack) < 8:
+                        f = _frac(sp - sx, ex - sx)
+                        nz = s16(sz + (((ez - sz) * f) >> 16))
+                        stack.append((a, x0, sp - 1, z0, z1, sp, ex, nz, ez))
+                        x0, ex, ez = sp, sp, nz
+                    else:
+                        x0 = sp
+                    node = b
+            else:
+                sp = s16(z0 + split)
+                if sz < sp:
+                    if sp < ez and len(stack) < 8:
+                        f = _frac(sp - sz, ez - sz)
+                        nx = s16(sx + (((ex - sx) * f) >> 16))
+                        stack.append((~b, x0, x1, sp, z1, nx, ex, sp, ez))
+                        z1, ez, ex = sp - 1, sp, nx
+                    else:
+                        z1 = sp - 1
+                    node = a
+                else:
+                    if ez < sp and len(stack) < 8:
+                        f = _frac(sp - sz, ez - sz)
+                        nx = s16(sx + (((ex - sx) * f) >> 16))
+                        stack.append((a, x0, x1, z0, sp - 1, nx, ex, sp, ez))
+                        z0, ez, ex = sp, sp, nx
+                    else:
+                        z0 = sp
+                    node = ~b
             continue
-        if b >= 0:
-            s = s16(x0 + split)
-            if xmin < s:
-                stack.append((a, x0, s - 1, z0, z1))
-            if xmax >= s:
-                stack.append((b, s, x1, z0, z1))
-        else:
-            s = s16(z0 + split)
-            if zmin < s:
-                stack.append((a, x0, x1, z0, s - 1))
-            if zmax >= s:
-                stack.append((~b, x0, x1, s, z1))
-    return out
+        if leaf_sweep(ch, ch.idx[b:b + ~a], start, end, miny, maxy, best):
+            return best[0], best[1][0], best[1][1], best[1][2]
+        if not stack:
+            return None
+        node, x0, x1, z0, z1, sx, ex, sz, ez = stack.pop()
+
+
+def _frac(num, den):
+    if den == 0:
+        return 0
+    q = abs(num << 16) // abs(den)
+    return q if ((num << 16) >= 0) == (den >= 0) else -q
+
+
+def leaf_sweep(ch, faces, a, b, miny, maxy, best):
+    """leaf_sweep (0x8003DC10): faces crossed from their front (d0 >= 0) to their back, the
+    crossing at t = |d0| * 4096 / (|d0| + |d1|) inside the triangle (three edge cross products
+    against the normal, GTE OP sf=1); the smallest t of the chunk so far. True if one hit."""
+    import engine_gte as gt
+    hit = False
+    delta = [s16(b[k] - a[k]) for k in range(3)]
+    for fi in faces:
+        f = ch.faces[fi]
+        V = [ch.verts[f[k]] for k in range(3)]
+        lo = min(V[0][1], V[1][1], V[2][1])
+        hi = max(V[0][1], V[1][1], V[2][1])
+        if hi < miny or maxy < lo:
+            continue
+        n = ch.norms[f[3]]
+        d0 = (s32(n[0] * a[0] + n[1] * a[1] + n[2] * a[2]) >> 15) + f[4]
+        d1 = (s32(n[0] * b[0] + n[1] * b[1] + n[2] * b[2]) >> 15) + f[4]
+        if d0 < 0 or (d0 ^ d1) >= 0:
+            continue
+        t = (abs(d0) << 12) // (abs(d0) + abs(d1))
+        if not t < best[0]:
+            continue
+        g = [gt.sat16((t * delta[k]) >> 12) for k in range(3)]
+        p = [s16(g[k] + a[k]) for k in range(3)]
+        ok = True
+        for i in range(3):
+            va, vb = V[i], V[(i + 1) % 3]
+            A = [s16(p[k] - va[k]) for k in range(3)]
+            B = [s16(vb[k] - va[k]) for k in range(3)]
+            _, c = gt.op(A, B, 12)
+            if s32(n[0] * c[0] + n[1] * c[1] + n[2] * c[2]) < 0:
+                ok = False
+                break
+        if not ok:
+            continue
+        best[0] = t
+        best[1] = (tuple(p), n, (ch.name, fi))
+        hit = True
+    return hit
+
+
