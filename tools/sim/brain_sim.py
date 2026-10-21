@@ -245,6 +245,7 @@ def read_ent(mem, E):
         ground=g(0x284), eye=g(0x2D4), sphere=mem.u16(E + 0x2E8), probe=mem.s16(E + 0x2EC),
         rot=[mem.s16(E + 0x340 + 2 * k) for k in range(9)], old=[g(0x3BC + 4 * k) for k in range(3)],
         r3c8=mem.s16(E + 0x3C8), brain_ptr=mem.u32(E + 0x38C),
+        home=(mem.s16(E + 0x3A4), mem.s16(E + 0x3A8)),
         inst=E + 0xFBC if E in SLOTS else mem.u32(E + 0x100),  # a slot's instance is in its block
         vars=[g(0x4C + 4 * k) for k in range(0x28)])
     inst = st["inst"]
@@ -1015,6 +1016,27 @@ def run_entity(world, w, A, B, stats, verbose, tag, shown, level="?"):
                         log2["cand"] = ("gait reset in the think " if sr else "") + \
                             ("root motion " + ("applied" if ra else "not applied") + " " if ra is not None else "") + \
                             ("goal given again " + str(ri) if ri else "")
+        # Placements by the scripts in the think (enemies.md): op 0x36 (node_take) puts x and z
+        # on the brain's node point (+0xA0, +0xA4; 1:2's soldiers stepping into cover), op 0x44
+        # (to_spawn) on the home (+0x3A4, +0x3A8), set_var(0x6A, non-zero) back at brain +0xE0
+        bb = B["brain"]
+        places = [("placed on the node point (op 0x36)", [bb.s16(0xA0) << 16, A["pos"][1], bb.s16(0xA4) << 16]),
+                  ("back to the home (op 0x44)", [B["home"][0] << 16, A["pos"][1], B["home"][1] << 16])]
+        saved = list(struct.unpack_from("<3i", B["brain"].b, 0xE0))
+        if any(saved):
+            places.append(("position restored from the brain (set_var 0x6A)", saved))
+        for what, pos in places:
+            for sr in (False, True):
+                if not best[0] or pos == list(A["pos"]):
+                    continue
+                A2 = dict(A)
+                A2["pos"] = pos
+                st2, log2 = step(world, w, A2, B, sr)
+                r2 = compare(st2, B, log2)
+                sc = sum(not v for k, v in r2.items() if k != "pos") + (r2["pos"] != 0)
+                if sc < best[0]:
+                    log2["cand"] = ("gait reset in the think " if sr else "") + what
+                    best = (sc, r2, st2, log2)
         if best[1] is not res:
             inferred = True
             _, res, st, log = best

@@ -227,7 +227,7 @@ instruction's address, and a flag (`0x80099EC0`) tells the runner to yield.
 | 32 | nearest | V = the nearest live entity of type X within 1000 vertically (`0x80057768`), 0 if none |
 | 33, 3E | compute / probe | Results of helper functions into variables (soldier.md) |
 | 34 | node_eval | Read an AI node: 1..5 its words, 6 the holder, 7 the cover score (0x7FFF taken, 0x7FFE player within 600, 0x7FFD bad angle, else the angle); -1 for an index past the node count |
-| 35/36 | node_write / node_take | Update a node; move to and face it (the facing into a variable) |
+| 35/36 | node_write / node_take | Update a node; take it (`0x8005B8EC`, operands node, variable, how; for a node in the table only): how 0 or bit 1 puts x and z on the brain's node point (`+0xA0`, `+0xA4`, the spot `brain_node_target` chose), how 0 or bit 2 the heading from the node's `+0x1E`, bit 4 from its direction (`ratan2(+0x24, +0x28)`), into the angles and the variable; a node with `+0x4` set sets the radius `+0x2E8` and `+0x3C8` to half the brain's (`+0xC6`, `+0xCA`); flags B \|= 0x80. Watched in 1:2 (a monkey run): soldiers stepping into cover jump onto the node point in one tick |
 | 37, 3A | route | The turn toward an entity or a node: a turn kind (0 ahead, 1/2 the sides, 3 behind) and the signed angle into two variables (`0x80056B00`; enemy_types.md) |
 | 38 | call N | Depth + 1 (past 5: an error, depth stays 5, no call); the frame {return address, channel script's code, N's code, N's length}; continue at N's first word |
 | 39 | return | Depth - 1 and continue at the frame's return address; at depth 0 nothing |

@@ -351,7 +351,28 @@ def main():
     # brains watched at the addresses replay 1 found; the script VM's tick pairs.
     dumps = {}
     for v0, v1 in segs:
-        dumps[v0] = dict(pre=v0 - 1, first=v0 + 1, seed=min(v0 + 7, v1 - 1), later=min(v0 + 100, v1 - 1))
+        # "first": the second frame's vblank (a dump is taken before that frame's ticks, so it
+        # holds the state after the first frame's, when the watches take their first copy)
+        second = min((v for _, v, _ in tr if v0 < v < v1), default=v0 + 1)
+        dumps[v0] = dict(pre=v0 - 1, first=second, seed=max(min(v0 + 7, v1 - 1), second),
+                         later=min(v0 + 100, v1 - 1))
+    # Restarts inside a level reallocate the subscription heads (level_vm's watch re-bases):
+    # a dump at the next frame after each move gives the moved block's first copy.
+    rebase = {}
+    lvlog = os.path.join(work, "level.log")
+    if "level" in systems and os.path.exists(lvlog):
+        starts = {v0 for v0, _ in segs}
+        for line in open(lvlog, errors="replace"):
+            m = re.match(r"^watch (\d+) subh at ", line)
+            if m and int(m[1]) not in starts:
+                f = int(m[1])
+                v0, v1 = max(((a, b) for a, b in segs if a <= f), default=(None, None))
+                nxt = min((v for _, v, _ in tr if v > f), default=None)
+                if v0 is not None and nxt is not None and f < v1:
+                    rebase.setdefault(v0, []).append(nxt)
+        for v0, vs3 in rebase.items():
+            for k, v in enumerate(vs3):
+                dumps[v0][f"rebase{k}"] = v
     pairs = {}
     if "sst" in systems:
         pairs = {str(v0): sst_pairs(tr, v0, v1, a.sst_pairs) for v0, v1 in segs}
@@ -427,10 +448,13 @@ def main():
                     "--from", str(v0), "--to", str(v1 - 1), "--level", ml]
         if system == "level":
             (v, p), (w, q) = d["pre"], d["later"]
-            return ["level_vm.py", "check", os.path.join(work, "level.log"), trace, f"{p}@{v},{q}@{w}"]
+            extra = [x for k, (u, r) in sorted(d.items()) if k.startswith("rebase") and os.path.exists(os.path.join(ROOT, r))
+                     for x in ("--rebase", f"{r}@{u}")]
+            return ["level_vm.py", "check", os.path.join(work, "level.log"), trace, f"{p}@{v},{q}@{w}", *extra]
         if system == "brain":
             v, p = d["seed"]
-            return ["brain_sim.py", "watch", os.path.join(work, "brain.log"), trace, f"{p}@{v}",
+            x, r = d["first"]
+            return ["brain_sim.py", "watch", os.path.join(work, "brain.log"), trace, f"{r}@{x}", f"{p}@{v}",
                     "--from", str(v0), "--to", str(v1), "--level", ml]
         if system == "sst":
             vs2 = [str(v) for v in pairs.get(str(v0), [])]

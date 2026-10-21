@@ -141,7 +141,12 @@ The scripts on the disc read only 19 (kind 5: the world animation group of `worl
 A record becomes an entity only when **its record script calls `activate`** (level built-in
 4 → `record_activate`, `0x80052D70`): if state bit 0 is clear it sets it and spawns by kind
 (`record_spawn`, `0x8007505C`); a spawn that fails (too many soldiers) goes to the spawn queue
-(64 entries, `spawn_queue_push` `0x80074EE8`) and is retried every frame. Every spawnable record
+(64 entries, `spawn_queue_push` `0x80074EE8`) and is retried every frame. A retry
+(`0x80074F9C`) pops the front and spawns it, so a failing one goes to the back; the idle loop
+at the end of each frame (objects.md) retries over and over until the vblank, so with two or
+more waiting, which one is in front when a slot frees depends on how much idle time the frames
+had: timing, not game state (3:4 in a monkey run: 16 or 17 retries a frame, two soldiers
+waiting, the order flipping with the parity). An engine can retry in arrival order. Every spawnable record
 on the disc has a record script (all 2 257 records of kinds 2, 3, 4, 6 in the 24 levels but
 one kind-4 record), so what activates a record is always a level-script decision; the usual
 ones (catalogue.md lists the library):
@@ -551,7 +556,9 @@ it (`[0x8009EC5C]`: per zone a pointer to a byte holding **255 minus the count**
 the u16 indices into the level's record table, sorted). Every tick, the player and the walkers
 test their position against their zone's records (`zones_update`, `0x800845A8` →
 `zones_mask` `0x80084400`, called by `entities_update` right after `entity_move` for entities
-with flags A & 5, and doing anything only with flags A & 0x51): the zone in `+0x390`, a bit per
+with flags A & 5, and doing anything only with flags A & 0x51; with `entity_move` it is skipped
+for flags A 0x20000, so the dead player's bits stay frozen while he follows the death camera,
+3:4 in a monkey run): the zone in `+0x390`, a bit per
 entry of the zone's list in `+0x394` (bit k = the k-th index), last tick's zone and bits in
 `+0x398` and `+0x39C` (a new entity starts with zone 0xFFFF, "none", in both, so its first update reports every bit set as an enter: the player starting inside a volume gets its enter on the level's first tick, as 1:1's r105 does, sending message 3 at once); every bit that changes is an **enter** or a **leave** (`zones_events`
 `0x800840E0`). The position is the integer part (`+0x20E`, `+0x212`, `+0x216`) after the move.

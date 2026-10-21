@@ -416,7 +416,11 @@ player.md, Weapons in play).
 `player_hit_part` (combat.md) starts a flinch: `inv+0x154` = 8 ticks of knockback
 `inv+0x80..+0x88` = 6 units per tick along the attacker's facing (48 in all), plus the push
 less a quarter of the soldier's velocity (local components subtracted as world ones: inferred
-to be meant as a 3/4 slowdown); every other tick some angle offsets (`+0x24C..+0x254`) halve.
+to be meant as a 3/4 slowdown): x the strafe speed `+0x218` as `player_controls` just set it,
+y the vertical speed (a climb's when the soldier is leaving a ladder this tick: the latch that
+zeroes it comes after), z last tick's local forward speed `+0x220`; every other tick some angle
+offsets (`+0x24C..+0x254`) halve. Checked on monkey runs of 2:4 and 3:2 (every flinch tick
+exact, 225 and 8, with analog strafing into walls and a hit on a ladder).
 Crouching cancels the flinch. Also a camera shake.
 
 ## Use

@@ -623,6 +623,11 @@ class VM:
         if op == 0x36:
             node, var, how = O(1, W(1)), O(2, W(2)), O(3, W(3))
             call("node_take", node, how)
+            # 0x8005B8EC: for a node in the table, flags B |= 0x80 (the position on the brain's
+            # node point and the radii are the brain's side, brain_sim)
+            nodes = m.u32(m.u32(0x8009D648) + 0x388)
+            if node < m.u32(nodes + 0xC):
+                m.w32(e + 0x10, m.u32(e + 0x10) | 0x80)
             if how == 0 or how & 6:
                 self.set_var(var, self.world(op, var))
                 m.w32(e + 0x22C, self.get_var(var))

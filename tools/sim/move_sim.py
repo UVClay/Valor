@@ -713,6 +713,7 @@ def check(args):
             e["ground"] = 0
             e["vy"] = -0x1A0000
         e["gravity"] = True
+        left_ladder_vy = None
         if t["ladder"]:
             # On a ladder (inv+0x70 set by the ladder's think this tick, latched in inv+0x74):
             # ladder_climb set the vertical speed (half the forward role up, down to the floor at
@@ -722,7 +723,10 @@ def check(args):
             if t["vy"] < 0:
                 e["ground"] = 0
         elif p["ladder"]:
-            e["vy"] = 0  # the latch: leaving a ladder zeroes the vertical speed
+            # the latch: leaving a ladder zeroes the vertical speed (movement.md step 19, after
+            # the flinch, which still sees the climb's)
+            left_ladder_vy = e["vy"]
+            e["vy"] = 0
         aiming = bool(t["look_flags"] & 0x20)
         push = [0, 0, 0]
         if aiming:
@@ -734,15 +738,19 @@ def check(args):
             e["strafe"] = t["lean"]
         elif p["look_flags"] & 0x20:
             e["pos"] = list(t["pin"])  # leaving aim mode: back to the pinned spot
-        if p["flinch"] and not (t["look_flags"] & 2):
-            # The hit flinch (player_update): the knockback inv+0x80, less a quarter of the
-            # velocity's local components taken as world ones (+0x220 still last tick's).
-            vel = (e["strafe"], e["vy"], p["local_fwd"])
-            push = [s32(push[i] + p["knock"][i] - (vel[i] >> 2)) for i in range(3)]
+        flinch = p["flinch"] and not (t["look_flags"] & 2)
         # A push left at the end of the tick before (entity_move clears it, so it came after the
         # move: the player's touch handler against a soldier or dog, 0x8007C030) moves this tick.
         push = [s32(push[i] + p["end_push"][i]) for i in range(3)]
         e["push"] = push
+
+        def with_flinch(trial):
+            # The hit flinch (player_update): the knockback inv+0x80, less a quarter of the
+            # velocity's local components taken as world ones (+0x220 still last tick's), the
+            # strafe being this tick's input
+            if flinch:
+                vel = (trial["strafe"], trial["vy"] if left_ladder_vy is None else left_ladder_vy, p["local_fwd"])
+                trial["push"] = [s32(trial["push"][i] + p["knock"][i] - (vel[i] >> 2)) for i in range(3)]
         tried = []
         # +0x218 reads 0 after a wall contact or a landing (both clear it): try the last strafe.
         # +0x218 reads 0 at the end of a tick that gathered walls or landed (entity_move and
@@ -763,6 +771,7 @@ def check(args):
         for fv, sv in cands:
             trial = json.loads(json.dumps(e))
             trial["fwd"], trial["strafe"] = fv, sv
+            with_flinch(trial)
             lg = []
             entity_move(world, trial, lg)
             # Compared with +0x3BC, where entity_move left the soldier (an object's touch handler

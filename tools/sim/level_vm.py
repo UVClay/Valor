@@ -4,7 +4,7 @@ and scripts", "Spawning", "Triggers", "Objectives"; docs/re/messages.md), checke
 frame against the original.
 
   level_vm.py watch                          the VALOR_WATCH list the check needs
-  level_vm.py check LOG TRACE DUMP@VBLANK[,LATER@VBLANK]... [--level M:L] [--max N]
+  level_vm.py check LOG TRACE DUMP@VBLANK[,LATER@VBLANK]... [--level M:L] [--max N] [--rebase DUMP@VBLANK]...
 
 tools/sim/check.py runs it on any recording. LOG and TRACE come from one replay, e.g. of the
 recorded session:
@@ -22,7 +22,8 @@ scripts' own bytes are put back to the BSD file's values (extracted disc), so th
 itself is simulated: the player's message 0, the states cleared, message 0 to every record.
 The second fills in the watched words that never change after the first frame (a watch logs
 changes only) and checks the variables of every record-spawned entity alive in it.
-LVM_DEBUG=V0-V1 prints what the simulator does in those frames.
+LVM_DEBUG=V0-V1 prints what the simulator does in those frames; LVM_NODES=V the first
+subscription node where the two pools part at frame V.
 
 What the simulator owns and steps (the level logic): the level-script VM (24 opcodes, the 22
 built-ins), subscriptions and their node pool (the same free list, so node addresses compare),
@@ -195,20 +196,39 @@ class Observed:
     """The original's memory at each watch frame of one level: the level's dump with every
     watched word set to its value at that frame."""
 
-    def __init__(self, log, dump, f0, f1, later=None):
+    def __init__(self, log, dump, f0, f1, later=None, rebase=()):
         """later: a second dump taken inside the level, for the words that never change after
         the first watch frame (a watch logs changes only, and the first frame's ticks have
-        already run when it takes its first copy)."""
+        already run when it takes its first copy). rebase: [(vblank, dump)] taken after a
+        pointer watch moved inside the level (a restart reallocates the subscription heads):
+        the moved block's first copy is the first such dump after the move."""
         self.mem = Mem(dump)
         lm = Mem(later) if later else None
         self.events = defaultdict(list)       # frame -> [(addr, new)]
         self.timeline = defaultdict(list)     # addr -> [(frame, new)]
         self.now = f0
+        pointers = {}
+        for spec in watch_string().split(";"):
+            m = re.match(r"(\w+)=\[([0-9A-F]+)\]\+0:", spec)
+            if m:
+                pointers[m[1]] = int(m[2], 16)
         for name, segs in log.items.items():
             seg = None
             for s in segs:
                 if s["start"] <= f0:
                     seg = s
+            # blocks moved inside the level: the pointer, the first copy, the changes after
+            for s in segs:
+                if not (f0 < s["start"] < f1) or name not in pointers:
+                    continue
+                rd = next((Mem(d) for v, d in sorted(rebase) if v > s["start"]), None)
+                ev = [(pointers[name], s["base"])]
+                if rd is not None:
+                    ev += [(s["base"] + off, rd.u32(s["base"] + off)) for off in range(0, log.lengths.get(name, 0), 4)]
+                for f, (a, v) in [(s["start"], e) for e in ev] + [
+                        (f, (s["base"] + off, new)) for off, ds in s["diffs"].items() for f, old, new in ds if f < f1]:
+                    self.events[f].append((a, v))
+                    self.timeline[a].append((f, v))
             if seg is None:
                 continue
             base = seg["base"]
@@ -226,6 +246,9 @@ class Observed:
                 for f, old, new in after:
                     self.events[f].append((base + off, new))
                     self.timeline[base + off].append((f, new))
+
+        for tl in self.timeline.values():
+            tl.sort(key=lambda x: x[0])
 
     def peek(self, addr, frame):
         """The word at addr at a later watch frame (without advancing)."""
@@ -417,6 +440,7 @@ class Sim:
         self.queue = []                  # this frame's contexts (the ring between head and tail)
         self.head = self.tail = 0
         self.spawn_q = []                # record pairs
+        self.spq_head = 0                # the ring's head index (0x8009E280)
         self.pending_spawns = []         # (record, Ent) spawned during the end of a frame
         self.oracle_spawn = None         # callback(record) -> Ent or None (refused)
         self.stats = Counter()
@@ -462,6 +486,7 @@ class Sim:
         self.head = self.tail = 0
         m.w32(OBJ_COUNT, 0)
         self.spawn_q = []
+        self.spq_head = 0
         self.player = player
         self.handles[player.handle] = player
         self.msg_start(player, 0)                       # msg_start(g_soldier, 0)
@@ -748,14 +773,31 @@ class Sim:
         self.handles[ent.handle] = ent
         self.msg_start(ent, 0)
 
+    def spawn_retry_one(self):
+        """0x80074F9C: pop the front (the ring's head index moves on; an emptied ring restarts at
+        0) and spawn it, which queues it again at the back if it fails. True if it spawned."""
+        if not self.spawn_q:
+            return False
+        n = len(self.spawn_q)
+        if n >= 2 and getattr(self, "oracle_pick", None):
+            # which of several waiting records gets a freed slot is the parity of the retries
+            # the frame's idle time allowed (timing): the one the original spawned
+            k = self.oracle_pick(self.spawn_q)
+            if k:
+                # as k failed retries would have turned it
+                self.spawn_q = self.spawn_q[k:] + self.spawn_q[:k]
+                self.spq_head = (self.spq_head + k) % 64
+                self.stats["spawn queue turned to the record the original spawned"] += 1
+        pair = self.spawn_q.pop(0)
+        self.spq_head = 0 if n == 1 else (self.spq_head + 1) % 64
+        self.record_spawn(pair)
+        return len(self.spawn_q) < n
+
     def spawn_retry(self):
         """spawn_queue_run_all: retry from the front while a retry succeeds."""
         any_ok = False
         while self.spawn_q:
-            n = len(self.spawn_q)
-            pair = self.spawn_q.pop(0)
-            self.record_spawn(pair)
-            if len(self.spawn_q) >= n:
+            if not self.spawn_retry_one():
                 break
             any_ok = True
         return any_ok
@@ -1401,7 +1443,7 @@ def ring_entries(mem, head, tail):
 
 class Run:
     def __init__(self, log, trace_path, dump_path, name, f0, f1, verbose=False, out=print, later=None,
-                 later_v=None):
+                 later_v=None, rebase=()):
         m, l = int(name[0]), int(name[2])
         self.name, self.f0, self.f1, self.v, self.out = name, f0, f1, verbose, out
         dump = open(dump_path, "rb").read()
@@ -1409,7 +1451,7 @@ class Run:
         self.L = Level(dump, name)
         self.later = Mem(open(later, "rb").read()) if later else None
         self.later_v = later_v
-        self.obs = Observed(log, dump, f0, f1, self.later.d if later else None)
+        self.obs = Observed(log, dump, f0, f1, self.later.d if later else None, rebase)
         self.frames = log.frames(f0, f1)
         self.ticks = read_trace(trace_path, f0, f1)
         # the entity list in the dump (before the first tick) stands for "tick 0"
@@ -1426,6 +1468,7 @@ class Run:
         self.damage = [d for d in log.damage if f0 <= d[0] < f1]
         self.sim = Sim(self.L, bsd)
         self.sim.oracle_spawn = self.oracle_spawn
+        self.sim.oracle_pick = self.oracle_pick
         self.sim.removed_by_script = set()
         self.sim.alarm_requests = []
         self.st = Stats()
@@ -1439,20 +1482,42 @@ class Run:
         r = os.environ.get("LVM_DEBUG")
         self.dbgrange = tuple(int(x) for x in r.split("-")) if r else None
 
+    def oracle_pick(self, pairs):
+        """Of the queued records, the index of the one nearest a new, unclaimed entity of its
+        type (a spawn lands at its record), or None."""
+        best = None
+        for h, t, e in self.next_new:
+            if h in self.claimed:
+                continue
+            p = (e[2] >> 16, e[3] >> 16, e[4] >> 16)
+            for k, pair in enumerate(pairs):
+                rec = self.L.by_pair[pair]
+                want = self.L.spawn_type(rec)
+                if not (t == want or (want in (0x1402, 0x1405) and t in (0x1402, 0x1405))):
+                    continue
+                d = sum((s16(a) - b) ** 2 for a, b in zip(p, rec.pos))
+                if best is None or d < best[0]:
+                    best = (d, k)
+        return best[1] if best else None
+
     # The engine's side of a spawn: the entity the original created for this record, if any.
     def oracle_spawn(self, rec):
         want = self.L.spawn_type(rec)
-        for i, (h, t, e) in enumerate(self.next_new):
-            if h in self.claimed:
-                continue
-            if t == want or (want in (0x1402, 0x1405) and t in (0x1402, 0x1405)):
-                self.claimed.add(h)
-                ent = Ent(h, t, rec)
-                self.ents[h] = ent
-                self.sim.handles[h] = ent
-                ent.flags, ent.pos = e[1], (e[2] >> 16, e[3] >> 16, e[4] >> 16)
-                self.st.add("spawn lands", True)
-                return ent
+        # the new entity of that type nearest the record (a spawn lands at its record; with two
+        # alike the list order can't tell, after a restart it is rebuilt)
+        cands = [(sum((s16(e[k + 2] >> 16) - rec.pos[k]) ** 2 for k in range(3)), i)
+                 for i, (h, t, e) in enumerate(self.next_new) if h not in self.claimed and
+                 (t == want or (want in (0x1402, 0x1405) and t in (0x1402, 0x1405)))]
+        order = [i for _, i in sorted(cands)]
+        if order:
+            h, t, e = self.next_new[order[0]]
+            self.claimed.add(h)
+            ent = Ent(h, t, rec)
+            self.ents[h] = ent
+            self.sim.handles[h] = ent
+            ent.flags, ent.pos = e[1], (e[2] >> 16, e[3] >> 16, e[4] >> 16)
+            self.st.add("spawn lands", True)
+            return ent
         # a pickup made under the player is taken in the next tick, before the trace sees it;
         # the handle table at the next watch still holds it (handles are freed after the frame)
         if want == 0x65 and self.next_frame is not None:
@@ -1520,6 +1585,8 @@ class Run:
                         if e.rec is not None:
                             sim.remove(e, "restart")
                         e.removed = True
+                sim.player.prev_zone, sim.player.prev_bits = 0xFFFF, 0
+                self.next_new, self.claimed = self.new_entities(tick_i), set()
                 sim.level_start(sim.player)
             ticks = []
             while tick_i < len(self.ticks) and self.ticks[tick_i][0] <= gt:
@@ -1569,7 +1636,9 @@ class Run:
                 self.compare_dump_entities(F)
             # end of frame: culls in the drawing pass, then the queue and the spawn retries
             nk = tick_i
-            self.next_new = self.new_entities(nk)
+            # a frame ending in a death (level flags 2) restarts next: the next tick's new
+            # entities are level_start's, not for this frame's spawn retries
+            self.next_new = [] if om.u32(LEVEL_FLAGS) & 2 else self.new_entities(nk)
             self.next_frame = self.frames[fi + 1][0] if fi + 1 < len(self.frames) else None
             self.claimed = set()
             nxt_f = self.frames[fi + 1][0] if fi + 1 < len(self.frames) else None
@@ -1593,6 +1662,18 @@ class Run:
                     sim.run_message(None, e.rec.pair, 2, "cull")
                     sim.remove(e, "culled")
             sim.run_queue(limit)
+            if nxt_f is not None and len(sim.spawn_q) >= 2:
+                # while waiting for the vblank the game retries the spawns over and over, failing
+                # ones going to the back: how many times is the frame's idle time, which the
+                # ring's head index at the next frame tells (as `limit` does for messages)
+                want = obs.peek(SPQ_HEAD, nxt_f)
+                extra = (want - sim.spq_head) % 64 % len(sim.spawn_q)
+                for _ in range(extra):
+                    if sim.spawn_retry_one() or len(sim.spawn_q) < 2:
+                        break
+                else:
+                    sim.spq_head = want
+                sim.stats["spawn retries (idle time)"] += extra
             self.end_frame_alarms(om)
             if om.u32(LEVEL_FLAGS) & 2:
                 restart = True
@@ -1719,7 +1800,10 @@ class Run:
             if e is sim.player:
                 if use:
                     sim.use(e)
-                self.walker(e, om)
+                # entity_move and zones_update are skipped for flags A 0x20000 (the dead player,
+                # who follows the death camera): his zone bits stay as they were
+                if not e.flags & 0x20000:
+                    self.walker(e, om)
             elif e.type in (0x1402, 0x1405) and e.flags & 0x51:
                 self.walker(e, om)
         # collisions: hits (message 1 to the victim's script, once per hit: a hit that leaves a
@@ -1783,6 +1867,18 @@ class Run:
             code = min(sm.u16(b0 + 6 + 4 * k) for k in range(n)) if n else 4
             a, b = sm.blk(b0 + 4 + 4 * n, code - 4 - 4 * n), om.blk(b0 + 4 + 4 * n, code - 4 - 4 * n)
             st.add("script variables", a == b, f"{F}: script {sid}: sim {a.hex()} orig {b.hex()}")
+        if os.environ.get("LVM_NODES") == str(F):
+            for side, lists in (("sim", [[(n,) + tuple(sm.u32(n + 4 * i) for i in range(8)) for n in sim.nodes(k)] for k in range(L.nmsg)]),
+                                ("orig", [obs_nodes(om, k) for k in range(L.nmsg)])):
+                allv = sorted((x[0], k, x[1:]) for k, lst in enumerate(lists) for x in lst)
+                setattr(self, "_dbg_" + side, allv)
+            a_, b_ = self._dbg_sim, self._dbg_orig
+            for i, (x, y) in enumerate(zip(a_, b_)):
+                if x != y:
+                    print("first diff", i, [(hex(z[0]), hex(z[1]), [hex(v) for v in z[2]]) for z in a_[i - 1:i + 3]])
+                    print("orig      ", i, [(hex(z[0]), hex(z[1]), [hex(v) for v in z[2]]) for z in b_[i - 1:i + 3]])
+                    break
+            print("counts", len(a_), len(b_))
         for msg in range(L.nmsg):
             a = [(n,) + tuple(sm.u32(n + 4 * i) for i in range(8)) for n in sim.nodes(msg)]
             b = obs_nodes(om, msg)
@@ -1910,6 +2006,12 @@ def main():
         i = args.index("--max")
         maxf = int(args[i + 1])
         del args[i:i + 2]
+    rebase = []
+    while "--rebase" in args:
+        i = args.index("--rebase")
+        path, _, v = args[i + 1].partition("@")
+        rebase.append((int(v), open(path, "rb").read()))
+        del args[i:i + 2]
     log_path, trace_path, *dumps = args
     log = WatchLog(log_path)
     starts = sorted({s["start"] for s in log.items["rec"]})
@@ -1926,7 +2028,7 @@ def main():
         f0, f1 = starts[k], starts[k + 1] if k + 1 < len(starts) else 1 << 40
         if only and only != name:
             continue
-        r = Run(log, trace_path, path, name, f0, f1, verbose, later=later, later_v=later_v)
+        r = Run(log, trace_path, path, name, f0, f1, verbose, later=later, later_v=later_v, rebase=rebase)
         st = r.run(maxf)
         print(f"{name}: frames {f0}..{f1}, {len(r.frames)} frames, {len(r.ticks)} ticks")
         st.report()
