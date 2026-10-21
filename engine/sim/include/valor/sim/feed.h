@@ -42,6 +42,13 @@ public:
 
     I role_alt(const std::string& level, I tick, int port, int role) const;
     I role(const std::string& level, I tick, int port, int role) const;
+
+    // Live play (no recording; Engine::live_frame): the host writes the next tick's input here.
+    // The pad words as the game keeps them (now, now's high word, previous, previous's), the
+    // roles' values (forward, strafe, pitch, turn: role_axis's results, 16.16) and role_axis_alt.
+    bool live = false;
+    std::array<U, 4> live_pad{0xFFFF, 0, 0xFFFF, 0};
+    std::array<I, 4> live_role{}, live_role_alt{};
     Functions fns;
 };
 
@@ -49,6 +56,8 @@ public:
 class Rand {
 public:
     Rand(const Feed& f, std::string level) : feed_(f), level_(std::move(level)) {}
+    // Live play: PsyQ's rand (0x8001552C) on the seed at 0x800CA2A4 in this memory.
+    Mem* live_mem = nullptr;
     void start_tick(I tick);
     I draw(std::initializer_list<U> functions);
     I draw(const std::vector<U>& functions);

@@ -105,6 +105,11 @@ public:
     // the old pose buffer and allocates the new one exactly (model_instance_init).
     std::function<void(U e, U model, I flags)> swap_hook;
     std::map<I, size_t> idle_used_;  // the idle records consumed, by tick
+    // Live play (no recording): see start_live and live_frame; in_view answers the draw pass's
+    // question (is the entity drawn this frame) for the host's camera.
+    std::function<bool(U e)> live_view;
+    void start_live(std::function<bool(U e)> in_view);
+    void live_frame(I vblanks = 2);
     void remove(U e, const std::string& why = "");
 
     // -- input

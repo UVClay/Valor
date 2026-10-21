@@ -429,8 +429,8 @@ void Engine::tick(bool) {
     m.w32(G_TICK, tick_no);
     rand.start_tick(tick_no);
     auto it = feed.pad.find({level, tick_no});
-    if (it != feed.pad.end()) {
-        const auto& pad = it->second;
+    if (feed.live || it != feed.pad.end()) {
+        const auto& pad = feed.live ? feed.live_pad : it->second;
         pad_now = pad[0] & 0xFFFF, pad_prev = pad[2] & 0xFFFF;
         m.w32(PAD_NOW, pad[0]);
         m.w32(PAD_NOW + 4, pad[1]);
@@ -577,6 +577,30 @@ void Engine::idle_loop() {
 static void write_dump(const Mem& m, const std::string& path) {
     std::ofstream f(path, std::ios::binary);
     f.write(reinterpret_cast<const char*>(m.d.data()), std::streamsize(m.d.size()));
+}
+
+// Live play: from here on the engine takes its input from the host (feed.live_*), draws with
+// PsyQ's rand, collides with every chunk of the level, and asks the host what the view shows.
+void Engine::start_live(std::function<bool(U)> in_view) {
+    live_view = std::move(in_view);
+    rand.live_mem = &m;
+    world.w.set_all_chunks();
+    vblank_prev = vblank;
+}
+
+// One frame of live play: the vblanks since the last (the 20-vblank timer), the character pools,
+// one tick on the input the host set, the draw pass and the idle work (a fixed round: the job
+// state machine three times, then the loop's message/spawn turn).
+void Engine::live_frame(I vblanks) {
+    vblank += vblanks;
+    m.w32(G_VBL_TIMER, m.s32(G_VBL_TIMER) + vblanks);
+    vblank_prev = vblank;
+    char_pool_update(*this);
+    tick(true);
+    draw_pass(*this);
+    for (int k = 0; k < 3; k++) idle_job(m.s32(0x800AB8E8));
+    idle_loop();
+    audio->update();
 }
 
 void Engine::run(I to, const std::function<void(const StateLine&)>& line) {

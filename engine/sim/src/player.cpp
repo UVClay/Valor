@@ -336,9 +336,9 @@ I ladder_climb(Engine& eng, U e, U inv) {
     m.w32(e + 0x21C, 0);
     m.w32(e + 0x200, 0);
     m.w32(e + 0xC, m.u32(e + 0xC) & ~I(0x20));
-    I v = 0;
+    I v = eng.feed.live ? eng.role(0) >> 1 : 0;
     auto it = eng.feed.roles.find({eng.level, eng.tick_no});
-    if (it != eng.feed.roles.end()) {
+    if (!eng.feed.live && it != eng.feed.roles.end()) {
         auto a = it->second.find({0, 0, 0});
         v = (a == it->second.end() ? 0 : a->second) >> 1;
         if (v == 0) {

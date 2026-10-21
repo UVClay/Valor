@@ -340,12 +340,20 @@ void entity_bounds(Engine& eng, U e) {
 void draw_pass(Engine& eng) {
     Mem& m = eng.m;
     m.w32(G_FRAME_COUNT, m.u32(G_FRAME_COUNT) + 1);
-    auto& log = drawn_log(eng);
     const std::map<U, std::array<I, 3>>* seen = nullptr;
-    auto lv = log.by_level.find(eng.level);
-    if (lv != log.by_level.end()) {
-        auto t = lv->second.find(eng.tick_no + 1);
-        if (t != lv->second.end()) seen = &t->second;
+    std::map<U, std::array<I, 3>> live_seen;
+    if (eng.live_view) {
+        // live: the host's view decides; a drawn entity's counter is back at its start value
+        for (U e : eng.entities())
+            if (eng.live_view(e)) live_seen[U(m.u32(e))] = {1, 1, m.s32(e + 0x294)};
+        seen = &live_seen;
+    } else {
+        auto& log = drawn_log(eng);
+        auto lv = log.by_level.find(eng.level);
+        if (lv != log.by_level.end()) {
+            auto t = lv->second.find(eng.tick_no + 1);
+            if (t != lv->second.end()) seen = &t->second;
+        }
     }
     static const std::map<U, std::array<I, 3>> empty;
     if (!seen) {

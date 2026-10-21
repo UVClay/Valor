@@ -29,6 +29,11 @@ struct LevelBuild {
     I rand_calls = 0;                // out: the draws the build made
 };
 
+// The save data a fresh campaign hands over (shell.md, game_defaults and new_game), set to start
+// mission m, level l (1-based) with the level's row giving every weapon `ammo` rounds (-1: the
+// fresh game's none) and 128.0 health; controls as the defaults (layout 1, DualShock).
+std::vector<uint8_t> game_defaults(int mission, int level, int ammo);
+
 // rand's seed n draws before `seed` (the LCG run backwards).
 inline U rand_seed_back(U seed, I n) {
     U inv = 1, a = 0x41C64E6Du;

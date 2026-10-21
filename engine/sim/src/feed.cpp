@@ -120,6 +120,7 @@ bool Feed::load(const std::string& root, const std::string& log_path) {
 }
 
 I Feed::role_alt(const std::string& level, I tick, int port, int role) const {
+    if (live) return port == 0 && role >= 0 && role < 4 ? live_role_alt[size_t(role)] : 0;
     auto it = roles.find({level, tick});
     if (it == roles.end()) return 0;
     auto r = it->second.find({port, role, 2});
@@ -127,6 +128,7 @@ I Feed::role_alt(const std::string& level, I tick, int port, int role) const {
 }
 
 I Feed::role(const std::string& level, I tick, int port, int role) const {
+    if (live) return port == 0 && role >= 0 && role < 4 ? live_role[size_t(role)] : 0;
     auto it = roles.find({level, tick});
     if (it == roles.end()) return 0;
     auto a = it->second.find({port, role, 0});
@@ -143,6 +145,11 @@ void Rand::start_tick(I tick) {
 }
 
 I Rand::draw(const std::vector<U>& functions) {
+    if (live_mem) {
+        U seed = U(live_mem->u32(0x800CA2A4) * 0x41C64E6Du + 0x3039u);
+        live_mem->w32(0x800CA2A4, seed);
+        return (seed >> 16) & 0x7FFF;
+    }
     for (size_t i = 0; i < left.size(); i++) {
         if (std::find(functions.begin(), functions.end(), left[i].fn) != functions.end()) {
             I v = left[i].value;
