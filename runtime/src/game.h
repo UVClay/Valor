@@ -42,4 +42,7 @@ void game_drawn_reach(double &yaw, double &pitch);
 // display.cpp: a gamepad gyroscope reading (radians per second about x, y, z; SDL's axes).
 void kbm_gyro(const float rate[3], uint64_t timestamp_ns);
 
+// watch.cpp: VALOR_TRACE_INPUT logs a control role's value (src 0 buttons, 1 stick and mouse).
+void trace_role(uint32_t port, uint32_t role, int src, int32_t value);
+
 }  // namespace psx

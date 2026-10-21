@@ -64,7 +64,7 @@ using namespace psx;
 // from its stick axis, as 0x80075E7C shapes it: up to 255 * (speed >> 8), negative for forward,
 // left, up and left. Look roles end up added to 16.16 angles (4096 per turn). Measured: turn
 // applies the value as is, pitch half of it.
-extern "C" void hook_role_axis(Cpu *c, RecompFn body) {
+static void role_axis(Cpu *c, RecompFn body) {
     uint32_t port = c->r[4], role = c->r[5];
     body(c);
     if (port != 0 || role > 3) return;
@@ -94,6 +94,12 @@ extern "C" void hook_role_axis(Cpu *c, RecompFn body) {
     double v = double(int32_t(c->r[2])) + add;
     if (role <= 1) v = std::clamp(v, -full, full);
     c->r[2] = uint32_t(int32_t(std::clamp(v, -2.0e9, 2.0e9)));
+}
+
+extern "C" void hook_role_axis(Cpu *c, RecompFn body) {
+    uint32_t port = c->r[4], role = c->r[5];
+    role_axis(c, body);
+    trace_role(port, role, 1, int32_t(c->r[2]));
 }
 
 // Drawn beyond the view this tick (degrees, sideways and up or down): the frustum and the world's

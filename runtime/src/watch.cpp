@@ -14,9 +14,11 @@
 #include <string>
 #include <vector>
 
+#include "game.h"
 #include "gpu.h"
 #include "hw.h"
 #include "runtime.h"
+#include "shadow.h"
 
 namespace psx {
 namespace {
@@ -114,6 +116,16 @@ void watch_tick(Cpu *c) {
     }
 }
 
+static bool trace_input() {
+    static bool on = getenv("VALOR_TRACE_INPUT") != nullptr;
+    return on && !shadow_active();
+}
+
+void trace_role(uint32_t port, uint32_t role, int src, int32_t value) {
+    if (trace_input())
+        log("role %u: %u %u %d %d", psx_r32(hw::cpu, 0x8009A5DC), port, role, src, value);
+}
+
 }  // namespace psx
 
 using namespace psx;
@@ -174,8 +186,11 @@ extern "C" void hook_bullet_spawn(Cpu *c, RecompFn body) {
 //    "ents":[[handle, type, flags A, x, y, z, pitch, yaw, roll, health, animation, frame], ...]}
 // "ents" follows the entity list (g_entities, 0x8009D64C) in order; animation and frame are -1
 // without a model instance (docs/re/entities.md, animation.md).
+extern "C" void trace_drawn(Cpu *c);
+
 extern "C" void hook_texts_update(Cpu *c, RecompFn body) {
     body(c);
+    if (!shadow_active()) trace_drawn(c);
     static FILE *out = [] {
         const char *path = getenv("VALOR_TRACE_STATE");
         FILE *f = path ? fopen(path, "w") : nullptr;
@@ -206,4 +221,51 @@ extern "C" void hook_texts_update(Cpu *c, RecompFn body) {
                 s32(e + 0xF4), anim ? s16(inst + 0x5C) : -1, anim ? s16(inst + 0x5E) : -1);
     }
     fputs("]}\n", out);
+}
+
+// VALOR_TRACE_DRAWN: after every tick, each entity's drawn flags (+0x298 drawn once, +0x29C drawn
+// in the last frame: what the drawing pass decided, docs/re/animation.md) and out-of-sight counter
+// (+0x290), for the entities that have any: "drawn VBLANK TICK: HANDLE:298:29C:290 ...".
+extern "C" void trace_drawn(Cpu *c) {
+    static bool on = getenv("VALOR_TRACE_DRAWN") != nullptr;
+    if (!on) return;
+    std::string s;
+    int n = 0;
+    for (uint32_t e = psx_r32(c, 0x8009D64C); (e & 0xFFE00003) == 0x80000000 && n < 1024; e = psx_r32(c, e + 4), n++) {
+        uint32_t a = psx_r32(c, e + 0x298), b = psx_r32(c, e + 0x29C);
+        if (!a && !b) continue;
+        char buf[64];
+        snprintf(buf, sizeof buf, " %X:%X:%X:%d", psx_r32(c, e), a, b, int32_t(psx_r32(c, e + 0x290)));
+        s += buf;
+    }
+    log("drawn %llu %u:%s", (unsigned long long)hw::gpu.frames, psx_r32(c, 0x8009A5DC), s.c_str());
+}
+
+// 0x8001552C rand (docs/re/objects.md, Randomness). VALOR_TRACE_RAND logs every draw of the game
+// itself (not of a decoupled drawing pass) as "rand VBLANK TICK: CALLER VALUE", the caller being
+// the return address, so a reimplementation can take the draws of the systems it owns in order.
+extern "C" void hook_rand(Cpu *c, RecompFn body) {
+    static bool trace = getenv("VALOR_TRACE_RAND") != nullptr;
+    if (!trace || shadow_active()) return body(c);
+    uint32_t ra = c->r[31];
+    body(c);
+    log("rand %llu %u: %08X %u", (unsigned long long)hw::gpu.frames, psx_r32(c, 0x8009A5DC), ra, c->r[2]);
+}
+
+// VALOR_TRACE_INPUT: what a reimplementation takes as the player's input each tick, as the game
+// sees it. 0x80075A30 role_button(port, role): "role TICK: PORT ROLE 0 VALUE" (with the stick's
+// "... 1 VALUE" from role_axis, game.cpp, when the buttons give 0); 0x8007A6B0 player_update:
+// "input VBLANK TICK: " and the pad's four words at 0x80093B7C (docs/re/movement.md).
+extern "C" void hook_role_button(Cpu *c, RecompFn body) {
+    uint32_t port = c->r[4], role = c->r[5];
+    body(c);
+    trace_role(port, role, 0, int32_t(c->r[2]));
+}
+
+extern "C" void hook_player_update(Cpu *c, RecompFn body) {
+    if (trace_input())
+        log("input %llu %u: %08X %08X %08X %08X", (unsigned long long)hw::gpu.frames,
+            psx_r32(c, 0x8009A5DC), psx_r32(c, 0x80093B7C), psx_r32(c, 0x80093B80),
+            psx_r32(c, 0x80093B84), psx_r32(c, 0x80093B88));
+    body(c);
 }
