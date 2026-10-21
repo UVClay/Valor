@@ -213,7 +213,9 @@ static void offscreen_polygon(Cpu *c, const uint32_t sz[3]) {
 // let the ones facing the camera through, storing what the test would have for drawing them.
 extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
     body(c);
-    if (c->r[2] != 0 || !interp_enabled()) return;
+    // By the renderer configured, not the one running: what the game draws changes its timing, so a
+    // replay without a display (no OpenGL) must draw what the recorded session did.
+    if (c->r[2] != 0 || config.scale == 1) return;
     uint32_t sz[3] = {gte_mfc2(c, 17), gte_mfc2(c, 18), gte_mfc2(c, 19)};
     // Closer than H/2 the GTE's divide saturates: the screen positions are wrong, so the test's
     // backface and nearness checks are too. Such polygons are checked in camera space below.
