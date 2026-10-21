@@ -7,6 +7,9 @@
 #include "valor/sim/objects.h"
 #include "valor/sim/simgte.h"
 
+#include <algorithm>
+#include <vector>
+
 namespace valor::sim {
 
 namespace {
@@ -124,6 +127,123 @@ bool segment_box(Engine& eng, const I a[3], const I b[3], U o, I point[3], I nor
     for (int k = 0; k < 3; k++) point[k] = S16(pw[k]), normal[k] = S16(nw[k]);
     flags = hf;
     return true;
+}
+
+
+// 0x8004ADC8: a vector into the object's frame (RotMatrixYXZ(-angles), GTE >> 12, low halves).
+static V3 rot_local(Mem& m, U o, const V3& v) {
+    M3 R = rot_yxz3(S16(-m.s16(o + 0x22A)), S16(-m.s16(o + 0x22E)), S16(-m.s16(o + 0x232)));
+    V3 mac = gmul_mac(R, {S16(v[0]), S16(v[1]), S16(v[2])}, {0, 0, 0}, 12);
+    return {S16(mac[0]), S16(mac[1]), S16(mac[2])};
+}
+
+// sphere_vs_object_planes (0x8004B6DC): e against the object o's planes; the result flags (1 came
+// to stand on top, 2 pushed out of a side) and the world normal of the last side
+// (engine_planes.py sphere_vs_object_planes, objects.md).
+I sphere_vs_object_planes(Engine& eng, U e, U o, V3* normal_out, bool force) {
+    Mem& m = eng.m;
+    if (normal_out) *normal_out = {0, 0, 0};
+    I n = m.u16(o + 0x2EE);
+    if (!n) return 0;
+    I res = 0, behind = 0, within = 0, near = 0;
+    U lst = U(m.u32(o + 0x300));
+    I cx = m.s16(e + 0x2E0), cy = m.s16(e + 0x2E2), cz = m.s16(e + 0x2E4);
+    I y = m.s16(e + 0x212);
+    I c1[3] = {cx, cy, cz}, c2[3] = {cx, y, cz}, c3[3] = {cx, S16(y - m.s16(e + 0x2D6)), cz};
+    V3 P1 = to_local(m, o, c1), P2 = to_local(m, o, c2), P3 = to_local(m, o, c3);
+    V3 v = {S16(m.u16(e + 0x27C) + m.s16(e + 0x21A)), S16(m.u16(e + 0x27E) + m.s16(e + 0x21E)),
+            S16(m.u16(e + 0x280) + (S32(m.s32(e + 0x200) + m.s32(e + 0x220)) >> 16))};
+    if (!v[0] && !v[1] && !v[2]) {
+        for (int k = 0; k < 3; k++) v[k] = S16(m.s16(e + 0x20E + 4 * k) - m.s16(e + 0x25A + 4 * k));
+    } else {
+        M3 R;
+        if (m.u32(e + 0xC) & 1) {
+            M3 r = rot_yxz3(0, S16(m.s32(m.u32(e + 0x388) + 0x184) >> 16), S16(m.s32(e + 0x230) >> 16));
+            I sc[3] = {m.s32(e + 0x270) >> 4, m.s32(e + 0x274) >> 4, m.s32(e + 0x278) >> 4};
+            for (int i = 0; i < 3; i++)
+                for (int k = 0; k < 3; k++) R[i][k] = S16((r[i][k] * sc[k]) >> 12);
+        } else
+            for (int i = 0; i < 3; i++)
+                for (int k = 0; k < 3; k++) R[i][k] = m.s16(e + 0x340 + 6 * i + 2 * k);
+        V3 mac, ir;
+        gmul(R, v, {0, 0, 0}, 12, mac, &ir);
+        for (int k = 0; k < 3; k++) v[k] = S16(ir[k]);
+    }
+    v = rot_local(m, o, v);
+    if (m.u32(e + 0x18) & 1) return 0;
+    std::vector<I> d1s(static_cast<size_t>(n)), d2s(static_cast<size_t>(n));
+    for (I i = 0; i < n; i++) {
+        U q = lst + 0x1C * i;
+        I nv[3] = {m.s16(q + 4), m.s16(q + 6), m.s16(q + 8)};
+        I dist = m.s16(q + 0xA);
+        I d1 = (S32(nv[0] * P1[0] + nv[1] * P1[1] + nv[2] * P1[2]) >> 15) - dist;
+        const V3& P = nv[1] < 0 ? P2 : P3;
+        I d2 = (S32(nv[0] * P[0] + nv[1] * P[1] + nv[2] * P[2]) >> 15) - dist;
+        d1s[size_t(i)] = d1, d2s[size_t(i)] = d2;
+        I bit = I(1) << i;
+        if (d1 < 0)
+            near |= bit, behind |= bit;
+        else if (m.u16(e + 0x2E8) >= d1)
+            near |= bit;
+        else {
+            I a[3] = {iabs(v[0]), iabs(v[1]), iabs(v[2])};
+            std::sort(a, a + 3);
+            if (d1 - (a[2] + ((a[0] + a[1]) >> 2)) <= 0) near |= bit;
+        }
+        if (m.s16(e + 0x3C8) >= d2) within |= bit;
+    }
+    M3 M;
+    for (int i = 0; i < 3; i++)
+        for (int k = 0; k < 3; k++) M[i][k] = m.s16(o + 0x340 + 6 * i + 2 * k);
+    bool moving = v[0] || v[1] || v[2];
+    for (I i = 0; i < n; i++) {
+        U q = lst + 0x1C * i;
+        I bit = I(1) << i;
+        I fl = m.u32(q);
+        I nx = m.s16(q + 4), ny = m.s16(q + 6), nz = m.s16(q + 8);
+        bool masks_ok = (behind & m.u32(q + 0xC)) == m.u32(q + 0x10) && (near & m.u32(q + 0x14)) == m.u32(q + 0x18);
+        if (m.s32(e + 0x21C) >= 0 && (fl & 1) && (near & bit) && masks_ok) {
+            I num = S32((m.s16(q + 0xA) << 15) - S32(nx * P1[0] + nz * P1[2]));
+            I h = cdiv(num, ny);
+            m.w32(e + 0x210, S32(m.s32(o + 0x210) + (h << 16)));
+            m.w32(o + 0x18, m.u32(o + 0x18) | 8);
+            m.w32(e + 0x21C, 0);
+            m.w32(e + 0x18, m.u32(e + 0x18) | 1);
+            m.w32(e + 0x2C, m.u32(o));
+            m.w32(e + 0x18, m.u32(e + 0x18) | 4);
+            if (!m.s32(e + 0x284)) res |= 1;
+            m.w32(e + 0x284, 1);
+        }
+        if (!(force || moving) || !(fl & 2) || !(near & bit) || d1s[size_t(i)] < 0 || !masks_ok) continue;
+        if ((within & m.u32(q + 0x14)) != (near & m.u32(q + 0x14))) continue;
+        I over = S32(m.s16(e + 0x3C8) - d2s[size_t(i)]);
+        if (over <= 0 && !force) continue;
+        if (P1[1] < m.s16(o + 0x2F2)) continue;
+        V3 c = {S16((S32(nx * over * 2) + 0x8000) >> 16), 0, S16((S32(nz * over * 2) + 0x8000) >> 16)};
+        V3 mac = gmul_mac(M, c, {0, 0, 0}, 12);
+        if (!force) {
+            m.w32(e + 0x20C, S32(m.s32(e + 0x20C) + (mac[0] << 16)));
+            m.w32(e + 0x214, S32(m.s32(e + 0x214) + (mac[2] << 16)));
+        }
+        if (!force && S32(v[0] * nx + v[1] * ny + v[2] * nz) >= 0) continue;
+        if (!(fl & 8))
+            m.w32(e + 0x38, m.u32(e + 0x38) | 0x8000);
+        else {
+            m.w32(e + 0x38, m.u32(e + 0x38) | 0x40);
+            if (m.s32(e + 0x48) <= 0 && (m.u32(e + 0xC) & 5)) apply_damage(eng, e, m.s32(o + 0xF8), o);
+        }
+        if (ny > 0 && m.s32(e + 0x21C) <= 0) {
+            if (!m.s32(e + 0x284)) m.w32(e + 0x1F4, S32(m.s32(e + 0x1F4) + ((S32(ny * over * 2) + 0x8000) & 0xFFFF0000)));
+            m.w32(e + 0x21C, 0);
+            m.w32(o + 0x18, m.u32(o + 0x18) | 0x10);
+        }
+        res |= 2;
+        for (U k : {0x200u, 0x218u, 0x220u}) m.w32(e + k, 0);
+        V3 nm, ir;
+        gmul(M, {nx, ny, nz}, {0, 0, 0}, 12, nm, &ir);
+        if (normal_out) *normal_out = {S16(ir[0]), S16(ir[1]), S16(ir[2])};
+    }
+    return res;
 }
 
 bool projectile_planes(Engine& eng, U e, U o, I point[3], I normal[3], I& flags) {

@@ -76,6 +76,7 @@ void object_box(Engine& eng, U e, const I mn[3], const I mx[3]);
 // 0x8004B0F0: the segment (integer points) against the object's planes; point, normal, flags.
 bool segment_box(Engine& eng, const I a[3], const I b[3], U o, I point[3], I normal[3], I& flags);
 bool projectile_planes(Engine& eng, U e, U o, I point[3], I normal[3], I& flags);
+I sphere_vs_object_planes(Engine& eng, U e, U o, V3* normal = nullptr, bool force = false);
 I destructible_touch(Engine& eng, U e, U o);
 U object_spawn(Engine& eng, Record& rec, U model);
 

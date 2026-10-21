@@ -224,7 +224,8 @@ I brain_entity_move(Engine& eng, St& st, const I* turn) {
     if (walker) {
         auto [n, r] = walker_slide(eng, st, delta);
         if (r == 2) st.contact |= 0x8000;
-        if (n > 0) res |= 2;
+        // entity_move's contact 2: walker_slide's result 2 (free after pushing out) or a slide
+        if (n > 0 || r == 2) res |= 2;
         if (n > 0) {
             if (delta[1] >= 0x801 && dy4 < 0 && vel[1] > 0) {
                 vel[1] = 0;

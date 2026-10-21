@@ -569,13 +569,38 @@ I player_hit_part(Engine& eng, U e, I p, U o, I op) {
 }
 
 namespace {
-I object_planes(Engine& eng, U, U o) {
-    if (eng.m.u16(o + 0x2EE)) eng.note("sphere_vs_object_planes not implemented");
-    return 0;
-}
+I object_planes(Engine& eng, U e, U o) { return sphere_vs_object_planes(eng, e, o); }
 }  // namespace
 
-I enemy_touch(Engine& eng, U e, U o) { return object_planes(eng, e, o) ? 1 : 0; }
+// enemy_touch (0x8005291C): against an object's planes: on top, forward speed 0 and +0x38 | 2;
+// against a side, +0x3C | 2. With brain +4 bit 4 it turns along the side (engine_combat.py).
+I enemy_touch(Engine& eng, U e, U o) {
+    Mem& m = eng.m;
+    V3 nrm;
+    I r = sphere_vs_object_planes(eng, e, o, &nrm);
+    if (!r) return 0;
+    if (r & 1) {
+        m.w32(e + 0x200, 0);
+        m.w32(e + 0x38, m.u32(e + 0x38) | 2);
+    } else if (r & 2)
+        m.w32(e + 0x3C, m.u32(e + 0x3C) | 2);
+    U b = U(m.u32(e + 0x38C));
+    if (m.u32(b + 4) & 4) {
+        I fx = m.s16(e + 0x344), fz = m.s16(e + 0x350);
+        I dx = S16(m.s16(o + 0x20E) - m.s16(e + 0x20E));
+        I dz = S16(m.s16(o + 0x216) - m.s16(e + 0x216));
+        I side = sat16i((fz * dx - fx * dz) >> 12);
+        I a = eng.gte.ratan2(int32_t(nrm[0]), int32_t(nrm[2]));
+        if (side < 0)
+            a = (m.u32(b + 8) & 0x10) ? a + 0x400 : a - 0x400;
+        else
+            a = (m.u32(b + 8) & 8) ? a - 0x400 : a + 0x400;
+        m.w32(e + 0x22C, S32(a << 16));
+        eng.matrix(e);
+        m.w32(b + 8, m.u32(b + 8) | 0x20);
+    }
+    return 1;
+}
 
 I player_touch(Engine& eng, U e, U o) {
     Mem& m = eng.m;

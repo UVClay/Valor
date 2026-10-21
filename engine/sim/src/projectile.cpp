@@ -1041,22 +1041,33 @@ I bullet_touch(Engine& eng, U e, U other) {
     Mem& m = eng.m;
     U o = U(m.u32(e + 0x388));
     if (handle_same(eng, o + 0x54, other) || projectile_type(m.s32(other + 8))) return 0;
-    if (!(m.u32(e + 0x10) & 4)) {
-        eng.note("bullet_touch without a sweep (sphere_vs_object_planes) not implemented");
-        return 0;
-    }
+    bool swept = m.u32(e + 0x10) & 4;
     I point[3], normal[3], fl;
-    if (!projectile_planes(eng, e, other, point, normal, fl)) return 0;
+    bool hit;
+    V3 nrm{};
+    if (swept)
+        hit = projectile_planes(eng, e, other, point, normal, fl);
+    else {
+        // a sphere (grenades): sphere_vs_object_planes, its normal kept
+        hit = sphere_vs_object_planes(eng, e, other, &nrm) != 0;
+    }
+    if (!hit) return 0;
     I res = 0;
     if (m.s32(other + 8) != 0x1777) {
         res = 1;
-        for (int k = 0; k < 3; k++) {
-            m.w32(e + 0x20C + 4 * k, S32(point[k] << 16));
-            m.w16(e + 0x364 + 2 * k, S16(-normal[k]));
-        }
+        if (swept)
+            for (int k = 0; k < 3; k++) {
+                m.w32(e + 0x20C + 4 * k, S32(point[k] << 16));
+                m.w16(e + 0x364 + 2 * k, S16(-normal[k]));
+            }
+        else
+            for (int k = 0; k < 3; k++) m.w16(e + 0x364 + 2 * k, nrm[k]);
         if (m.u16(o + 0x38) & 0x100) {
-            eng.note("explosive round's hit on an object not implemented");
-            eng.remove(e, "explosive round");
+            for (int k = 0; k < 3; k++) m.w16(e + 0x364 + 2 * k, 0);
+            U x = explosion_spawn(eng, e, 6, 6, 0x4B, 0x10000, 0x1000, 0x40000, 5, 0);
+            if (x && (m.u32(other + 0xC) & 0x10000000)) m.w32(x + 0x10, m.u32(x + 0x10) | 0x100000);
+            explosion_sound(eng, e);
+            eng.remove(e, "explosive hit on an object");
             return 1;
         }
         if (m.u32(other + 0x10) & 0x4000) {
@@ -1072,7 +1083,7 @@ I bullet_touch(Engine& eng, U e, U other) {
         }
         eng.remove(e, "bullet hit an object");
     }
-    call_touch(eng, U(m.u32(other + 0x37C)), other, e);
+    if (swept) call_touch(eng, U(m.u32(other + 0x37C)), other, e);
     return res;
 }
 
