@@ -38,6 +38,15 @@ void wall_push(const WallPlane& p, int32_t pos[3], int32_t fp, int32_t off) {
     pos[2] = s32(pos[2] - int64_t(p.n[2] >> 7) * v);
 }
 
+}  // namespace
+
+int wall_first_hit(const std::vector<WallPlane>& planes, const int32_t old[3], const int32_t pos[3], int32_t r, int32_t fp) {
+    return first_hit(planes, old, pos, r, fp);
+}
+void wall_push_out(const WallPlane& p, int32_t pos[3], int32_t fp, int32_t off) { wall_push(p, pos, fp, off); }
+
+namespace {
+
 // walker_slide 0x80078F60. Returns the planes gathered at the end and the result (0 none, 1 still
 // in a wall, 2 free).
 struct Slide {

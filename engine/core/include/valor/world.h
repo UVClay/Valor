@@ -73,8 +73,14 @@ public:
 
     // walls_gather: the planes near a walker's segment (centre c, radius r, height h) that the
     // move delta goes into, at most maxn.
+    // use_delta false (the brain's walk gather) keeps the walls whatever the direction of the move.
     void walls_gather(const int32_t c[3], int32_t r, int32_t h, const int32_t delta[3],
-                      std::vector<WallPlane>& out, int maxn = 32) const;
+                      std::vector<WallPlane>& out, int maxn = 32, bool use_delta = true) const;
 };
+
+// The gather's tests, for walls_gather's other users (brain_sim.py's walker_slide).
+bool wall_tri_near(const CollChunk& ch, const CollFace& f, const int32_t c[3], int32_t r, int32_t h);
+int32_t wall_plane_dot(const V3s& n, int32_t x, int32_t y, int32_t z);
+bool wall_plane_crosses(const int32_t c[3], int32_t r, int32_t h, const V3s& n, int32_t d);
 
 }  // namespace valor

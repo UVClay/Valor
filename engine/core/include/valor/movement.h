@@ -50,6 +50,11 @@ constexpr int32_t kGravity = 0x20000;       // 2.0 per tick
 constexpr int32_t kTerminalVy = 0x4B0000;   // 75.0
 constexpr int32_t kJumpVy = -0x1A0000;      // -26.0
 
+// walker_slide's steps (0x80078D1C, 0x80078C4C) for its other users: of the planes the walker now
+// penetrates, the one nearest at the old position (-1 none); the push out along a plane.
+int wall_first_hit(const std::vector<WallPlane>& planes, const int32_t old[3], const int32_t pos[3], int32_t r, int32_t fp);
+void wall_push_out(const WallPlane& p, int32_t pos[3], int32_t fp, int32_t off);
+
 // One tick's move of a walker: gravity, the move turned by the yaw, the walls, the floor.
 void entity_move(const World& world, Walker& w);
 

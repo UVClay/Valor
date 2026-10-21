@@ -179,7 +179,7 @@ bool plane_crosses(const int32_t c[3], int32_t r, int32_t h, const V3s& n, int32
 }
 
 int gather_leaf(const CollChunk& ch, size_t start, size_t count, const int32_t c[3], int32_t r, int32_t h,
-                const int32_t delta[3], std::vector<WallPlane>& out, size_t base, int maxn) {
+                const int32_t delta[3], std::vector<WallPlane>& out, size_t base, int maxn, bool use_delta) {
     int added = 0;
     size_t end = std::min(start + count, ch.idx.size());
     for (size_t i = start; i < end; i++) {
@@ -187,7 +187,7 @@ int gather_leaf(const CollChunk& ch, size_t start, size_t count, const int32_t c
         const CollFace& f = ch.faces[fi];
         const V3s& n = ch.norms[f.n];
         if (!tri_near(ch, f, c, r, h)) continue;
-        if (!(plane_dot(n, delta[0], delta[1], delta[2]) < 0)) continue;  // only walls the move goes into
+        if (use_delta && !(plane_dot(n, delta[0], delta[1], delta[2]) < 0)) continue;  // only walls the move goes into
         if (!plane_crosses(c, r, h, n, f.d)) continue;
         bool dup = false;
         for (size_t k = base; k < out.size(); k++)
@@ -202,7 +202,7 @@ int gather_leaf(const CollChunk& ch, size_t start, size_t count, const int32_t c
 
 // 0x800787C0: every leaf whose cell comes within r of (x, z), a stack of at most 8 halves.
 int gather_chunk(const CollChunk& ch, const int32_t c[3], int32_t r, int32_t h, const int32_t delta[3],
-                 std::vector<WallPlane>& out, int maxn) {
+                 std::vector<WallPlane>& out, int maxn, bool use_delta) {
     size_t base = out.size();
     int32_t x = c[0], z = c[2];
     struct Half {
@@ -239,7 +239,7 @@ int gather_chunk(const CollChunk& ch, const int32_t c[3], int32_t r, int32_t h, 
             }
             continue;
         }
-        int k = gather_leaf(ch, size_t(uint16_t(nd.b)), size_t(~nd.a), c, r, h, delta, out, base, maxn);
+        int k = gather_leaf(ch, size_t(uint16_t(nd.b)), size_t(~nd.a), c, r, h, delta, out, base, maxn, use_delta);
         if (k > 0) {
             total += k;
             if (total >= maxn) return total;
@@ -535,14 +535,22 @@ Floor World::floor_find(const int32_t pos[3]) const {
 }
 
 void World::walls_gather(const int32_t c[3], int32_t r, int32_t h, const int32_t delta[3],
-                         std::vector<WallPlane>& out, int maxn) const {
+                         std::vector<WallPlane>& out, int maxn, bool use_delta) const {
     out.clear();
     int total = 0;
     for (const CollChunk* ch : slots) {
         if (!ch) continue;
-        if (chunk_near(*ch, c[0], c[2], r)) total += gather_chunk(*ch, c, r, h, delta, out, maxn);
+        if (chunk_near(*ch, c[0], c[2], r)) total += gather_chunk(*ch, c, r, h, delta, out, maxn, use_delta);
         if (total >= maxn) break;
     }
+}
+
+bool wall_tri_near(const CollChunk& ch, const CollFace& f, const int32_t c[3], int32_t r, int32_t h) {
+    return tri_near(ch, f, c, r, h);
+}
+int32_t wall_plane_dot(const V3s& n, int32_t x, int32_t y, int32_t z) { return plane_dot(n, x, y, z); }
+bool wall_plane_crosses(const int32_t c[3], int32_t r, int32_t h, const V3s& n, int32_t d) {
+    return plane_crosses(c, r, h, n, d);
 }
 
 }  // namespace valor
