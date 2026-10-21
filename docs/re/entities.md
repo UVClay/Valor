@@ -178,7 +178,7 @@ inferred).
 | +0x100 | ptr | Model/animation instance (+0x5C/+0x5E current animation and frame, +0x8 → model; animation.md) |
 | +0x104, +0x178 | 2×0x74 | Script channels 0 and 1 (enemies.md): +0x10 script, +0x14 program counter, +0x18 frame target, +0x1C wait; +0x124/+0x198 a 0x3C × n block each (unknown) |
 | +0x1F0 | 3×s32 | External push this tick (from a parent), 16.16 |
-| +0x1FC/+0x200/+0x204 | s32 | Gravity: acceleration, fall speed, terminal speed |
+| +0x1FC/+0x200/+0x204 | s32 | Forward acceleration, speed and maximum (enemies.md, The brain; the player's control function writes `+0x200`, movement.md) |
 | +0x208 | s32 | Floor height under the entity |
 | +0x20C | 3×s32 | Position, 16.16 (+0x354.. mirrors the integer part) |
 | +0x218..+0x220 | 3×s32 | Local velocity (x, vertical, z), turned by the angles into the world; +0x21C vertical: gravity adds 2.0/tick up to 75.0 |
@@ -255,7 +255,8 @@ For each entity, in list order, parents first:
 3. The local velocity (scaled by `+0x224`), turned by the entity's angles (player: its yaw), is
    added to the position, plus the push from a parent (`+0x1F0`).
 4. Against the level (if the entity's mask includes the world's bit): walkers (flag 0x8) slide
-   (`0x80078F60`); everything else sweeps a line from the old position (`0x8003EF5C`: hit point,
+   (`0x80078F60`; a move still inside a wall afterwards is undone for the player only, an enemy
+   stays where the slide left it: levels.md Collision, enemies.md); everything else sweeps a line from the old position (`0x8003EF5C`: hit point,
    normal, surface at `+0x318`) and stops there.
 5. The floor (`0x80060474`, height in `0x800B7460`, -0x7FFF: none): landing, stepping (up to
    0x120 units), falling (flag 0x200000 entities through holes).

@@ -350,59 +350,194 @@ world_contact `0x80056250`, touch `0x8005291C`, `+0x384` `0x80056288`.
 The brain (0x124 bytes, `brain_alloc`) is the soldier's legs: the scripts set goals with
 `behaviour` (op 0x2F, `op_behaviour`, `0x8005AC00`), the brain turns the heading (`+0x22C`) and
 sets the speed scale (`+0x224`) every tick; the distance covered comes from the animation (its
-root motion), not from the brain. Decompiled with m2c (`fn.py c`); fields in `context.h`.
+root motion), not from the brain. Decompiled with m2c (`fn.py c`), the GTE parts read in
+`fn.py show`; fields in `context.h`. Everything below was checked tick by tick with a
+reimplementation (Checking, at the end of this section).
+
+### Order within a tick
+
+For a soldier or dog (`entities_update`, entities.md):
+
+1. **The think** (`enemy_think` / `dog_think`): the scripts may set goals (`behaviour`), the
+   heading (variable 0x13, the dog's 0x0E), and start or advance the animation frame, which
+   applies the frame's **root movement** (`anim_root_motion`, animation.md) into the push
+   `+0x1F0`, turned by the rotation matrix `+0x340` **as it was at the end of the previous tick**
+   and scaled by the speed scale `+0x224` the brain left then (or 1.0 if a movement goal was
+   given earlier in this think: `brain_reset_gait`). `+0x38` is cleared after the think.
+2. **The move** (`entity_move`, below): angular velocity, the frame's root turn, the local
+   velocity, the push, the walls (`walker_slide`, which also sorts the walls for the brain), the
+   floor. Then `world_contact` (`+0x378`) if anything was hit.
+3. **The brain**, unless the entity is dead (flags A 0x80000; a corpse keeps its brain pointer
+   but the brain is no longer run).
+4. The rotation matrix `+0x340` is rebuilt from the angles (`0x8006A76C`: `RotMatrixYXZ`, the
+   position as translation, the scale `+0x270` >> 4, i.e. unscaled at 1.0). So the brain's
+   forward vector (the matrix's third column, `+0x344`/`+0x350`) is the heading of the end of
+   the previous tick, not the one the scripts and the root turn gave this tick.
 
 ### Goals (`+0x4`) and how scripts set them
 
 `behaviour GOAL A B C [D]`: operand 1 the goal, 2..4 its parameters, 5 the instruction's own
-immediate. A new movement goal first drops the others (`goals &= ~0x5C03`), frees the cover node
-the soldier held and resets the gait.
+immediate. Seek, path, point, node and flee first drop the other movement goals
+(`goals &= ~0x5C03`, `brain_clear_moves`), free the node the soldier held
+(`brain_release_node`) and reset the gait (`brain_reset_gait`: speed scale 1.0, gait 0, no
+slow-down, not backwards, the walker radius `+0x2EC`, collision radius `+0x2E8` and `+0x3C8`
+back to the brain's `+0xC4`, `+0xC6`, `+0xCA`, the gait speed `+0xCC` to its base `+0xD0`).
+**Walk is added to the others**: it only ORs bit 4 in (and resets the gait only when walk is
+then the only goal).
 
 | Goal | Parameters | Each tick (`brain_update`) |
 |---|---|---|
-| 0x1 seek | target entity (`+0x10`), slow-down radius (`+0xC2`), turn rate (`+0xD4`, default 0x100) | `brain_move_to`: steer toward the target |
-| 0x4000 flee | target entity, `+0x50` | `brain_move_to` with the forward vector reversed: steer to put the target behind |
-| 0x2 path | path id, mode (`+0xBA`: 0 once, 1 backwards, 2 back and forth; -1 keep) | `brain_follow_path`: starts at the path's nearest point |
-| 0x4 walk | speed (16.16, `+0x18`), gait (`+0xC0`), backwards (`+0xD8`) | Walk the heading, turning along walls (`brain_steer`); also used during the other goals |
-| 0x1000 point | position pointer (`+0x40`), variable, arrive radius (`+0xA8`), slow-down radius | `brain_goto_point` |
-| 0x800 node | AI node (`+0x3C`), variable, arrive radius, slow-down radius | `brain_goto_node`, via `brain_node_target` |
-| 0x8000 | | Every goal off |
-| -bit | | That goal off (seek, path, walk, node, point and flee also reset the gait) |
+| 0x1 seek | target entity (`+0x10`), slow-down radius (`+0xC2`), turn rate (`+0xD4`; 0 or less gives 0x100) | `brain_move_to`: steer toward the target |
+| 0x4000 flee | target entity, `+0x50` (read by nothing) | `brain_move_to` with the forward vector reversed, turn rate `+0xD4` (the last seek's) |
+| 0x2 path | path id (`path_find` → index `+0xB8`), mode (`+0xBA`) | `brain_follow_path`, from the point nearest the soldier (`path_nearest_point`, 3D cheap distance), step 1 (-1 in mode 1) |
+| 0x4 walk | speed (16.16, `+0x18` and its base `+0xDC`), gait (`+0xC0`), backwards (`+0xD8`); brain `+0x0` = -10 | Turn along walls (`brain_steer`, when no other movement goal is on); the walls are sorted by `walker_slide` while it is on |
+| 0x1000 point | position pointer (`+0x40`: s16 x at +0, z at +4; e.g. the witness spot `0x8009817C`), variable (`+0x80`), arrive radius (`+0xA8`), slow-down radius (operand 5) | `brain_goto_point` |
+| 0x800 node | AI node (`+0x3C`), variable (`+0x7C`), arrive radius, slow-down radius (operand 5) | `brain_goto_node`; the standing point and side waypoint are set once, by `brain_node_target` |
+| 0x8000 | | Every goal off, node freed, gait reset |
 
-**Seeking** (`brain_seek`, `0x80040180`, shared by every goal): the GTE outer product of the
-forward vector (rotation matrix column `+0x344`/`+0x350`) and the offset to the goal gives the
-side it's on. Beyond a dead zone (|cross| > 0x20, after scaling the offset down by 2, or by 4
-past 2000 units) the heading turns toward it by the turn rate, or by less to land exactly on it;
-inside the dead zone, a dot product says whether the goal is behind (turn) or ahead (no turn).
-The heading wraps to ±half a turn. Turn rates: seek `+0xD4` (0x100 = 22.5° per tick, 675°/s),
-point and node 0x100, path 0xC0 (16.9° per tick).
+Negative operands: -1 seek off, -2 path off, -0x800 node off (and freed), -0x1000 point off,
+-0x4000 flee off, each with a gait reset; -4 walk off and -0x400 bit 0x400 off, without; 0x2000
+pauses the path (bit 2 off, the point kept) and -0x2000 resumes it (bit 2 on). Others do
+nothing. Path modes: **0 loops forward** (after the last point, `+0x38` 0x1000000 and back to
+point 0), **1 loops backward** (before point 0, 0x800000 and on to the last), 2 back and forth
+(0x800000 at the start, 0x1000000 at the end, turning round); -1 gives mode 2 without resetting
+the step. (Earlier versions of this document had mode 0 stop at the end, -1 keep the mode,
+every negative goal reset the gait, and walk drop the other goals: `fn.py c 0x8005AC00` and
+`0x80040A0C`.)
 
-**Arriving**: with a slow-down radius (`+0xC2`) and the goal inside it, the speed scale is
-`distance / radius` (so the soldier slows to a stop), and so are the probe radius and `+0x3C8`;
-otherwise speed 1.0. Distances everywhere are the cheap `max + (mid + min) / 4`.
+### Steering (`brain_seek`, `0x80040180`, shared by every goal)
 
-**Point and node goals** write the remaining distance into the given script variable every
-tick; within the arrive radius they write 0 and set entity `+0x38` bit 0x400000.
+Called with the forward vector F (`+0x344`, 0, `+0x350`: 4096 = 1), the offset D to the goal (the
+goal's integer x, z less the soldier's, s16), the turn rate R and the distance (the cheap
+`max(|dx|, |dz|) + min / 4`):
+
+1. Slow-down: with a slow-down radius `+0xC2` and the distance ≤ it, the speed scale `+0x224`
+   and walk speed `+0x18` = distance × 65536 / radius (truncated), the walker radius `+0x2EC` =
+   `+0xC4` × that >> 16, `+0x3C8` = `+0xCA` × that >> 16, the current gait speed `+0xCC[gait]` =
+   `+0xD0[gait]` × that >> 16; beyond the radius: 1.0, `+0x18` = `+0xDC`, `+0x2EC` = `+0xC4`,
+   `+0x2E8` = `+0xC6`, the gait speed its base. Without a radius nothing changes.
+2. C = (Dx·Fz − Dz·Fx) >> 12 (the GTE outer product, the y row), then >> 1, or >> 2 when the
+   distance is 2001 or more. C is the offset's sideways component in world units, halved; it is
+   **not an angle**.
+3. C < -0x20: turn by -R, or by C when C > -R (state bit 2); C > 0x20: turn by R, or by C when
+   C < R (state bit 1). So a soldier closing in turns by half the sideways offset each tick and
+   approaches the goal's direction gradually, never in one step. Within ±0x20: if the dot
+   product D·F is negative (the goal behind) turn by +R when C ≥ 0 (bit 1), else -R (bit 2);
+   otherwise no turn.
+4. With the walk goal on, `brain_steer` (Walls) runs here, before the turn is applied.
+5. If a turn bit is still set, heading += turn × 65536, wrapped to ±0x800 (the fraction is
+   kept; `entity_move`'s root turn masks to 0..4095 and drops it).
+
+Turn rates: seek `+0xD4` (0x100 = 22.5° per tick, 675°/s), point and node 0x100, path 0xC0
+(16.9° per tick). A target that is gone or dead (flags A 0x180000) sets `+0x38` 0x10 and no
+steering. The target's position is the one it has when the brain runs: the player's soldier
+moves after the enemies in the list, so a soldier steers toward where the player was at the end
+of the previous tick.
+
+**Point and node goals** write the distance into their script variable every tick; within the
+arrive radius they write 0 and set `+0x38` 0x400000. Distances everywhere are the cheap
+`max + (mid + min) / 4`.
 
 **Nodes** (the world's node table, `[[g_world+0x388]+0x8]`, 0x34 bytes each: +0x0 position,
 +0xC kind, +0x10 approach side (1, 2; 4 none), +0x24/+0x28 facing x/z, +0x30 the handle of the
-soldier holding it): the soldier stands a little behind the node along its facing (and 40 units
-to one side); a node with an approach side is reached through a waypoint 100 units to that side
-first (`+0xAC`), unless the soldier is already within 250 units. The soldier claims the node
+soldier holding it): the soldier stands a little behind the node along its facing (facing × 5 >>
+10) and 40 units to one side (`+0xA0`); a node with an approach side is reached through a
+waypoint 100 units to that side first (`+0xAC`, `+0x8C` = 1), unless the soldier is already
+within 250 units; a node of kind 8 is stood on exactly (read from the code, not met in the
+replay). While heading for the waypoint the soldier steers to it, gets no arrive pulse, and drops
+the waypoint (`+0x8C` = 0) once within the arrive radius of it or past it (the dot of the node's
+facing and the soldier's offset from the waypoint is negative). The soldier claims the node
 (`+0xB6`) until its next movement goal.
 
 **Paths** (`g_paths`, `0x8009E290`, from the BSD header's `+0x5A0` by `paths_parse`): {id, count,
-points}, points of 0x14 bytes starting with s16 x, y, z. The current point (`+0xBC`) advances
-(by `+0xBE`, ±1) when the soldier moved past it this tick, is within 76 units, or has it behind
-(the dot of the path's direction and the offset). At the ends, by mode: once, stop and set
-`+0x38` bit 0x1000000; backwards, at 0 set 0x800000 and wrap; back and forth, turn round
-(0x800000 at the start, 0x1000000 at the end). Every point reached sets 0x400000.
+points}, points of 0x14 bytes starting with s16 x, y, z. Each tick, while the current point
+(`+0xBC`) is reached it advances by the step (`+0xBE`) and is tested again (several in one tick
+are possible): reached means the distance moved this tick (from `+0x258`) is at least the
+distance to it, or that distance is under 76, or the point is behind, i.e. (point − previous
+point)·(point − soldier) ≤ 0, the previous point being current − step, taken as 1 below 0 and
+count − 2 past the end. Each advance sets `+0x38` 0x400000 (or the end bits, above). Then the
+soldier steers for the point at 0xC0. A mode other than 0..2 would loop for ever.
 
-**Walls** (`walker_slide`, `0x80078F60`, the walkers' move against the level): while the walk
-goal is on, the walls within the probe radius are sorted by the angle of their normal to the
-heading into ahead, left and right; the nearest of each is kept at brain `+0xEC..+0x120` with
-state bits 4, 8, 0x10 (`+0x8`). `brain_steer` then sets the heading along the wall: the angle of
-its normal (`ratan2`) ±90°, away from the side it's turning to.
+### Walls (`walker_slide`, `0x80078F60`, and `brain_steer`, `0x8003FFA4`)
+
+`walker_slide` (the move against the level, levels.md Collision) clears state bits 4, 8, 0x10
+(`+0x8`) of any brain. With the walk goal on it then gathers the walls differently: radius the
+larger of the current gait speed `+0xCC[gait]` (100, or less while slowing down) and the walker
+radius `+0x2EC`, the segment from eye − 16 below to the feet as usual, but **without** keeping
+only the walls the move goes into; it resets the gait speed to its base. Each gathered triangle
+steeper than 45° (|ny| < 0x5A80) whose normal N is not turned toward the forward vector F
+(F backwards when `+0xD8`; (F·N) >> 12 < 0x2EE0, i.e. cos < 0.37) is sorted by its side,
+S = (Nx·Fz − Nz·Fx) >> 12: |S| ≤ 0x5000 ahead (bit 4, slot `+0xF4`), S > 0x5000 bit 8 (slot
+`+0x104`), S < -0x5000 bit 0x10 (slot `+0x114`). Each slot keeps the nearest by
+|N·(x, y − eye + 16, z) + d| (unshifted, so mostly the normal's dot with the position): the plane
+(N, d), that measure (+8) and S (+12); `+0xEC` the forward vector. Only then are the walls the
+walker is pushed out of picked as in the plain gather (radius `+0x2EC`, the move going into
+them, crossing the segment).
+
+`brain_steer` (from `brain_seek` with the walk goal on, or alone when walk is the only movement
+goal), with W the angle of a slot's normal (`ratan2(Nx, Nz)`): when both side slots are set the
+farther (bigger measure) is ignored, the 0x10 one on a tie. With a wall ahead: angular velocity
+y = 0, then if bit 0x10 is set the heading becomes W(ahead) + 0x400 (unless the seek turns with
+bit 2) and turn bit 1 is cleared; else with bit 8, W(ahead) − 0x400 (unless bit 1) and bit 2
+cleared; else by the ahead wall's S: S > 0 gives W − 0x400 and clears bit 2, otherwise W + 0x400
+and clears bit 1. Without a wall ahead: bit 8 → W(bit-8 wall) − 0x400 (unless bit 1), bit 2
+cleared; else bit 0x10 → W(bit-0x10 wall) + 0x400 (unless bit 2), bit 1 cleared. The heading is
+set outright (no fraction), along the wall; a turn bit left set still adds the seek's turn on
+top. (Bit 1 turns the heading up, bit 2 down.)
+
+### The physical move (`entity_move`, `0x8006C83C`, for soldiers and dogs)
+
+1. `+0x258` = position, `+0x264` = angles; angles += angular velocity `+0x234`; with an
+   animation and frame ≥ 0 the frame's root turn is added and each angle masked to 0..4095,
+   fraction dropped (animation.md).
+2. `+0x200` += `+0x1FC` up to `+0x204` when `+0x1FC` ≠ 0, and `+0x220` = `+0x200` (so `+0x200`
+   is the forward speed op 04 sets, not a fall speed); off the ground with flags A 0x20,
+   `+0x21C` += 2.0 up to 75.0.
+3. The local velocity (`+0x218..+0x220`; × the speed scale via the high halves when it is not
+   1.0) >> 12, turned by `RotMatrixYXZ` of the new angles (sf = 1), << 12, plus the push
+   `+0x1F0`, is added to the position.
+4. `walker_slide` (flags A 8): as for the player (levels.md, move_sim.py), but a walker left
+   inside a wall is **not** put back (only the player's branch undoes the move); with walls in
+   the final gather, `+0x218` and `+0x220` are zeroed and `+0x38` 0x8000 set.
+5. The floor (`floor_find` at the position; d = feet − floor in whole units, y down): no floor →
+   back to `+0x3BC` (and to the old floor height if it was in the air), on the ground; on the
+   ground with d ≥ -32 (the feet at most 32 above the floor, or anywhere below it) → stand on it,
+   else off the ground (`+0x38` 1); in the air with flags A 0x20 → land when d ≥ 0 or -d ≤
+   dy + 16 (at most 64), dy the vertical move >> 4.
+6. Push cleared, `+0x3BC` = the position.
+
+### Checking (`tools/sim/brain_sim.py`)
+
+`brain_sim.py watch` reads a `VALOR_WATCH` log of the five character slots (entity +0x0..+0x40,
+the variables, +0x1F0..+0x3D0, the instance at `+0xFBC`, and every brain as a fixed window at the
+address the game allocated it: a pointer watch re-bases silently and loses the brain's constant
+words) plus the witness spot, `VALOR_TRACE_STATE` (the player's position, the list order) and a
+RAM dump per level (animations, paths, nodes, the seed). For each soldier and dog and each pair
+of ticks drawn one after the other it takes the state at T and the script decisions of T+1 (the
+heading variable, the animation frame, the goals and parameters), steps the think's root
+movement, the move, the brain and the matrix as above, and compares the position (16.16, with
+`+0x3BC`), the heading, pitch and roll, the matrix, the speed scale, walker radius and `+0x3C8`,
+the brain's state bits, wall slots, path point and step, side-waypoint flag, gait speeds, the
+distance variable and the `+0x38` pulses. `brain_sim.py pairs --dir build/vm` does the same
+from full RAM dumps one tick apart.
+
+Result over the replay (1:3, 2:1, 2:2; 69,640 entity ticks, 32,002 of them alive: 10,836
+soldier and 3,461 dog ticks in 1:3, 7,801 in 2:1, 9,904 in 2:2): the position is exact to the
+16.16 bit in 69,638 and the heading in 69,634. Exact in every tick they occurred: seek turns at
+the full rate (1,456 ticks), by the cross product (1,789) and round for a goal behind (59), the
+slow-down (25), path advances in modes 0, 1 and 2 (44), arrivals (9), `brain_steer` along walls
+and the wall slots (1,106), wall pushes (429), root movement (10,851) and root turn (442),
+floor steps (2,347), landings (10), ticks with no floor found (1,470, nearly all corpses, held
+in place). Not met in the replay, so from the code only: the side waypoint of a node (52 node
+ticks, none with one), walking backwards (`+0xD8`), kind-8 nodes, the 0x2000/-0x2000 path pause;
+flee ran for one tick. 76 ticks needed a script
+decision the next state doesn't show directly, found by trying it: a goal given again with the
+same parameters (walk speed, path restarted at the nearest point), a gait reset in the think,
+an animation restarted at the frame it showed. The 9 misses are script side: two placements by
+op 0x46 (`follow`, which sets the position relative to another entity during the think: a dog
+put next to the player, its fraction the player's; a soldier next to a grenade), 6 ticks seeking
+a grenade (type 0x13F3, not in the watch) and one `property` change of the radii. The 51 dump
+pairs (`build/vm`) agree in every field.
 
 ### Set up at spawning (`enemy_spawn`)
 
@@ -418,7 +553,7 @@ record `+0x6A` × 11, path mode 2 (back and forth), no slow-down, gait speeds 10
 - The 0x1407 weapon (kind 2): pistol sound, MG-like animations.
 
 Resolved (enemy_types.md): who reads `+0x38` 0x400000/0x800000/0x1000000 (script events only;
-the words are one-tick pulses cleared after every think); the gait table (`+0xCC`/`+0xD0`, read
-by nothing), `+0xB4` (field of view), `+0x3C8` (radius against solid objects); the player's
+the words are one-tick pulses cleared after every think); the gait table (`+0xCC`/`+0xD0`: the
+current gait speed is the brain's wall-gather radius, Walls), `+0xB4` (field of view), `+0x3C8` (radius against solid objects); the player's
 weapon-block bit 1 (crouched: ranges ×0.75, v5..v7 reduced, half pitch error); events 0x0D/0x0E/
 0x42 and `send_event`.

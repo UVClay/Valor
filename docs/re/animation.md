@@ -230,9 +230,21 @@ Only for entities with flags A 0x1000 (soldiers, dogs). For the frame just made 
 1. The root offset (+0x4) goes to the instance's +0x98.
 2. The root movement (+0x0) is decoded; moving up (y < 0, y points down) takes the entity off
    the ground (`+0x284` = 0, `0x80075118`).
-3. Scaled by the speed scale `+0x224` (when not 1.0), kept at `+0x27C` (3×s16), turned by the
-   entity's rotation matrix `+0x340`, and added to `+0x1F0` (16.16): `entity_move` adds that to
-   the position in the same tick, then the walker collision applies as for any movement.
+3. Scaled by the speed scale `+0x224` (when not 1.0: each component × scale >> 16, rounding
+   down), kept at `+0x27C` (3×s16), turned by the entity's rotation matrix `+0x340`
+   (`ApplyRotMatrix`: GTE, >> 12, rounding down), and added to `+0x1F0` as whole units (<< 16):
+   `entity_move` adds that to the position in the same tick, then the walker collision applies
+   as for any movement.
+
+The matrix `+0x340` is rebuilt once a tick, after the brain (`0x8006A76C`, `RotMatrixYXZ` of the
+angles; enemies.md, The brain), so the root movement goes along the heading of the **end of the
+previous tick**: a heading the scripts set in the same think, and the frame's root turn (added
+later, in `entity_move`), only steer the next frame's movement. The speed scale is the brain's
+of the previous tick too, unless the scripts gave a movement goal earlier in the think
+(`brain_reset_gait` sets it to 1.0). Every frame change applies its root movement once, both
+the advance and op 00 (which also applies frame A's, so restarting an animation at the frame it
+shows moves again). Checked exact to the 16.16 bit over 10,851 moving ticks of soldiers and dogs
+in 1:3, 2:1 and 2:2 (`tools/sim/brain_sim.py`; `+0x27C` agreed in all 25,034 frame changes).
 
 So distance covered comes from the animation frame by frame; frames skipped by the scripts
 don't move the entity, and a held frame doesn't either.
@@ -246,6 +258,9 @@ fraction dropped (`& 0x0FFF0000`). The player's soldier (type 1): to `+0x240..+0
 28 bits (used when its first-person model is drawn, `0x8008D660`; inferred). The turning
 animations have their turn on their first frames and 0 on the last ones (`anim_dump.py --anim
 3 --frames`: 204 per frame on frames 1..10, 0 from 11), so holding the end doesn't turn.
+The masking applies to every angle each tick the instance has an animation, so the brain's
+fractional turns (enemies.md) are dropped at the next move. Checked with the enemies' moves
+(`brain_sim.py`: 442 ticks with a root turn, every heading, pitch and roll exact).
 
 ## The pose (`pose_build`, `0x80085648`)
 
