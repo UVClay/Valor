@@ -630,3 +630,84 @@ def drops_update(eng, e, base):
             m.w32(p + 0x20, min(s32(m.s32(p + 0x20) + g), g * 2))
             m.w32(p + 8, s32(m.s32(p + 8) + m.s32(p + 0xC)))
     return any_
+
+
+# ---------------------------------------------------------------- taking pickups
+
+G_SLOT_COUNT = 0x8009E874
+G_SLOT_WEAPON = 0x8009E878
+G_WEAPONS = 0x80093640
+
+
+def health_touch(eng, p, e):
+    """health_pickup_touch (0x80082E90): not for the dead or removed (flags A 0x20180000) nor at
+    full health (128.0): health += the pickup's +0x14 up to 128.0, the text (drawing), sound 0x1F
+    (kind 0) or 0x1E, removed."""
+    m = eng.m
+    if m.u32(e + 0xC) & 0x20180000 or m.s32(e + 0xF4) == 0x800000:
+        return 0
+    o = m.u32(p + 0x388)
+    m.w32(e + 0xF4, min(s32(m.s32(e + 0xF4) + m.s32(o + 0x14)), 0x800000))
+    snd = {0: 0x1F, 1: 0x1E, 2: 0x1E}.get(m.s32(o), -1)
+    if snd != -1:
+        eng.audio.play(0, snd, e, 0x20000, 0, 0x10000, 0x3333, 0, 0, 0, 0)
+    eng.remove(p, "health taken")
+    return 1
+
+
+def ammo_touch(eng, p, e):
+    """ammo_pickup_touch (0x800830BC): the slot holding the kind's weapon (table +0xA), if its
+    reserve (inv +0x56) is below its maximum (+0x5E): the text, sound 0x20, ammo_add, removed.
+    Returns 1 once the weapon is carried (taken or not)."""
+    m = eng.m
+    if m.u32(e + 0xC) & 0x20180000:
+        return 0
+    o = m.u32(p + 0x388)
+    w = m.u16(PICKUPS + 0x14 * m.s32(o) + 0xA)
+    inv = m.u32(e + 0x388)
+    for slot in range(m.s32(G_SLOT_COUNT)):
+        if m.u8(G_SLOT_WEAPON + slot) == w:
+            if m.s16(inv + 0x56 + 2 * slot) < m.s16(inv + 0x5E + 2 * slot):
+                eng.audio.play(0, 0x20, e, 0x10000, 0, 0x10000, 0x3333, 0, 0, 0, 0)
+                ammo_add(eng, e, slot, m.s32(o + 0x14))
+                eng.remove(p, "ammo taken")
+            return 1
+    return 0
+
+
+def ammo_add(eng, e, slot, n):
+    """ammo_add (0x8004301C): the reserve += n up to the maximum (a negative reserve is set to
+    n); the slot weapon's reload sound (+0x20, bank +0x22 or its model's), pitch 0.5."""
+    m = eng.m
+    inv = m.u32(e + 0x388)
+    a = inv + 0x56 + 2 * slot
+    n = s16(n)
+    if m.s16(a) < 0:
+        m.w16(a, n)
+    else:
+        m.w16(a, min(s16(n + m.s16(a)), m.s16(inv + 0x5E + 2 * slot)))
+    w = G_WEAPONS + 0x44 * m.u8(G_SLOT_WEAPON + slot)
+    snd = m.s16(w + 0x20)
+    if snd >= 0:
+        bank = m.s16(w + 0x22)
+        if bank < 0:
+            bank = m.s16(m.u32(w + 0x40) + 0xC8)
+        flags = (m.u16(G_WEAPONS + 0x44 * m.u8(inv + 0x55) + 0x2A) >> 3) & 2
+        eng.audio.play(bank, snd, e, 0x10000, 0, 0x7FFF, 0, 0, 0, 0, flags)
+
+
+def item_touch(eng, p, e):
+    """item_pickup_touch (0x800832C0): kinds 15..19 send level messages 0x2F, 0x30, 0x31, 0x69,
+    0x6A with the pickup as sender; removed."""
+    m = eng.m
+    msg = {15: 0x2F, 16: 0x30, 17: 0x31, 18: 0x69, 19: 0x6A}.get(m.s32(m.u32(p + 0x388)))
+    if msg is not None:
+        eng.logic.send(msg, eng.ents.get(p), 0, None, src="item pickup")
+    eng.remove(p, "item taken")
+    return 1
+
+
+def register(eng):
+    eng.handlers[("touch", 0x80082E90)] = lambda p, e: health_touch(eng, p, e)
+    eng.handlers[("touch", 0x800830BC)] = lambda p, e: ammo_touch(eng, p, e)
+    eng.handlers[("touch", 0x800832C0)] = lambda p, e: item_touch(eng, p, e)

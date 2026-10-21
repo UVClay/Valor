@@ -903,6 +903,16 @@ knock-off speed (16.16; -1: keep the motion it had), +0x14 its vertical speed, +
   0: flags A 0x8000 and the cull counters = record +0x5E; object {kind, model, 900, -1 (the ammo
   slot when record +0x30 has bit 3)}; the kind's init (health: +0x14 = 13, 32, 64 (16.16); ammo:
   +0x14 = the count).
+- **Taking them** (the pickup's touch; its mask 1 meets the player in the collision pass):
+  health (`0x80082E90`): not when the player's flags A have 0x20180000 or health is 128.0;
+  health += +0x14 up to 128.0, sound 0x1F (kind 0) or 0x1E (pitch 1.0, spread 0x3333, volume
+  0x20000), removed. Ammo (`0x800830BC`): the slot (of `0x8009E874` slots, weapons
+  `0x8009E878`) holding the kind's weapon (table +0xA); if its reserve `inv+0x56+2·slot` is
+  below its maximum `+0x5E`: sound 0x20 (volume 0x10000, spread 0x3333), `ammo_add` (reserve
+  += count, capped; a negative reserve becomes the count; the weapon's reload sound +0x20,
+  bank +0x22 or the weapon model's, pitch 0.5) and removed; not carried: left. Items 15..19
+  (`0x800832C0`): level messages 0x2F, 0x30, 0x31, 0x69, 0x6A with the pickup as sender,
+  removed. The pick-up texts are drawing only.
 
 ## Open
 
