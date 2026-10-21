@@ -514,7 +514,10 @@ counters in part order.)
   armour: health (128.0) takes the damage as is.
 - When health dropped: collision radius 200, the attacker's type in `inv+0x1C0`, a view kick
   away from the attacker (`inv+0x80..+0x88`), a flinch timer (`inv+0x154` = 8), a camera shake
-  (`0x80046C50`), a grunt 30% of the time, a hit sound, and noise for the enemies
+  (`0x80046C50(camera, 20, 10)`: camera object `+0xCC`/`+0xCE`), a grunt 30% of the time
+  (`rand·100 >> 15 < 30`; then 0x1B for ≥ 51 else 0x1C, pitch 0.5, spread 0x1000), a hit sound
+  (by a soldier 0x22 with spread 0x3333 and the soldier's attack part back to kind 1; else 0xC or
+  0xD by a third draw, spread 0x7FFF; pitch 1.0, volume 0x20000), and the rumble
   (`0x8004D8DC(.., 1, 255, 2)`).
 
 **Enemy fire, measured** (the same check, 48 enemy bullets visible in the state trace): 40 are
