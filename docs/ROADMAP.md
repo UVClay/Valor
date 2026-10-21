@@ -53,8 +53,8 @@ recorded before drawing copies were kept off the sound chip (9629c58), and its c
 ahead by the mouse look, set the voices' volumes for their own camera, which the game reads back.
 Recordings now say which: version 1 tapes replay with copies that use the devices as they did
 then (needs OpenGL, which draws the copies), and the session replays exactly to its end; new
-recordings are version 2. Caveat: version 1 tapes recorded between 9629c58 and the version bump
-had isolated copies already, and now replay as old ones (re-record them).
+recordings are version 2. Every version 1 tape on hand predates 9629c58;
+one that doesn't replays with `VALOR_REPLAY_OLD_COPIES=0`.
 
 Waiting for the game state they need (presentation, later): a separate HUD layer and then
 native HUD elements, a native sniper scope, a PC-style aim mode (the view keeps turning, the
