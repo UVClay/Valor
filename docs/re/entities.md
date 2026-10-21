@@ -42,7 +42,7 @@ pickups) is an entity: one struct about 0x3D0 bytes long, in linked lists, updat
 | +0x240 | 3×s32 | The player's angles from animation root motion (wrapped to 28 bits) |
 | +0x258 | 3×s32 | Position at the previous tick (bullets sweep from here) |
 | +0x264 | 3×s32 | Angles at the previous tick |
-| +0x270 | | Rotation (angles) |
+| +0x270 | 3×s32 | Scale, from the model (+0xA4..+0xAC; 1.0 everywhere seen; animation.md) |
 | +0x284 | s32 | On the ground |
 | +0x2D8/+0x2E0 | 3×s16 | Collision sphere centre, local and world |
 | +0x2E8 | u16 | Collision sphere radius (0: never collides) |

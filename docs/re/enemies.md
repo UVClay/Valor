@@ -20,7 +20,7 @@ Each tick: health below 0 clears the attach link; `0x80055528`; the fire state f
 `0x80055198`, the hit-reaction hook (variables 0x1A/0x1B → `0x800523E4`), `0x80052AF4`, the
 second script channel (`script_run_b`, `0x8003FBFC`), variable 0x13 ← vertical velocity, the
 first channel (`script_run_a`, `0x8003F8F0`), variable 0x13 → velocity, the hit-part reaction
-(variable 0x1C → `0x80052084`), `0x80072704`/`0x800730D4` (animation), `0x800563E8`.
+(variable 0x1C → `0x80052084`), `0x80072704`/`0x800730D4` (smoke and blood particles, animation.md), `0x800563E8`.
 
 ## Variables (`get_var`, `0x8005CBA8`; `set_var`, `0x8005C97C`)
 

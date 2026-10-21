@@ -2,6 +2,8 @@
 # Keep sorted by address. Details live in the docs next to this file.
 
 # --- SLUS_009.74 (exe) ---
+80013AE4 skeleton_walk              # (bone, parent matrix, out table, inst): vertices + joints (inst+0x94)
+80013E58 quat_matrix                # quaternion -> GTE rotation (transposed form)
 8001552C rand
 80015B28 printf                     # debug output (strings like "MISSION:%d\n")
 80015DB8 VSync
@@ -30,6 +32,7 @@
 # --- LEVEL.BIN ---
 80039D90 overlay_base
 8003EF5C world_sweep                # (from, to, hit, ..., surface out, ...): -1 if the segment hits nothing in the level
+8003F1F8 anim_root_motion           # frame's root movement (+0) via +0x340 into +0x1F0; root offset (+4) -> inst+0x98
 8003F454 script_start               # (entity, script, ?, channel)
 8003F858 angle_to                   # (a, b): angle from a's heading to b, +-0x800
 8003F8F0 script_run_a
@@ -46,6 +49,7 @@
 80045A78 bullet_spawn               # bullets are entities at 600-669 units/tick
 80045CA0 rocket_spawn
 80045F14 pellet_spawn
+80046DD4 camera_draw                # camera's +0x370: poses and skins its model
 8004913C camera_setup               # builds the view matrix at obj+0xE4
 8004A634 level_read_parameters      # "PARAMETER DATA READ": ammo row -> weapon table, debug dump
 8004AC58 apply_damage               # (victim, damage, attacker, part): health -= damage, death
@@ -77,11 +81,13 @@
 80054990 world_anim_set             # level built-in 21
 80055628 enemy_think                # type 0x1402
 80055864 enemy_hit_part             # type 0x1402: damage, helmet pop, stats
+8005608C enemy_draw                 # soldier's +0x370
 800563F0 enemy_spawn                # from a level spawn record: health, aim error, ranges
 80056EB4 dist_approx                # (s16 vec[3]): max + (mid + min) / 4
 80057474 brain_node_target          # node -> the point to stand at (+0xA0) and the side waypoint (+0xAC)
 80057C24 path_find                  # path id -> index in g_paths
 80057C8C path_nearest_point         # (e, path): index of the nearest point
+80057D9C script_op_anim             # op 00: anim N (mode in bits 12-15) frames A..B; mode 1 fade, 2 cut
 8005AB04 brain_release_node         # frees the node brain+0xB6 claimed
 8005ABA0 brain_reset_gait           # speed 1.0, gait 0, no slow-down
 8005ABEC brain_clear_moves          # goals &= ~0x5C03
@@ -106,17 +112,26 @@
 800664A0 script_run_message         # (entity, object, message): runs that handler
 800672E0 level_vm                   # level scripts: byte ops over a typed stack
 8006949C align_up
+8006A5B4 entity_draw_model          # pose (unless off screen and seen before) and draw
 8006A910 model_find                 # hash -> index in g_models
+8006A96C model_instance_init        # (inst, model, flags, entity): pose buffers, hit parts from model +0xC0
 8006B854 entity_link                # appends to g_entities
 8006B89C entity_unlink
 8006B8F0 entity_remove
 8006BA20 entities_update_entry      # loads g_update_stamp, falls into entities_update
 8006BA28 entities_update
 8006C08C entities_collide
+8006C714 entities_draw              # every entity's +0x370 from render_pass
 8006C83C entity_move
+8006D2E4 model_draw                 # place + render; sets +0x298 (drawn once)
 8006D670 brain_alloc                # 0x124 bytes
 8006D6F0 spawn_from_model           # (model, template): spawn_by_type, then the model's script +0x94
+80072310 enemy_puffs_draw
+80072704 enemy_puffs_update         # weapon block +0x3E8: 5 rising, fading puffs (smoke, inferred)
+800729C0 enemy_drops_draw
+800730D4 enemy_drops_update         # weapon block +0x49C: falling particles that lie on the floor (blood, inferred)
 8007505C record_spawn               # by kind: template (+0x60/+0x74) -> model -> entity; kind 4 a pickup
+80075118 entity_leave_ground        # +0x284 = 0
 8007529C entity_records_register    # the BSD entity table
 8007540C paths_parse                # BSD header +0x5A0 -> g_paths
 8007570C action_held                # (port, action)
@@ -128,6 +143,7 @@
 8007A32C player_think_mounted       # while on a mounted gun
 8007A6B0 player_update
 8007B350 player_weapon_update
+8007B8F4 player_draw                # player soldier's +0x370
 8007BE04 player_soldier_init        # health 128, eye height 240, pitch limits
 8007C1D0 player_hit_part
 8007CF4C throw_weapon
@@ -138,13 +154,22 @@
 80080304 stat_wounded
 80080328 stat_hit
 8008034C stat_melee
+800824D0 model_render               # skeletal models -> 0x80082948 -> skinning
 80082E90 health_pickup_touch        # +13 / +32 / +64, capped at 128
 800830BC ammo_pickup_touch
+80084718 skeleton_pose              # skin a drawn model: root = inst+0x98, then skeleton_walk
+800847CC quat_decode                # (packed, out, count): 2 quaternions per 3 words, 12-bit components x2
+8008492C anim_frame_pose            # (inst, anim, frame, out): decode a key frame or slerp between keys
+80085648 pose_build                 # current frame or 4-tick cross-fade into inst+0x88/+0x90
+80086634 pose_update                # pose_build once per displayed frame (entity +0x3A0 vs g_frame_count)
 80087080 model_relocate
 80087308 level_load                 # reads the TAF and BSD, relocates, builds spawners
 8008B3E8 tsp_walk
 8008BF00 tsp_draw
 8008D0CC frustum_build
+8008DABC model_bone_point
+8008E354 entity_bone_point          # (entity, bone, out, offset): a point on a bone in the world
+8008E9DC entity_in_view             # bounding sphere against the view (inferred)
 80090B90 present
 800910D0 g_voice_enabled            # a byte per SPU voice (bit 0: in use)
 8009115C g_voices                   # the 24 SPU voices' state, 0x34 each (audio.md)
@@ -158,6 +183,7 @@
 80099B38 g_script_ops               # 74 x {handler, opcode, size}
 8009A5D0 g_ticks_dropped
 8009A5D4 g_catchup_ticks
+8009A5D8 g_frame_count              # +1 per game_frame (displayed frame)
 8009A5DC g_tick
 8009A5E0 g_paused
 8009CC64 g_level                    # the BSD level header
@@ -174,6 +200,9 @@
 8009E290 g_paths                    # 8 bytes each: {id, count, points (0x14 bytes each, s16 x y z first)}
 8009E874 g_slot_count               # weapon slots this level
 8009E878 g_slot_weapon              # byte per slot: index into g_weapons
+8009EAAC g_quat_lerp_limit          # 0x8C: below this from 1.0 the slerp is linear
+8009EAB0 g_quat_same_limit          # 8: this close to 1.0, no interpolation
+8009EABC g_skin_cursor              # next free skinned vertex (from 0x800AB148)
 8009EC54 g_model_count
 8009EC58 g_models                   # 0x100 bytes each: +0 hash, +0x94 script, +0xB8 scripts, +0xFC entity type
 800AD260 g_vm_stack                 # 8-byte {type, value}, top index 0x8009D5A8
