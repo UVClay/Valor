@@ -203,6 +203,23 @@ friction (>> 1, or >> 2 with bit 31); in every other stance only by the aim fric
 pitch then moves by **half** the scaled look (`pitch - (look >> 1)`, an arithmetic shift) and
 is clamped to ±0x2AA (±60°).
 
+**The aiming stances 0 and 1 move a crosshair first** (`player_controls`): on entering one, the
+integrators `inv+0x188` (turn) and `inv+0x17C` (look), the friction bits and both angular
+velocities are cleared. Holding Center view (action 7) eases both integrators to 3/4
+(`center_view`, `0x8007F084`) and places the crosshair from them. Otherwise the turn input
+(scaled as above) adds /8 to `+0x188`; the crosshair's x = 256 + (`+0x188` << 8) / M3 (M3 the
+turn role's maximum, `0x800B75F0` + role·0x34 + 0x1C, 0x230000 for the pad); while |that
+offset| ≤ the box half-width `inv+0xB4` only the crosshair moves; beyond it the crosshair stays
+on the box edge, the integrator is set back to the edge (box·M3 >> 8, rounded toward zero for
+negatives: -(box·M3)/256) and the input turns the look yaw `inv+0x184` and the body yaw `+0x22C`
+directly. The look input likewise: +/8 into `+0x17C`, y = 131 + `+0x17C`·120 / M2 (M2 =
+0x3C0000), box `inv+0xB6`; past the edge the integrator = ±box·M2 / 120 (C division) and half the
+input lowers `inv+0x178` and the body pitch `+0x228` (clamped ±0x2AA, the body pitch corrected
+by the overshoot), and `view_pitch_target`. The look input is the button role, else the stick
+role, else (an analog pad with the port's "pitch from the move stick" option, `0x8009E398`)
+`role_axis_alt` (`0x80076008`: the look role's curve applied to the move stick). Then
+`aim_update`, and nothing else of the normal look handling runs.
+
 ### `aim_update`, exactly (`0x8007E034`)
 
 1. Out of aim (`inv+0xA4` ≥ 0x191 without flag 0x200000): angular velocities 0, done. With

@@ -447,6 +447,9 @@ class Engine:
     def role(self, r, port=0):
         return self.feed.role(self.level, self.tick_no, port, r)
 
+    def role_alt(self, r, port=0):
+        return self.feed.role_alt(self.level, self.tick_no, port, r)
+
     # -- one tick (entities.md, A frame; objects.md, The frame and the tick)
     def tick(self, first_in_frame):
         m = self.m

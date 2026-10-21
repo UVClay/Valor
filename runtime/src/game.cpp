@@ -102,6 +102,15 @@ extern "C" void hook_role_axis(Cpu *c, RecompFn body) {
     trace_role(port, role, 1, int32_t(c->r[2]));
 }
 
+// 0x80076008 role_axis_alt(port, source role, role, ?): with the port's "pitch from the move
+// stick" option (0x8009E398) the role's curve applied to the source role's stick. Traced (source
+// 2) so a reimplementation can take it as input like the other roles.
+extern "C" void hook_role_axis_alt(Cpu *c, RecompFn body) {
+    uint32_t port = c->r[4], role = c->r[6];
+    body(c);
+    trace_role(port, role, 2, int32_t(c->r[2]));
+}
+
 // Drawn beyond the view this tick (degrees, sideways and up or down): the frustum and the world's
 // polygon test reach that much farther while mouse look turns the view ahead of the game
 // (gpu_gl.cpp). `drawn_*` is what in-between frames can show of it: less where the frustum or the

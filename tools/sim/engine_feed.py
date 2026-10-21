@@ -84,6 +84,10 @@ class Feed:
                 if m:
                     self.pad[(level, int(m[2]))] = tuple(int(m[k], 16) for k in range(3, 7))
 
+    def role_alt(self, level, tick, port, role):
+        """role_axis_alt's value (traced as source 2: the role's curve on the move stick)."""
+        return self.roles.get((level, tick), {}).get((port, role, 2), 0)
+
     def role(self, level, tick, port, role):
         """The role's value as player_controls got it: the buttons', else the stick's."""
         r = self.roles.get((level, tick), {})

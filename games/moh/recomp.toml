@@ -46,6 +46,8 @@ seeds = []
 [hooks.level]
 # Control role axis (port, role, ?) -> value: adds mouse and keyboard input.
 "0x80075FB4" = "hook_role_axis"
+# Control role from another role's stick (pitch from the move stick): traced for the engine.
+"0x80076008" = "hook_role_axis_alt"
 # Builds the view frustum's planes from the camera (culls rooms and objects): widened to the
 # widescreen/FOV projection.
 "0x8008D0CC" = "hook_view_frustum"

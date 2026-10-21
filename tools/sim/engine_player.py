@@ -379,7 +379,7 @@ def controls(eng, e, inv):
         m.w32(inv + 0x9C, v)
     stance = m.u32(inv + 0x1C8)
     if stance < 2:
-        eng.note("aiming stances (crosshair box) not implemented")
+        return aiming_controls(eng, e, inv, co, stance)
     if stance != m.u32(inv + 0x1CC):
         m.w32(inv + 0x188, 0)
         m.w32(inv, m.u32(inv) & 0xFFEFFFFF & 0x7FFFFFFF)
@@ -406,8 +406,8 @@ def controls(eng, e, inv):
                 m.w32(inv + 0x178, s32(p * 7 + 1) >> 3)
         else:
             pin = eng.role(2)
-            if pin == 0 and m.u32(inv) & 0x20:
-                eng.note("role_axis_alt (pitch from the forward stick) not implemented")
+            if pin == 0 and m.u32(inv) & 0x20 and m.u8(ANALOG + 0):
+                pin = eng.role_alt(2)
             pin = scale_look(m, inv, pin)
             if pin:
                 p = s32(m.s32(inv + 0x178) - (pin >> 1))
@@ -424,6 +424,102 @@ def controls(eng, e, inv):
         m.w32(e + 0x22C, m.s32(inv + 0x184))
     from engine_camera import view_pitch_target
     view_pitch_target(m, e, inv, co)
+    m.w32(inv + 0x1CC, stance)
+
+
+ANALOG = 0x80093B78              # per port: an analog pad (the stick roles are read)
+ROLE_BUTTONS = 0x800B75F0       # digital role config, port * 0xD0 + role * 0x34; +0x1C its maximum
+
+
+def cdiv(a, b):
+    q = abs(a) // abs(b)
+    return q if (a >= 0) == (b >= 0) else -q
+
+
+def aiming_controls(eng, e, inv, co, stance):
+    """player_controls in the aiming stances 0 and 1: the turn and look inputs move the crosshair
+    (inv +0x190/+0x192) inside its box (+0xB4/+0xB6 half sizes) and only past its edge the view;
+    then aim_update. The integrators +0x188 (turn) and +0x17C (look) hold the crosshair's place:
+    screen x = 256 + (+0x188 << 8) / the turn role's maximum, y = 131 + +0x17C·120 / the look
+    role's maximum."""
+    m = eng.m
+    if stance != m.u32(inv + 0x1CC):
+        m.w32(inv + 0x188, 0)
+        m.w32(inv, m.u32(inv) & 0xFFEFFFFF & 0x7FFFFFFF)
+        m.w32(e + 0x238, 0)
+        m.w32(inv + 0x17C, 0)
+        m.w32(e + 0x234, 0)
+    if eng.action_held(CENTER):
+        # center_view (0x8007F084): both integrators ease to 3/4, the crosshair follows
+        v = m.s32(inv + 0x188) * 3 >> 2
+        m.w32(inv + 0x188, v)
+        lo = cdiv(v << 8, m.s32(ROLE_BUTTONS + 3 * 0x34 + 0x1C))
+        box = m.s16(inv + 0xB4)
+        m.w16(inv + 0x190, (lo + 0x100) if box >= abs(s16(lo)) else ((box + 0x100) if v > 0 else (0x100 - box)))
+        v = m.s32(inv + 0x17C) * 3 >> 2
+        m.w32(inv + 0x17C, v)
+        lo = cdiv(v * 0x78, m.s32(ROLE_BUTTONS + 2 * 0x34 + 0x1C))
+        box = m.s16(inv + 0xB6)
+        m.w16(inv + 0x192, (lo + 0x83) if box >= abs(s16(lo)) else ((box + 0x83) if v > 0 else (0x83 - box)))
+    else:
+        def scaled(t):
+            f = m.u32(inv)
+            t = (t >> 1) - (t >> 3) if f & 0x80000 else (t >> 1) + (t >> 4)
+            if f & 0x100000:
+                t = t >> 2 if f & 0x80000000 else t >> 1
+            return t
+        mx = m.s32(ROLE_BUTTONS + 3 * 0x34 + 0x1C)
+        t = scaled(eng.role(3))
+        v = s32(m.s32(inv + 0x188) + (t >> 3))
+        lo = cdiv(s32(v << 8), mx)
+        m.w32(inv + 0x188, v)
+        box = m.s16(inv + 0xB4)
+        if box >= abs(s16(lo)):
+            m.w16(inv + 0x190, lo + 0x100)
+        else:
+            if v > 0:
+                m.w16(inv + 0x190, box + 0x100)
+                x = box * mx
+                m.w32(inv + 0x188, (x + 0xFF if x < 0 else x) >> 8)
+            else:
+                m.w16(inv + 0x190, 0x100 - box)
+                m.w32(inv + 0x188, cdiv(-(box * mx), 256))
+            m.w32(inv + 0x184, s32(m.s32(inv + 0x184) + t))
+            m.w32(e + 0x22C, s32(m.s32(e + 0x22C) + t))
+        mx = m.s32(ROLE_BUTTONS + 2 * 0x34 + 0x1C)
+        t = eng.role(2)
+        if t == 0 and m.u8(ANALOG + 0):
+            t = eng.role_alt(2)
+        t = scaled(t)
+        v = s32(m.s32(inv + 0x17C) + (t >> 3))
+        m.w32(inv + 0x17C, v)
+        lo = cdiv(v * 0x78, mx)
+        t >>= 1
+        box = m.s16(inv + 0xB6)
+        if box >= abs(s16(lo)):
+            m.w16(inv + 0x192, lo + 0x83)
+        else:
+            if v > 0:
+                x = box * mx
+                m.w16(inv + 0x192, box + 0x83)
+            else:
+                x = -(box * mx)
+                m.w16(inv + 0x192, 0x83 - box)
+            m.w32(inv + 0x17C, cdiv(x, 120))
+            m.w32(inv + 0x178, s32(m.s32(inv + 0x178) - t))
+            m.w32(e + 0x228, s32(m.s32(e + 0x228) - t))
+            p = m.s32(inv + 0x178)
+            if p > 0x02AA0000:
+                m.w32(e + 0x228, s32(m.s32(e + 0x228) + 0x02AA0000 - p))
+                m.w32(inv + 0x178, 0x02AA0000)
+            p = m.s32(inv + 0x178)
+            if p < -0x02AA0000:
+                m.w32(e + 0x228, s32(m.s32(e + 0x228) - 0x02AA0000 - p))
+                m.w32(inv + 0x178, -0x02AA0000)
+            from engine_camera import view_pitch_target
+            view_pitch_target(m, e, inv, co)
+    from engine_aim import aim_update
+    aim_update(eng, e, inv)
     m.w32(inv + 0x1CC, stance)
 
 
