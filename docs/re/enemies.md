@@ -16,11 +16,18 @@ Checked against RAM dumps of a real session (1:3, 2:1, 2:2) with `tools/recon/ss
 ## The think (`enemy_think`, `0x80055628`)
 
 Each tick: health below 0 clears the attach link; `0x80055528`; the fire state from variable
-0x16 goes to the weapon block (+0x11) and `enemy_weapon(enemy, player, state, ...)` runs; then
-`0x80055198`, the hit-reaction hook (variables 0x1A/0x1B → `0x800523E4`), `0x80052AF4`, the
-second script channel (`script_run_b`, `0x8003FBFC`), variable 0x13 ← vertical velocity, the
-first channel (`script_run_a`, `0x8003F8F0`), variable 0x13 → velocity, the hit-part reaction
-(variable 0x1C → `0x80052084`), `0x80072704`/`0x800730D4` (smoke and blood particles, animation.md), `0x800563E8`.
+0x16 goes to the weapon block (+0x11), `enemy_weapon(enemy, player, state, ...)` runs, and the
+block's +0x11 goes back into variable 0x16 (so a fire state 2 reads 0 once its shot is fired);
+then `0x80055198`, the hit-reaction hook (variables 0x1A/0x1B → `0x800523E4`), `0x80052AF4`
+(witnesses), the **event matcher** of both channels (`script_run_b`, `0x8003FBFC`), variable
+0x13 ← **the heading** (`+0x22C`), **both channels' scripts** (`script_run_a`, `0x8003F8F0`),
+heading ← variable 0x13, the hit-part reaction (variable 0x1C → `0x80052084`),
+`0x80072704`/`0x800730D4` (smoke and blood particles, animation.md), `0x800563E8`. The dog's
+think (`dog_think`, `0x80054AB8`) is the same around the scripts with variable 0x0E as the
+heading and 0x13 as the hit reaction. (Earlier versions of this document had run_b as "the
+second channel" and 0x13 as the vertical velocity: `fn.py c 0x80055628` shows
+`set_var(e, 0x13, e->angles.y)` and `e->angles.y = get_var(0x13, e)`; the VM interpreter below
+matches every tick's variable 0x13 that way.)
 
 ## Variables (`get_var`, `0x8005CBA8`; `set_var`, `0x8005C97C`)
 
@@ -61,73 +68,220 @@ A variable id is 9 bits:
 | other | 0 |
 
 Known uses: 0x0C the part last hit, 0x0D health left in percent, 0x0E random rolls, 0x16 fire
-state, 0x18 the type of what hit it, 0x13 vertical velocity, 0x1C hit-part reaction.
+state, 0x18 the type of what hit it, 0x13 the heading (16.16, 4096 per turn: the think copies
+it in and out around the scripts, so writing it turns the soldier), 0x1C hit-part reaction.
+
+`get_var` on 0x40..0x5F, 0x80..0x9F and 0x100.. reads one bit (0 or 1); `set_var` sets the bit
+for any non-zero value. Only `+0xEC` itself holds bits 0x100..0x11F: a higher id indexes
+`+0xF0`, the maximum health. `set_var` on a sensor does nothing, except 0x6A with a brain
+(0: save the position in brain `+0xE0`; else restore it). Sensors 0x6A and 0x75..0x7F read 0.
 
 ## Scripts
 
-Each entity runs up to two script channels (soldier.md: channel 0 decides, channel 1 runs the current action): contexts of 0x74 bytes at `+0x104`, each with the
-current script (`+0x10` → {+0xA length, +0xC code}), the program counter (`+0x14`), wait
-counters (`+0x18` animation frame, `+0x1C` ticks) and a call stack (`+0x1E` depth, frames of 16
-bytes at `+0x24`, at most 5). `script_run_a` steps channel 0 and 1 until an instruction yields
-(waits, animations, end); a finished script is replaced by a random one of the model's list,
-weighted (`+0x4` of each entry), which is how idle variations come about.
+Each entity runs up to two script channels (soldier.md: channel 0 decides, channel 1 runs the
+current action). Everything below was read from the handlers (`fn.py c`, `fn.py show` where
+m2c's casts are unreliable) and then checked with a reference interpreter,
+`tools/sim/sst_vm.py`: it steps every soldier and dog of a RAM dump through one tick from these
+rules and compares channels, call stacks, event tables, variables, flags and the animation
+instance with the next tick's dump of the same replay (Checking, below).
 
-The model's scripts: `[[entity+0x100]+0x8]+0xB8` (count `+0xBC`), 16 bytes each: `+0x4` weight,
-`+0xA` length in words, `+0xC` code.
+**The model's scripts**: `[[entity+0x100]+0x8]+0xB8` (count `+0xBC`), 16 bytes each: `+0x0`
+class bits (every soldier and dog script has class 1), `+0x4` random-pick weight, `+0xA` length
+in words, `+0xC` code. Model `+0x94` is the start script; `+0xB4` (count `+0xB0`) the model's
+own event table (Events).
+
+**A channel** is a context of 0x74 bytes (channel 0 at `+0x104`, channel 1 at `+0x178`):
+
+| Offset | |
+|---|---|
+| +0x00..+0x0C | Four class masks (op 01; starting a script, below) |
+| +0x10 | The script's entry (0: the channel is idle) |
+| +0x14 | Program counter (an address) |
+| +0x18 | s16 frame target: the channel waits while the animation frame is below it (-1: none) |
+| +0x1A | s16 script index (-1: none); channel 1's (`entity+0x192`) is what op 0x3D reads |
+| +0x1C | s16 tick wait |
+| +0x1E | s16 call depth, 0..5 |
+| +0x20 | Its event table: `entity+0x1EC` records of 0x3C bytes (40 for the 1:3 soldier, 20 for the dog) |
+| +0x24 | Five call frames of 16 bytes: return address, the channel script's code, the called script's code, its length (u16) |
+
+Jump targets (goto, if) are word indices from the start of the code being run: the called
+script's while the depth is above 0, else the channel's script. The end of the code is the
+called script's length likewise.
+
+### A tick: `script_run_b` then `script_run_a`
+
+1. **Events** (`script_run_b`): while `+0x44` counts down, clear `+0x38` bits 0x600 and count
+   it down; while `+0x48` counts down, clear `+0x38` bits 0x1E0 and 0x180000 and count it down.
+   Then for channel 0, then 1, if it runs a script: try its event records in order; the first
+   whose condition holds runs its stored instruction (Events) and ends that channel's search.
+   Quirk: once a record has matched (in either channel), a later empty record also ends the
+   search, so channel 1's records past an empty one are not tried after a channel-0 match.
+2. **Steps** (`script_run_a`), channel 0 then 1:
+   - Idle: channel 0 starts script 0 (no step this tick); channel 1 stays idle.
+   - Tick wait above 0: count it down; done for this tick.
+   - Animation frame (instance `+0x5E`, **shared by both channels**) below the frame target:
+     the frame **goes up by one** (this is where animations advance: animation.md), the blend
+     counter (instance `+0x3E`) down by one if above 0, the root motion is applied
+     (`anim_root_motion`, `0x8003F1F8`); done for this tick.
+   - Otherwise the frame target becomes -1 and instructions run until one yields. Before each,
+     a program counter at or past the end of the code (or 0, from op 0x31) **ends the channel**:
+     its script, index, and the instance's animation (-1) and frame (0) are cleared; channel 0
+     then starts the first script whose weight is above `rand() × 100 / 32767` (only the
+     guard idle 202 has a weight in 1:3), or script 0, and goes on running it this tick;
+     channel 1 stays idle. A called script that runs off its end ends the channel the same
+     way: there is no implicit return.
+   - The ops that yield: 00 (anim), 0x16 (wait), 0x17 (remove self). Nothing else ends a tick,
+     so a script that loops without them hangs the game (ops 09 and 0B return their own
+     address without yielding: they would hang; no soldier or dog script uses them).
+
+So `wait N` resumes on the Nth tick after it (`wait 0` and `wait 1` both on the next), and
+`anim N frames A..B` shows frame A on its own tick and resumes the script on the tick after
+frame B is reached: B-A+1 ticks (B = A: one tick).
+
+### Starting a script (`script_start`, `0x8003F454`)
+
+`script_start(entity, n, force, channel)`. Op 0x1D (jump_script) forces; ops 08 (restart),
+0x3B (start on channel 1) and a channel's random pick don't. An unforced start happens when the
+script's class bits meet the channel's mask `+0x4` (and then with a cross-fade from the current
+pose: blend counter 4, instance `+0x40` = -1, the pose copied as for anim mode 1), or meet mask
+`+0x0`, or meet neither `+0x8` nor `+0xC` while the channel is idle; otherwise nothing happens
+and the op goes on to the next instruction. Op 01 sets these masks; a start resets them to 0,
+-1 (every class), 0, 0. No soldier or dog script uses op 01 and all their scripts are class 1,
+so every start succeeds, with the cross-fade (checked: the blend counter matches every tick).
+
+A start sets the script, its index and the program counter to its first word; frame target -1,
+tick wait 0, depth 0; gravity `+0x1FC` = 0; `+0x28C` = `+0x288`. On channel 0 it also resets
+the melee hit part (`0x8004C64C(e, -1, -1, -1, -1)`) and **reloads the channel's event table
+from the model's** (the records the start script registered, Events), zeroing the condition word
+of the rest; on channel 1 it zeroes the condition word of every record. Ops 08 and 0x1D then
+continue at the new script's first word in the same tick (if the start happened).
+
+### Events (ops 0x0D, 0x0E, 0x42: `sop_event`, `0x80058C78`)
+
+A record (0x3C bytes): `+0x0` condition mask (the instruction's low byte; 0: empty), `+0x4` the
+instruction's operand mask byte, then one word per condition bit at fixed places: `+0x8` (bit 1,
+a pad test), `+0xC` (2, a button), `+0x10`/`+0x14` (4/8: `+0x38` has all / none of these
+bits), `+0x18`/`+0x1C` (0x10/0x20: `+0x3C`), `+0x20`/`+0x24` (0x40/0x80: `+0x40`), and the
+stored instruction at `+0x28`, copied as it is (its operand mask is applied when it runs, so a
+variable operand is read then). In the instruction the words follow the opcode word in bit
+order, then the stored instruction, whose length comes from a table by opcode (`0x80090EA0`).
+
+The record goes to the running channel's table (0x0D, 0x42) or to channel 0's (0x0E); while the
+channel runs the model's start script, to the model's table instead (shared by every entity of
+the model, copied into channel 0 at each start, above). The place: a record with the same
+condition and words, else the first empty one, else nothing is stored. A stored `nop` (0x0F)
+empties it.
+
+When a record matches (A tick, step 1), a stored `goto` (0x26) sets the program counter to the
+target in the **channel's own script** (not a called one), with frame target -1, tick wait 0 and
+depth 0; a stored `call` (0x38) does nothing (but counts as the match); anything else runs once
+through `script_step` (`restart`, `set`, `wait`...: a stored `restart` replaces the script and
+runs nothing of it until the step; a stored `wait` only sets the tick wait).
 
 **Instructions** are 32-bit words: `[opcode:8][mask:8][imm:16]` then operand words; mask bit
-n-1 set makes operand n a variable id, else a literal (`script_operand`, `0x8005D148`). The step
+n-1 set makes operand n a variable id, else a literal (`script_operand`, `0x8005D148`). The
+operands are numbered by the handler, not by position: in `if`, B is operand 3. The step
 (`script_step`, `0x8005D18C`) calls the handler from the table at `0x80099B38` (74 entries of
-{handler, opcode, size}); the handler returns the next instruction, and a flag
-(`0x80099EC0`) tells the runner to yield. Jump targets are word indices in the current code.
+{handler, opcode, size}; the size is not used by the step); the handler returns the next
+instruction's address, and a flag (`0x80099EC0`) tells the runner to yield.
 
 | Op | Name | Effect |
 |---|---|---|
-| 00 | anim N frames A..B | Play animation N (imm low 12 bits; top 4 bits a mode), yield until frame B (-1: the last) |
-| 01 | mask | Set/clear bits in the context's four mask words |
-| 02 | sound | Play a sound (id, volume, pitch, spread; scaled by the sound setting) |
-| 03/04/05 | gravity / fall / impulse | Gravity; fall and vertical speeds; add to them |
-| 06 | nudge | Move the position by an offset |
+| 00 | anim N frames A..B | Animation N (imm low 12 bits; top 4 bits a mode), frame A, yield; the channel then waits for frame B (-1: the last) (animation.md, Playback) |
+| 01 | mask | imm 0: clear the operand's bits in the four class masks; 1..4: set them in mask imm-1 and clear them in the others |
+| 02 | sound | id = imm low byte, then the low bytes of five words (volume, pitch, spread...; scaled by the sound setting); the voice into `+0xFC` |
+| 03 | gravity | `+0x1FC` = operand |
+| 04 | fall | `+0x200` (unless imm bit 2), `+0x21C` (unless bit 3), `+0x218` (unless bit 4); imm bit 1: two operands only |
+| 05 | impulse | Only with imm bit 1 (else a 4-word nop): `+0x21C` += B, `+0x200` += A (at most `+0x204` when set) |
+| 06 | nudge | Only with imm bit 1: x += A (−A with imm bit 0 when `+0x288` < 0), y += B |
 | 07, 26 | goto I | |
-| 08 | restart N | Restart the channel running it with script N (`0x800589E8`; the channel index is `0x80099EB8`). (sst.py still prints it as `other_script`) |
-| 09, 0B | stop | The program counter stays |
+| 08 | restart N | Start script N on the channel running it, unforced (`0x800589E8`; the channel index is `0x80099EB8`). (sst.py prints it as `other_script`) |
+| 09, 0B | | Return their own address without yielding: would hang |
+| 0A | turn_half | Heading += half a turn; `+0x28C` = `+0x288` (overwritten from variable 0x13 after the scripts, see 0x24) |
 | 0C | hit_part | Configure a hit part (kind, damage...): melee attacks (`0x8004C64C`) |
-| 0D, 0E, 42 | event | Store an instruction to run when an event matches (`sop_event`; 0x0D and 0x42 the same, 0x0E into channel 0's table; enemy_types.md, Events) |
-| 0F, 2B | nop | |
+| 0D, 0E, 42 | event | Store an event record (Events) |
+| 0F | nop | One word. 2B is a three-word nop |
 | 10/11 | flags_set/clear | Flags A (imm 0) or B |
 | 12 | leave_ground | Leave the ground (`0x8005908C`; soldiers, dogs, the player's body; catalogue.md) |
-| 13 | set V = X | |
-| 14 | weight | A script's random-pick weight |
-| 15 | remove_handle | Remove the entity with that handle |
-| 16 | wait N | N ticks |
-| 17 | remove_self | |
-| 18/19/1A | vec_a/vec_b/bytes | Small tables on the entity (`+0x2A4`, `+0x2AC`, `+0x2A0`) |
+| 13 | set V = X | V the immediate, X a full word |
+| 14 | weight | Script A's random-pick weight = imm (in the model: every entity of it) |
+| 15 | spawn | Spawn an entity of kind imm low byte without a record (`0x80061168`: 1, or 0x4C a ladder), start its start script forced and run its channels at once, link it at the front of the list (`0x8006D574`) |
+| 16 | wait N | Tick wait = N - 1, yield |
+| 17 | remove_self | Yield |
+| 18/19/1A | vec_a/vec_b/bytes | Small tables on the entity: three s16 at `+0x2A4`/`+0x2AC` + 16 × imm, three bytes at `+0x2A0` |
+| 1B | | `0x8008DAA0` on the tables of 18/19/1A (`0x8006D544`) |
 | 1C | model_variant | Render-instance variant (`0x800594AC`; every character and weapon model) |
-| 1D | jump_script N | Replace this channel's script |
-| 1E, 21 | random | Random rolls into a variable |
+| 1D | jump_script N | Start script N on this channel, forced |
+| 1E | random | V (imm low byte) = min + rand() % (max - min + 1), min and max the operand's s16 halves, if the chance passes, else -1. Chance C = imm high byte: `rand() % 100` is drawn first in every case and passes when C = 0 or it is ≤ C, so (C+1)/100 |
+| 21 | random_timer | V (imm low byte) = A + rand() % (B - A + 1) when `rand() % (C × 480)` < 16 (C = imm high byte), else -1 |
 | 1F | property | Set an entity property by number (health, angles, eye height, invulnerability, radius...) |
-| 20 | clear_input | |
-| 22/23/24/25 | accel / accel_add / velocity / velocity_add | |
-| 27 | if A op B goto T else F | op 1 ==, 2 >, 3 <, 4 != |
-| 28/29/2A, 2C/2D, 30 | arithmetic | var ops, add, sub, multiply |
-| 2E | query | A fact about a target (self, handle, player) into a variable: health, eye height, distance, angle, perception (sight/hearing range, 0.75× when the player's weapon-block bit 1 is set), nodes in range... |
+| 20 | clear_input | Clears the two words at `0x80093B84` (pad tests) |
+| 22/23 | spin / spin_add | Angular velocity (`+0x234`, x y z) = / += the operands (entities.md: added to the angles by the move) |
+| 24/25 | angles / angles_add | Angles (`+0x228`) = / +=. For a soldier the heading part is overwritten from variable 0x13 after the scripts (the dog's 0x0E): scripts turn with variable 0x13 and the ops that take a variable operand for the result (0x36, 0x44, 0x46, which the scripts give 0x13) |
+| 27 | if A op B goto T else F | op (imm) 1 ==, 2 >, 3 <, 4 !=; A operand 1, B operand **3** (mask bit 2), T and F the low and high halves of the third word; another op returns its own address (hangs) |
+| 28/29/2A | xor / or / and | V ^= / \|= / &= X, through get_var/set_var (bit variables too) |
+| 2C/2D/30 | add / sub / mul | The raw word at `+0x4C + 4·V` += / -= / ×= X (no bit or sensor handling) |
+| 2E | query | A fact about a target into a variable (soldier.md, Reading the disassembly). The target: operand 4 if non-zero; else with B (operand 2) not -1 the first live entity of type B in group H (imm high byte, `+0x35`; `entity_find_type_group`), or with H = 0xFF the nearest one (`0x80057768`); B = H = -1: the entity itself. Facts 1, 3..6 fields, 8 the target, 9 distance, 0xA distance to the entity in B, 0xB/0x10/0x12 sight (0x12 with `+0xB2` and no crouch reduction), 0xC \|angle\|, 0xD itself, 0xE its current animation, 0xF aimed at, 0x11 hearing |
 | 2F | behaviour | Brain goals (1 seek, 2 path, 4 walk, 0x800 node, 0x1000 point, 0x4000 flee, 0x8000 none; negative clears): The brain |
-| 31 | end | |
-| 32, 33, 3E | lookup / compute | Results of helper functions into variables |
-| 34 | node_eval | Score an AI node for cover (0x7FFF taken, 0x7FFE player within 600, 0x7FFD bad angle, else the angle) |
-| 35/36 | node_write / node_take | Update a node; move to and face it |
+| 31 | end | Returns address 0: the channel ends |
+| 32 | nearest | V = the nearest live entity of type X within 1000 vertically (`0x80057768`), 0 if none |
+| 33, 3E | compute / probe | Results of helper functions into variables (soldier.md) |
+| 34 | node_eval | Read an AI node: 1..5 its words, 6 the holder, 7 the cover score (0x7FFF taken, 0x7FFE player within 600, 0x7FFD bad angle, else the angle); -1 for an index past the node count |
+| 35/36 | node_write / node_take | Update a node; move to and face it (the facing into a variable) |
 | 37, 3A | route | The turn toward an entity or a node: a turn kind (0 ahead, 1/2 the sides, 3 behind) and the signed angle into two variables (`0x80056B00`; enemy_types.md) |
-| 38/39 | call N / return | |
-| 3B/3C/3D | start/clear/current script | |
+| 38 | call N | Depth + 1 (past 5: an error, depth stays 5, no call); the frame {return address, channel script's code, N's code, N's length}; continue at N's first word |
+| 39 | return | Depth - 1 and continue at the frame's return address; at depth 0 nothing |
+| 3B | start_script N | On channel 1, unforced, unless channel 1's index equals the raw immediate |
+| 3C | clear_script | Channel 1 idle: index -1, frame target -1, no script (its wait and depth stay) |
+| 3D | current_script | V = channel 1's index (-1 none) |
 | 3F/40 | or_flags | Into another entity's `+0x3C`/`+0x38` |
 | 41 | instance_6c | Instance `+0x6C` (`0x8005C1B4`; soldiers and dogs; with 0x1C the corpse's blink) |
 | 43 | send_event | Broadcast level message N with the soldier as sender (`0x800662CC` → `msg_send`; 0x1B alerts the sender's tagged group: enemy_types.md, Messages) |
-| 44 | to_spawn | Back to the spawn point and facing |
-| 45 | has_anim | |
-| 46 | follow | Place relative to another entity |
-| 47 | clear_events | |
+| 44 | to_spawn | imm high byte 0: back to the spawn point and its facing, 1: the point only, 2: the facing only; the facing also into variable imm low byte |
+| 45 | has_anim | Raw word V = 1 if the model has animation X |
+| 46 | follow | Place relative to another entity (the heading into a variable) |
+| 47 | clear_events | Zero the condition word of every record of the running channel's table |
 | 48 | run_message | Run a level-script message on an entity at once (`0x8005C698` → `script_run_message`); used by no model on the disc (catalogue.md) |
 | 49 | alarm | If none is up: spawn the alarm, flag every living soldier (+0x3C 0x100), send event 0x2B to the zone's entities |
+
+### Checking (`tools/sim/sst_vm.py`)
+
+`sst_vm.py --pairs V...` takes RAM dumps one game tick apart (`--dump-ram V` and `V+1` of the
+replay, where the trace's tick at vblank V is the step between them), steps every live soldier
+and dog of the first through `script_run_b` and `script_run_a` on a copy of RAM, and compares
+with the second. Effects outside the VM (animation poses, sounds, brain goals, hit parts,
+messages) are recorded as calls. Values from the world are taken as follows: distances (query 9,
+0xA), sensors 0x60..0x66, 0x68..0x70, 0x72..0x74 and entity lookups are computed (positions:
+the next dump's for entities earlier in the list, which have already moved, the first dump's for
+the rest); sight, hearing, aimed-at, angles, probes, node searches and route results are the
+written variable's value in the next dump, and when the variable is written again later in the
+tick the candidates (0/1, 0 or R+1, ±3 around an atan2 estimate, -1) are searched; `rand()` is
+the real generator's stream between the two dumps' seeds (`0x800CA2A4`, objects.md), tried from
+each place. The fire state is the next dump's weapon block `+0x11`, which `enemy_weapon` writes
+before the scripts. Not compared, being written after the scripts: the brain's distance
+variable, the hit-reaction variable (0x1C, the dog's 0x13) and the hit handlers' 0x0C, 0x0D and
+0x18 (`enemy_hit_part`, in the collision pass: a corpse shot again changes them with no script
+running). A cross-fade started when the instance has no pose yet (pose cache `+0x62` = -1)
+shows a blend counter of 0 in the next dump: `pose_build` zeroes it at the draw (animation.md,
+The pose), not the VM.
+
+Result over 51 tick pairs of the recorded replay (30 in 1:3 from vblank 2163 to 15915, 21 in
+2:1 from 20702 to 33550; 7 more pairs were dropped as not one tick apart): **95 of 95**
+soldier and dog thinks agree in everything compared, idle, patrol, alert, engage, the fire
+loops, dodges, hit reactions, deaths and corpses. The 30 opcodes the scripts ran agree
+every time: 00 (42 thinks), 02, 04, 08 (26), 0C, 0D (27), 13, 16, 1C, 1E (34), 22, 26, 27 (60),
+29, 2C, 2D, 2E (36), 2F, 33, 37, 38/39 (39), 3B, 3C, 3D, 3E, 41, 42, 43, 47. Computed distances
+agreed with the next dump 16 of 16 times; 4 thinks matched the real `rand()` stream exactly,
+one of them only with one extra draw skipped in the middle of the think (10894: not explained;
+the random value it lands on is unconstrained, so it could be anywhere before 209:101); 13 needed
+the candidate search (all for a find-node result of -1, or a roll later overwritten). The other
+opcodes (01, 03, 05, 06, 09..0B, 0E, 0F, 10..12, 14, 15, 17..1B, 1D, 1F..21, 23..25, 28, 2A,
+2B, 30..32, 34..36, 3A, 3F, 40, 44..46, 48, 49) did not run in these ticks: their rows above come
+from the handlers only. Disagreements on the way were all rules
+missing from the interpreter, now written above: a start or op 47 clears only each record's
+condition word (the stale words stay), the hit handlers' variables, the pose-less cross-fade, and
+sensor 0x68 (2:1's 288/289 loop on it while the soldier's own shout plays; `sst.py` labels it
+`node_usable`).
 
 ## Firing (`enemy_weapon`, `0x8005163C`)
 

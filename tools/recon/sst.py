@@ -69,11 +69,11 @@ class Ram:
 VARS = {
     0x05: "hear_range", 0x06: "hear_half", 0x07: "hear_third", 0x08: "skill", 0x0B: "v0B",
     0x0C: "part_hit", 0x0D: "health_pct", 0x0E: "roll", 0x0F: "weapon_kind", 0x10: "v10",
-    0x13: "vspeed", 0x16: "fire", 0x18: "hit_by", 0x1C: "hit_react", 0x22: "v22", 0x24: "v24",
+    0x13: "heading", 0x16: "fire", 0x18: "hit_by", 0x1C: "hit_react", 0x22: "v22", 0x24: "v24",
     0x26: "v26",
-    0x60: "player_model", 0x61: "player_b400", 0x62: "&home", 0x63: "player_behind",
-    0x64: "e29C", 0x65: "player_weapon", 0x66: "player_11E", 0x67: "player_firing",
-    0x68: "node_usable", 0x69: "alarm", 0x6B: "player_b800", 0x6C: "player_crouched?",
+    0x60: "player_model", 0x61: "player_hidden", 0x62: "&home", 0x63: "player_behind",
+    0x64: "e29C", 0x65: "player_weapon", 0x66: "player_body_script", 0x67: "player_firing",
+    0x68: "my_sound_playing", 0x69: "alarm", 0x6B: "player_low_zone", 0x6C: "player_crouched",
     0x6D: "allies_near", 0x6E: "&8009817C", 0x6F: "height_over_player", 0x70: "my_model",
     0x71: "player_sees_me", 0x72: "params", 0x73: "v73", 0x74: "home_to_player",
 }
