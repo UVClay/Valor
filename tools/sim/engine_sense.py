@@ -387,7 +387,7 @@ def aimed_at(eng, e):
         b = model_bone_point(eng, pl, m.s16(0x80093640 + 0x44 * w + 0xE))
     u = gt.vector_normal([s16(b[k] - a[k]) for k in range(3)])
     d = [s16(m.s16(e + 0x2E0 + 2 * k) - m.s16(pl + 0x2E0 + 2 * k)) for k in range(3)]
-    _, c = gt.op(u, d, 12)
+    _, c = gt.op(d, u, 12)       # the offset on the diagonal, the direction in IR: d x u, floored
     return int(r * r >= c[0] * c[0] + c[1] * c[1] + c[2] * c[2])
 
 

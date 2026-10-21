@@ -5,6 +5,8 @@ import sst_vm as sv
 from sst_vm import s16, s32
 
 FRAME = 0x14
+import os
+TRACE_VM = tuple(int(x) for x in os.environ["ENG_TRACE_VM"].split("-")) if os.environ.get("ENG_TRACE_VM") else None
 
 
 class Calls(list):
@@ -168,6 +170,9 @@ class EVM(sv.VM):
     def step(self, pc, ch, ctx):
         m, e = self.m, self.e
         w = m.u32(pc)
+        if TRACE_VM and TRACE_VM[0] <= self.eng.tick_no <= TRACE_VM[1]:
+            print(f"  vm tick {self.eng.tick_no} {e:08X} ch{ch} pc {pc:08X} op {w >> 24:02X} w {w:08X} "
+                  f"args {[m.u32(pc + 4 * k) for k in range(1, 4)]}")
         op = w >> 24
         mask, imm = (w >> 16) & 0xFF, w & 0xFFFF
         O = lambda n, v: self.operand(n, mask, v)

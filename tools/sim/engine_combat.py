@@ -508,7 +508,7 @@ def player_hit_part(eng, e, p, o, op):
         else:
             snd = 0xC if ((eng.rand.draw(*FN["player_hit"]) * 100) >> 15) < 0x32 else 0xD
             pitch = 0x7FFF
-        eng.audio.play(0, snd, e, 0x20000, 0, pitch, 0, 0, 0, 0, 0)
+        eng.audio.play(0, snd, e, 0x20000, 0, 0x10000, pitch, 0, 0, 0, 0)    # pitch 1.0, spread
         from engine_projectile import rumble_set
         rumble_set(m, m.u8(inv + 0x152), 1, 0xFF, 2, 0)
     return 1
