@@ -211,6 +211,11 @@ first touching pair. So a dog mid-bite that touches an explosion bites the blast
 damage trace shows the blast as the victim, 2.0), its mouth part is spent, and the blast does
 it no damage for all its ticks: watched with a fetched grenade going off in a biting dog's
 mouth (enemy_types.md, the dog's Grenades). A dog not attacking dies from the 4.0.
+In normal play (no god mode, the player walking to the dog; enemy_types.md, Grenades) a
+dog's bite that lands on the player spends the part too, and the dog was unhurt in all 5 runs
+where it was biting with the fetched grenade at detonation, while the player beside it took the
+1000 within 300; dogs not attacking died (5 runs). A spent part protects only while it is the
+first part inside the blast: one dog that ran off was killed through another part after 7 ticks.
 
 Hits from the same type as the victim (soldier on soldier), or from a projectile whose shooter
 had flags A 0x4, skip the head and 10% rules and the statistics (the first branch of

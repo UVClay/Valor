@@ -294,6 +294,28 @@ kind 8, and from then on every pair the blast meets is that spent part: no damag
 ticks. A dog whose part 0 is an ordinary part (kind 1: running, going home) takes the 4.0 and
 dies, thrown (29/30).
 
+**In normal play** (no god mode, no teleport: the player walked from 1:3's start to the first
+dog, grenades drawn on the way, throws at the approaching dog; runs b1..b6, c1..c4, a1, a2, a4
+in `build/dogfetch/`, below): a dog's bite that lands **on the player** spends its mouth part
+too (kind 5 → 8 on the bite's hit, back to 1 when it returns to the chase 19, 5 again on the
+next leap), so a dog that has just bitten carries a spent mouth for the rest of the bite (22).
+Outcomes:
+
+| Case | Runs | At detonation | Player | Dog |
+|---|---|---|---|---|
+| Fetched, chased, **biting the player** (22, anim 9) | 5 of 5 (b1, c1..c4) | blast in the dog's mouth ~100 above it, 265..275 from the player; part 0 kind 8 since the bite landed | **killed**: 1000 (within 300) | **unhurt**, all 9 ticks (4.0 → 4.0), no damage event |
+| Fetched, player backing away past the leash | 3 of 3 (a1, a2, a4) | the dog had gone home (20) carrying it; part 0 kind 1 | unhurt (5000 away) | **killed** the first tick, 4.0 on part 0, thrown (30) |
+| Not fetched (no 35: the warning went elsewhere or the dog's script didn't take it; not traced), dog in the blast | b2, b4, b6 | part 0 kind 1 | unhurt | **killed** (4.0) |
+| Not fetched, dog had just bitten and was running off | b3 | part 0 kind 8 at first | killed (1000) | unhurt 7 ticks, then **killed** through part 1 once its mouth left the blast's sphere |
+
+So in normal play the immunity is the rule whenever the dog is biting at detonation, and that
+is also when the player, next to it, dies; when the player survives to watch, the dog was not
+biting and dies. **God mode** changes how the bite gets spent, not the outcome: with it the
+bite never lands on the player (part 0 goes 5 → 1, never 8), and the mouth is spent by landing
+on the blast itself (the 2.0 "damage" to the blast in the god-mode runs); without it the
+player's bite already spent it. The recomp runs the original's code; a check on a console or
+another emulator would settle the user's memory independently.
+
 **Hit (27 front, 28 behind):** stop (24); above 10% health: v13 = 1, a yelp (37: sound 0 or 1),
 anim 12 (front) or 14 (behind), back to the chase (19). At 10% or less: killed by an explosion
 (type 0x31), a grenade (0x13F3) or a rocket (0x13F1) → **29/30, thrown** (impulse -20 or +20
@@ -827,7 +849,7 @@ firing"; soldier.md's "+0x11E = 8, 3 or 4" reads as the classes.
 - Mission indices 6 and 8 crash when warped to: whether the shell ever maps to them.
 - Not reached in play: the low-wall nodes (L: approach side 4; no soldier took one in the
   runs); the sentry's "aimed at" branch (204); the foxhole's pop-up fire; a worker's full work
-  cycle; the dog's 16 and 35; 7:3's assault soldiers (7:1's watched); role-4 inspections and
+  cycle; the dog's 16 (35 watched since, Grenades); 7:3's assault soldiers (7:1's watched); role-4 inspections and
   2:2/3:1's papers (2:1's role-3 chain and role-0 checks watched, soldier.md). Watched only in
   part: workers (W), low-zone sight (above), the crawl chaser (C: no stand-up, no engage on the
   player leaving the low zones), the assault soldier (X: no advance, no hits). Reached since:
