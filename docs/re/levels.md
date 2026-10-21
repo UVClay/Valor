@@ -595,6 +595,20 @@ player has left it and then enters (or leaves) another; re-entering a ladder who
 stays makes nothing. Checked on the session: 1:3's one ladder r1 keeps state 1 from its first
 climb to the level's end; in 2:1 r1's bit drops at vblank 23190, the frame r6's ladder is made.
 
+Exactly: `record_spawn_type(0x4C, pair)` (`0x80074BB8`), only while the record's bit 0 is
+clear: the spawner by type (`0x8006D574` → `ladder_spawn(pair, record)`), then the entity linked
+at the **front** of the list, bit 0 set, `+0x1C` = the pair, message 0 to its script if the
+record has one (`+0xC`), placed at the record (`0x80074AD8`: angles `+0x228..` and position
+`+0x20C`, `+0x258`, `+0x3BC` from the record's `+0x18` and `+0x10`, << 16). `ladder_spawn`:
+the held-ladder step above; `entity_create` with an object of 8 bytes and no model; type 0x4C,
+flags B 0x203, think `0x800611D0`, destructor `0x8006A318`, flags C, the draw, hit and contact
+handlers 0, flags A | 0x20000; placed; object `+0` = the record's `+0x2A` (s16), `+4` = y
+(`+0x210`) - (`+0x2C` << 16). The think: with `dist2d_approx(player, ladder)` (`0x80050658`:
+(|dx| >> 16) + (|dz| >> 16) - (min(|dx|, |dz|) >> 17) on the 16.16 positions) at most the
+radius, and the player's y at or below the top (y >= top, y down): `inv+0x70` = the top.
+The ladder runs in the list's order like any entity: made at the front, it thinks before the
+player from the next tick (1:3: entered at tick 5139, the climb from 5140).
+
 **Two frames differ** in the session, each one tick: the player's bit for 2:1's streaming record r85
 at vblank 29305 (inside it at his traced position, outside for the game) and a soldier's bit for
 2:2's r75 at 53679 (outside at his traced position, inside for the game until a tick later;

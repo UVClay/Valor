@@ -433,6 +433,32 @@ def weapon_reload(eng, e, inv):
     return 1
 
 
+def ladder_climb(eng, e, inv, port=0):
+    """ladder_climb (0x8007F1E0): vertical speed and forward speed 0, gravity off; half the forward
+    role (its button value, else the stick's): up (< 0) leaves the ground, inv flags | 4; down
+    (> 0) while above the floor, at most the distance to it, flags | 8; 1 when climbing."""
+    m = eng.m
+    m.w32(e + 0x21C, 0)
+    m.w32(e + 0x200, 0)
+    m.w32(e + 0xC, m.u32(e + 0xC) & ~0x20)
+    r = eng.feed.roles.get((eng.level, eng.tick_no), {})
+    v = r.get((port, 0, 0), 0) >> 1
+    if v == 0:
+        v = r.get((port, 0, 1), 0) >> 1
+    if v < 0:
+        m.w32(e + 0x284, 0)                 # entity_leave_ground (0x80075118)
+        m.w32(e + 0x21C, v)
+        m.w32(inv, m.u32(inv) | 4)
+        return 1
+    y, floor = m.s32(e + 0x210), m.s32(e + 0x208)
+    if v > 0 and y < floor:
+        m.w32(e + 0x21C, min(v, floor - y))
+        m.w32(inv, m.u32(inv) | 8)
+        return 1
+    m.w32(e + 0x21C, 0)
+    return 0
+
+
 def controls(eng, e, inv):
     """player_controls (0x8007F300)."""
     m = eng.m
@@ -448,7 +474,7 @@ def controls(eng, e, inv):
             m.w32(e + 0x10, m.u32(e + 0x10) & ~0x10)
         climbed = 0
         if m.s32(inv + 0x70):
-            eng.note("ladder_climb not implemented")
+            climbed = ladder_climb(eng, e, inv)
         if not climbed:
             m.w32(e + 0x200, -eng.role(0))
         m.w32(e + 0x218, eng.role(1))

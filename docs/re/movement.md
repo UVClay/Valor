@@ -306,6 +306,14 @@ Above the top the think stops setting `inv+0x70`: gravity comes back, the vertic
 zeroed (`player_update`'s latch `inv+0x74`), and forward input walks on. Being on a ladder
 stands a crouched player up.
 
+Exactly (`player_controls` calls it when `inv+0x70` is non-zero, before the forward role; when
+it returns 1 the forward role is not applied): `+0x21C` = 0, `+0x200` = 0, flags A &= ~0x20;
+v = the forward role's button value >> 1, or if that is 0 and the port is analog its stick value
+>> 1 (the role as `player_controls` reads it, halved before the fallback). v < 0 (up):
+`entity_leave_ground` (`+0x284` = 0), `+0x21C` = v, `inv` flags | 4, returns 1. v > 0 and y
+(`+0x210`) < the floor (`+0x208`): `+0x21C` = min(v, floor - y), flags | 8, returns 1. Otherwise
+`+0x21C` = 0 and 0.
+
 ## Aim mode (R2) and leaning
 
 While aim mode is on (`inv` flag 0x20; only starts on the ground):

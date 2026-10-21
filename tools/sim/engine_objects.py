@@ -1,12 +1,84 @@
 """Spawning from records and the world objects (docs/re/levels.md Spawning, objects.md)."""
 import move_sim as ms
-from engine import s16, s32, CHAR_SLOTS, G_SOLDIER_COUNT, G_SOLDIER_CAP
+from engine import s16, s32, CHAR_SLOTS, G_SOLDIER_COUNT, G_SOLDIER_CAP, G_SOLDIER
 
 NONE = -0x7FFF
 
 
+LADDER_THINK = 0x800611D0
+G_LADDER_HELD = 0x8009A5B8
+
+
 def register(eng):
-    pass
+    eng.think[LADDER_THINK] = lambda e: ladder_think(eng, e)
+
+
+def ladder_spawn(eng, pair, r):
+    """ladder_spawn (0x80061244), by record_spawn_type(0x4C): the held ladder forgotten if it is
+    this one, else released; an entity of type 0x4C (object of 8 bytes: the record's radius +0x2A,
+    the top = its y less +0x2C), flags A | 0x20000, flags B 0x203, placed at the record."""
+    m = eng.m
+    if m.u32(G_LADDER_HELD) == pair:
+        m.w32(G_LADDER_HELD, 0)
+    else:
+        ladder_release(eng)
+    e = eng.entity_create(0x4C, obj_size=8, parts=0)
+    m.w32(e + 8, 0x4C)
+    m.w32(e + 0x10, 0x203)
+    m.w32(e + 0x36C, LADDER_THINK)
+    m.w32(e + 0x384, 0x8006A318)
+    o = m.u32(e + 0x388)
+    for k in (0x14, 0x370, 0x374, 0x378):
+        m.w32(e + k, 0)
+    m.w32(e + 0xC, m.u32(e + 0xC) | 0x20000)
+    place_record(m, e, r)
+    m.w32(o, m.s16(r + 0x2A))
+    m.w32(o + 4, s32(m.s32(e + 0x210) - (m.s16(r + 0x2C) << 16)))
+    return e
+
+
+def ladder_think(eng, e):
+    """ladder_think (0x800611D0): the player within the radius (dist2d_approx) and not above the
+    top: inv+0x70 = the top."""
+    m = eng.m
+    p = m.u32(G_SOLDIER)
+    o = m.u32(e + 0x388)
+    if m.s32(o) >= dist2d_approx(m, p, e):
+        top = m.s32(o + 4)
+        if m.s32(p + 0x210) >= top:
+            m.w32(m.u32(p + 0x388) + 0x70, top)
+
+
+def dist2d_approx(m, a, b):
+    """dist2d_approx (0x80050658): |dx| + |dz| - min / 2 on the 16.16 positions, in units."""
+    dx = abs(s32(m.s32(b + 0x20C) - m.s32(a + 0x20C)))
+    dz = abs(s32(m.s32(b + 0x214) - m.s32(a + 0x214)))
+    return (dx >> 16) + (dz >> 16) - (min(dx, dz) >> 17)
+
+
+def ladder_release(eng):
+    """0x8006149C: the held ladder (0x8009A5B8) forgotten; if its record's bit 0 is set, the
+    entity whose +0x1C is that record removed."""
+    m = eng.m
+    pair = m.u32(G_LADDER_HELD)
+    if not pair:
+        return
+    m.w32(G_LADDER_HELD, 0)
+    if not m.u32(pair) & 1:
+        return
+    for e in m.entities():
+        if m.u32(e + 0x1C) == pair:
+            eng.remove(e, "ladder released")
+            return
+
+
+def place_record(m, e, r):
+    """0x80074AD8: the record's angles and position (+0x228, +0x20C, +0x258, +0x3BC)."""
+    for k in range(3):
+        m.w32(e + 0x228 + 4 * k, s32(m.s16(r + 0x18 + 2 * k) << 16))
+        m.w32(e + 0x20C + 4 * k, s32(m.s16(r + 0x10 + 2 * k) << 16))
+        m.w32(e + 0x258 + 4 * k, m.u32(e + 0x20C + 4 * k))
+        m.w32(e + 0x3BC + 4 * k, m.u32(e + 0x20C + 4 * k))
 
 
 def place(eng, e, rec):

@@ -106,6 +106,46 @@ class LevelLogic(lv.Sim):
         if rec.kind != 4:
             place(self.eng, e, rec)
 
+    # -- ladders (levels.md, Triggers): the engine's entities, the held ladder in 0x8009A5B8
+    def kind0_enter(self, ent, r):
+        if r.cls != 0x3011B913:
+            return lv.Sim.kind0_enter(self, ent, r)
+        self.stats[f"kind0 enter {r.cls:08X}"] += 1
+        self.record_spawn_type(r.pair)
+
+    def record_spawn_type(self, pair):
+        """record_spawn_type(0x4C, pair) (0x80074BB8): only while the record's bit 0 is clear;
+        the entity linked at the front, bit 0, +0x1C, message 0 to its script if the record has
+        one, placed at the record."""
+        from engine_objects import ladder_spawn, place_record
+        m = self.m
+        if m.u32(pair) & 1:
+            return
+        r = m.u32(pair + 4)
+        e = ladder_spawn(self.eng, pair, r)
+        self.eng.link_front(e)
+        m.w32(pair, m.u32(pair) | 1)
+        m.w32(e + 0x1C, pair)
+        ent = self.bind(e)
+        if m.u32(r + 0xC):
+            self.msg_start(ent, 0)
+        place_record(m, e, r)
+
+    def kind0_leave(self, ent, r):
+        """0x80074DC4 -> 0x80061518(pair): a ladder left is held, the one held before (another)
+        released."""
+        from engine_objects import ladder_release, G_LADDER_HELD
+        self.stats[f"kind0 leave {r.cls:08X}"] += 1
+        m = self.m
+        if r.cls == 0x3011B913 and m.u32(G_LADDER_HELD) != r.pair:
+            if m.u32(G_LADDER_HELD):
+                ladder_release(self.eng)
+            m.w32(G_LADDER_HELD, r.pair)
+
+    def ladder_release(self):
+        from engine_objects import ladder_release
+        ladder_release(self.eng)
+
     def removed(self, ent, why):
         """The engine removed an entity: the level logic's part of entity_remove."""
         if ent.removed:
