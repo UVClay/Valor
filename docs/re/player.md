@@ -28,7 +28,7 @@ entity's "object" pointer: for the soldier, the weapon block lives inside the en
 | inv+0x40 | s32 | Refire delay of the current weapon (ticks), copied from `g_weapons[w]+0x04` on switching; negative for thrown weapons |
 | inv+0x44 | s32 | Refire delay latched when firing |
 | inv+0x48 | s32 | Refire countdown (ticks) |
-| inv+0x4C, +0x50 | s32 | Recoil kick (moves and settles during bursts); +0x50 also climbs by 1.0 per shot for weapon 11 |
+| inv+0x4C, +0x50 | s32 | Recoil kick (moves and settles during bursts); +0x50 also climbs by 1.0 per shot for weapons 1, 6, 11 |
 | inv+0x52 | u16 | 1 on the tick a shot is fired |
 | inv+0x54 | u8 | Current slot |
 | inv+0x55 | u8 | Current weapon (index into `g_weapons`) |
@@ -88,8 +88,144 @@ the "life" parameter (`g_params+0xC`).
 | 8 | PISTOL ROUNDS | 12 | 7 | 999 | 1.5 | Pistol |
 | 9 | PISTOL ROUNDS | 12 | 7 | 999 | 1.5 | Silenced pistol (2:x) |
 | 10 | STIELHANDGRANATE STICK GRENADES | -60 | 1 | 99 | 10 | Stick grenades |
-| 11 | SMG ROUNDS | 3 | 20 | 999 | 3.5 | BAR? (the only weapon with spread and recoil climb) |
+| 11 | SMG ROUNDS | 3 | 20 | 999 | 3.5 | BAR (spread and recoil climb, like 1 and 6: below) |
 | 12 | RIFLE ROUNDS | 20 | 8 | 999 | 2.5 | M1 Garand |
+
+## Weapons in play
+
+How each weapon fires, reloads and switches, so firing can be rebuilt tick for tick. Read from
+`player_update` (`0x8007A6B0`), `player_weapon_update` (`0x8007B350`), `fire_gun`
+(`0x8007D5C8`), `bullet_spawn`/`pellet_spawn`/`rocket_spawn`, `projectile_aim` (`0x800451B0`)
+and `weapon_reload` (`0x800460F4`); measured with scripted runs (`--warp`, `--kbm fire:N`,
+`VALOR_WATCH="sc=[8009D654]+11C:4;inv=[8009D654]+40C:30"`, `VALOR_TRACE_SHOTS=1`) in 1:1,
+1:3, 2:2, 2:3, 4:1, 5:1 and 7:1. `tools/recon/mv_weapons.py LOG` turns such a log into shot
+gaps, reload and switch lengths; `tools/recon/mv_spread.py LOG` measures each bullet against
+the line to the aim point.
+
+### The trigger
+
+Every tick, in `player_update` (guns, not grenades):
+
+```
+if refire_count (inv+0x48) > 0:  refire_count -= 1
+elif (latched (inv+0x44) > 0 ? fire held : fire pressed):  soldier+0x3C |= 2
+```
+
+The bit becomes the fire variable (variable 1) and `player_weapon_update` calls `fire_gun` **in
+the same tick** (measured: the press tick's bullet is logged on that tick). Firing sets
+`latched = refire_count = |weapon +0x04|`. So:
+
+- **Every gun with a positive delay is automatic when held**, the Garand and pistols too: one
+  shot every **delay + 1 ticks** (measured for all of 1, 4, 5, 6, 8, 9, 11, 12: 5, 26, 51, 3,
+  13, 13, 4, 21 ticks). The first shot of a weapon needs a press (`latched` starts at 0).
+- A negative delay (bazooka -15) latches a negative value: **one press per shot** (measured:
+  holding fire through the reload fired one rocket).
+- A press while a reload, draw or other busy script runs is lost, and so is a hold that began
+  then (measured: fire held from inside the Thompson's first reload never fired).
+
+### Reload
+
+`weapon_reload` moves the rounds **at once** (clip = min(clip size, clip + reserve), the reserve
+drops by as much), then starts the soldier's script 9, the reload animation. Firing is blocked
+until it ends: the script's frame count (`soldier+0x11C` when it starts) + 1 ticks. It runs:
+
+- by itself when the clip is empty and the refire countdown has run out (measured: the tick the
+  countdown reaches 0, e.g. 20 ticks after the Garand's 8th round);
+- on Use (action 5) unless the weapon has flag 1, if the clip isn't full and there is reserve;
+- when a slot is drawn with an empty clip (the clip "fills the first time it's drawn").
+
+A weapon switch during a reload cuts the animation (the rounds already moved; measured, weapon 6).
+
+### Switching
+
+Action 2 (`weapon_holster` `0x80080380`): the soldier's script 10 lowers the weapon (its frame
+count + 2 ticks), the weapon changes, then script 16 raises the new one (frame count ticks) or,
+if its clip is empty, script 9 reloads it. Measured lengths in ticks:
+
+| # | Weapon | Ticks between shots (held) | Clip | Reload | Lower | Raise | Spread | Notes |
+|---|---|---|---|---|---|---|---|---|
+| 0 | .45 pistol (3:x) | 13 (code) | 8 | - | - | - | none | not measured (3:2 didn't start warped) |
+| 1 | SMG (Thompson; MP40 in German levels) | **5** | 32 | **51** | 14 | - | ±16 | recoil climb |
+| 2 | Bazooka | one per press; 15 then the reload | 1 | **29** | 17 | - | none | rocket below |
+| 3 | Grenade | one per release; 60 between throws | 1 | - | 14 | 19 | - | objects.md, Grenades |
+| 4 | Shotgun | **26** | 8 | **32** | 19 | 22 | 6 pellets ±64 | all 8 shells in one reload |
+| 5 | Sniper rifle | **51** | 5 | **33** | 18 | - | none | scope below |
+| 6 | SMG (4:x, 7:x) | **3** | 20 | **51** | 14 | - | ±16 | recoil climb |
+| 7 | Papers | - | - | - | 6 | 4 | - | |
+| 8 | Pistol | **13** | 7 | **29** | 10 | 12 | none | |
+| 9 | Silenced pistol | **13** | 7 | **29** | 10 | 12 | none | |
+| 10 | Stick grenade | one per release; 60 | 1 | - | 9 | 21 | - | wind-up 18 or 15 |
+| 11 | BAR | **4** | 20 | **36** | 18 | - | ±16 | recoil climb |
+| 12 | M1 Garand | **21** | 8 | **36** | 18 | 22 | none | |
+
+Bold: measured. Lower and raise are the scripts' frame counts as logged (+2 and +0 ticks), "-"
+where the run went to a reload instead. Spread in angle units (4096 per turn): ±16 = ±1.4°,
+±64 = ±5.6°.
+
+### Where shots go
+
+`fire_gun` passes `projectile_aim` a flag from the stance (`inv+0x1C8`, movement.md):
+
+| Stance | Weapons | Start | Direction |
+|---|---|---|---|
+| 0, 1, 7, 8 | guns aimed or not (sniper unscoped) | `inv+0x198` (the muzzle, or the camera when the aim point is nearer) | **toward the aim point** `inv+0x1A4` (the crosshair ray's end, combat.md) |
+| 2 (scope, `inv` 0x100) | sniper | the camera's position | toward the camera's look point: **the view's centre** (0.57° down), not the crosshair line |
+| 5, 9 (bazooka), 6, 9 (grenades) | | the gun/hand bone point (`gun_points`) | the soldier's body angles `+0x228`, which in these stances are the view's angles |
+
+Measured: 8 Garand rounds 0.2 units from the line to the aim point (rounding only); a scoped
+shot left from the camera at the view yaw, 0.62° below the view (the look point's 0.57° plus
+rounding). Aimed at the aim point, a bullet's collision mask loses bits 0x08000200 until
+`distance / speed + 1` ticks have passed (`0x80045084` stores the full mask in `obj+0x3C`, the
+countdown in `obj+0x40`; `projectile_think` restores it).
+
+**Spread** is added after aiming, uniform and independent per axis: pitch, yaw and roll each
+`+= (rand() & (2·2^n - 1)) - 2^n` units of 1/512 angle unit, n = 11 for weapons 1, 6, 11
+(±16 units), none for the others; each shotgun pellet n = 13 (±64). **Nothing changes it**:
+not moving, crouching, aiming or the stance (measured on the Thompson, 47 rounds standing,
+running and crouched: every deviation within ±16, mean 0, the same spread in all three).
+
+**Recoil climb** (weapons 1, 6, 11, measured on 1): each shot adds 1.0 to the climb
+(`inv+0x50`, at most 1.0); the kick (`inv+0x4C`) lifts the crosshair ray by its integer part in
+pixels (movement.md, Recoil kick). Held, the Thompson nets about +1.25 pixels per shot (each
+5-tick cycle adds 1 + 0.875 + 0.75 + 0.625 + 0.5 and settles 5 × 0.5): measured 14.5 pixels
+after 20 rounds, near the 15.0 cap; it settles 0.5 per tick after release.
+
+**Bullets**: speed 600..669 per tick (rand % 70), pellets 350..749 (rand·400 >> 15),
+`bullet_spawn` damage the table's +0x2C (weapon 12 passes 2.5 itself, pellets 2.0 each, the
+rocket 30.0). The first tick moves them in the tick they're fired (objects.md).
+
+### The scope (sniper, aiming)
+
+Aim (R2) with weapon 5 sets `inv` 0x20, 0x40 and 0x100. The projection distance `inv+0xA4`
+grows from 400 by a step of 3, the step growing by 2 per tick up to 65 (measured: 403, 408,
+415, ... then +65 per tick), **until it is at or past 2447: it stops at 2463** after 46 ticks
+(6.2×). Turning and pitch input are divided by 8 while scoped. Releasing aim puts it back to
+400 at once.
+
+### The bazooka's rocket
+
+`rocket_spawn` (`0x80045CA0`): type 0x13F1, model 0x9EED43D5, **200 units per tick** along the
+view's direction from the gun, **no gravity** (flags A lack 0x20), life **30 ticks** (about 6000
+units), damage 30.0 to what it hits, a smoke trail (particles) and the explosion light at once.
+Measured (7:1): +200 in z per tick, x and y unchanged, 15 ticks to a wall 3000 away. On the
+world it explodes (10 fireballs, radius 650, objects.md), on an entity (6, radius 375), and at
+the end of its life it is removed **without exploding** (`projectile_think`: the life runs out
+before any fuse; the rocket has no fuse bit). Then the 15-tick countdown and the 29-tick reload:
+44 ticks before the next press can fire.
+
+## Items and the papers (pickup kinds 15..19)
+
+`item_pickup_touch` (`0x800832C0`) handles pickup table entries 15..19 (`0x8009E8E8`): touching
+one sends a level message and removes it: 15 → 0x2F, 16 → 0x30, 17 → 0x31, 18 → 0x69,
+19 → 0x6A (read from the code; levels: 2:1 has 15, 16; 2:2 16; 3:1 15, 16, 17; catalogue.md).
+
+The player's level script (13, the player start record's; read in 1:1's with `lvs.py`) turns
+them into a **clearance level**, `ent[1]`: 0x2F → 1, 0x30 → 2, 0x31 → 3, each unregistering the
+lower ones (so the highest taken wins). A papers check (message 0x32, sent by a checking soldier,
+soldier.md) is answered with 0x34, 0x35 or 0x36 for clearance 1, 2, 3, or 0x6B with none. The
+same script counts low-ceiling zones (0xD/0xE from 128, `set_flags` 4/8: the player's flags B
+0x800, movement.md) and undetectable zones (8/9 → `set_flags` 1/2), makes an explosion at the
+player on 0x66, and shows "THIS DOOR IS LOCKED" on 0x6C.
 
 ## Pickups (entity type 101)
 

@@ -105,7 +105,7 @@ the count (World animations), and the alarm entity (`0x8005EDF8`) times itself w
 - Within a tick, every entity moves before any collision is tested, and the contact handlers
   (damage, pickups, bullets) run after all moves.
 - **Level-script messages are deferred to the end of the frame.** A trigger volume entered,
-  a door told to open, an objective completed, a script's `send_self`: these are queued
+  a door told to open, an objective completed, a script's `send`: these are queued
   (`send_event` → `0x80066EA0` checks the subscriptions and appends a 32-byte context to the
   ring at `0x800B6460`) and run after the frame is drawn, before the next frame's ticks. The
   effects show up one frame later (on a 30 Hz frame: the next tick). At least one message per
@@ -180,20 +180,37 @@ bits 0x4/0x8 `+0x38` all/none, 0x10/0x20 `+0x3C` all/none, 0x40/0x80 `+0x40` all
 | 16 | 6 (v0 = 6) | Local x velocity 6.0 for 150 ticks: slides 900 units in 5 s (a gate) |
 | 64 | 5 | Vertical velocity -6.0 (up) for 80 ticks: **rises 480 units** in 2.7 s |
 
-Sliding doors (scripts 4, 6) then wait in script 7 for bit 4 or 32 and slide back the same
-distance (v0 = -6); swinging and rising doors stay open (scripts 8, 9, 11 end in an idle
-loop). While moving, flags B bit 7 (variable 0x87) is 1. Speeds and durations are literals in
-the scripts, so other door models may differ; there is no acceleration (constant speed, then
-stop).
+Sliding doors (scripts 4, 6) then wait in script 7 for bit 4 or 32 and slide back (v0 = -6):
+**bit 4 slides back 360 (script 4), bit 32 slides back 900 (script 6)**, whichever was used to
+open; swinging and rising doors stay open (scripts 8, 9, 11 end in an idle loop). While moving,
+flags B bit 7 (variable 0x87) is 1. There is no acceleration (constant speed, then stop).
+Scripts 2 and 3 (yaw ∓307 per tick for 20 ticks, then pitch ∓51 per tick for 20: a spin and a
+fall) are not reached from the events; nothing found starts them.
+
+**Every door model is the same.** The 19 type-0x1776 models of 1:1, 2:2, 2:3, 3:1, 4:1, 4:2,
+5:1, 5:2, 5:4, 7:2, 9:1, 9:2 (RAM dumps at vblank 10800 of warped starts;
+`tools/recon/mv_models.py DUMP --type 1776` lists a level's models of a type and their scripts,
+spawned or not) have 12 scripts each, **identical word for word** to 2:1's: the speeds above
+hold for every door, hatch and gate in the game; they differ only in mesh and in which bits
+their level sets.
+
+**Who closes them** (bits 4 and 32): only toggling level scripts on kind-7-tagged records, read
+with `lvs.py` in every dump above. 4:1's script 100 answers message 0x5A (sent by the trigger or
+Use record sharing the tag): the first time `set_flags(16)` (open: slide 900 in 5 s), the next
+`set_flags(32)` (close: back 900). 3:1's and 7:2's script 124 do the same with 0x5C arming 0x5A,
+but close with `set_flags(4)`: script 7 then slides back only **360** of the 900 (as read; not
+watched in play). Each branch unregisters 0x5A, so as read each such door opens and closes
+once. Other `set_flags(4)` in the levels are on soldiers and the player (low-zone flags), not
+doors.
 
 **Who opens them**: the level scripts. 2:1's door script 75 (89 is the mirror, `set_flags(1)`):
 
 ```
 on msg 0:    register_msg(7, self, obj, 5, 2)    # handler 2 (msg 5B) from records sharing my
              register_msg(7, self, obj, 5, 3)    #   kind-7 tag; handler 3 (msg 8B)
-on msg 5B:   unregister_msg(0, 2); set_flags(8); send_self(97); sound(..., 41, ...)
+on msg 5B:   unregister_msg(0, 2); set_flags(8); send(97); sound(..., 41, ...)
 on msg 8B:   register_msg(7, self, obj, 5, 4)
-on msg 8A:   unregister_msg(0, 4); set_flags(8); sound(...); send_self(97)
+on msg 8A:   unregister_msg(0, 4); set_flags(8); sound(...); send(97)
 ```
 
 `register_msg`'s filter 5 (`0x8005359C`) passes when the sender's record and the subscriber's
@@ -236,7 +253,7 @@ a door: it pushes the player along (inferred: no code makes a door wait).
   sound chosen by the model (wood 0x23, metal 0x25, glass 0x27: inferred from the sound ids).
   1:3's script 84 is typical: `world_anim_step(self.prop29)`, `explosion(3)` (debris
   particles, no damage), a sound, `remove_entity(self)`.
-- **0x1777**: the same touch handler (2:1 dump: touch = 0x8005D32C); 2:1's ones have 1 health
+- **0x1777** (glass and bottles: catalogue.md): the same touch handler (2:1 dump: touch = 0x8005D32C); 2:1's ones have 1 health
   (one bullet: `VALOR_TRACE_DAMAGE`), another level's had 20 (five explosion ticks). A bullet
   hitting one damages it (the object's own touch handler) but **flies on**: `bullet_touch`
   stops only on types other than 0x1777, and grenades ignore it too.
@@ -246,8 +263,9 @@ a door: it pushes the player along (inferred: no code makes a door wait).
 - **0x1779** is a box, **0x177A** solid like 0x1770 (levels.md).
 
 Per-level counts of model types (a scan of every BSD for model entries with a type at `+0xFC`):
-0x1770 7..18 per level, 0x1778 0..6, 0x1777 one per level (a shared model), 0x1776 doors in
-1:1, 2:1..2:3, 3:1, 4:1, 4:2, 5:1, 5:2, 5:4, 7:2, 9:1, 9:2.
+0x1770 7..18 per level, 0x1778 0..6, 0x1777 one per level (a shared model, loaded everywhere;
+but six single-player levels, 2:3, 3:4, 4:1, 4:3, 9:1 and 9:4, have no record that spawns one:
+catalogue.md), 0x1776 doors in 1:1, 2:1..2:3, 3:1, 4:1, 4:2, 5:1, 5:2, 5:4, 7:2, 9:1, 9:2.
 
 ## World animations (built-ins 18, 21)
 
@@ -298,12 +316,20 @@ from record `+0x5C`, collision radius 100, home angles from the record (`+0x18..
 - **0x1771** (`0x80046B2C`, 1:1 only): no collision (mask 0, radius 0), runs its scripts; each
   tick its angular velocity is variables 3, 4, 5, and it removes itself when variable 6 drops
   below variable 2 (a scripted spinning prop with a lifetime, inferred).
-- **0x1774** (`0x800905C0`, 2:3, 4:2, 9:4, 12:7): solid, scripted, with two particle systems of
+- **0x1774** (`0x800905C0`; the model exists only in **9:4**, the V2: catalogue.md; the
+  model lists of the 2:3 and 4:2 dumps have none): solid, scripted, with two particle systems of
   40 (smoke and fire). Variable 2 set: each tick it climbs 300 units (vertical velocity -300),
   turns 200 units of yaw and wobbles in pitch and roll (a rocket lifting off, inferred);
   variables 3 and 5 trigger smoke and fire bursts, the latter with a camera shake (125, 30) and
   noise 250. Its floor test sets `+0x38` bit 2 when it is within 550 above the floor.
-- **0x1775** (`0x8005E510`): scripted, a collision box nobody collides with (levels.md).
+- **0x1775: switches, valves, levers** (`0x8005E510`; 3:4, 4:3, 5:1, 5:2, 5:3, 9:1:
+  catalogue.md): scripted, a collision box nobody collides with (levels.md). The player
+  reaches it through a kind-2 record's Use list: Use sends message 0x2E, and the level script
+  answers once with `set_flags(2)` and a report message (5:1: 0x72, and 0x5B). Its model
+  (5:1's 0x579B641F, `mv_models.py`) animates on the `+0x40` bits: **2** turns it, pitch +20
+  per tick for 100 ticks (2000 units, half a turn: a valve wheel or lever), the next 2 turns it
+  back (-20); bit 1 starts it in the turned state, bit 4 in the unturned one. Read, not
+  watched.
 - **Type 0x31 without parts**: particle bursts (`0x80073BA8`, think `0x80073B08`) share the
   explosion's type but have no collision (mask 0, no parts), so `player_hit_part`'s type test
   never meets them.
@@ -396,6 +422,31 @@ vblanks 34151..34207, every value matching the rules above):
 | 34199..34207 | Rolling | 14, 13, 12, 11, 10 | 0 | -1 per tick |
 
 The fuse byte counted down by one per tick from 89.
+
+**A throw into open space** (1:1 at the start, facing yaw 1251 with 2200 units clear; grenades
+drawn, fire held 10 ticks; `VALOR_WATCH` on `[[8009D654]+4]`, the first projectile after the
+soldier in the list, and its object):
+
+| Tick | Event | Forward | Vertical | y (floor 484) |
+|---|---|---|---|---|
+| release | charge 9 (`inv+0x11C`), lob script 0xC, wind-up 8 | | | |
+| +7 | Launched: 55 + 2·9 = **73**, pitch 0 → vy 0 | 73 | 0 | 309 (175 above the floor) |
+| +8..+13 | Flight, +5 per tick (3 extra + 2) | 73 | 5, 10, 15, 20, 25, 30 | 314, 324, 339, 359, 384, 414 |
+| +14 | Floor: snapped to 484, bounce | 48.67 (× 2/3) | -(30 + 3 + 2)/4 = **-8.75** | 484 |
+| +15 | Next tick would reach the floor: **rolls** | 48.67 / 2 = 24.33 | 0 | |
+| +16.. | Rolling, -1 per tick (≤ 25) | 23.33, 22.33, ... | 0 | |
+
+Horizontal travel 68.56, -24.94 per tick = 73 along yaw 1251 (110°). The fuse counted 90 → 0
+in 90 ticks, life 150 → 60. A second throw after looking up 60.07 units (`inv+0x178`):
+forward 72, vertical **-7**: `vy = -(sin(pitch) · speed)` truncated (−6.69 → −7), forward
+`cos · speed` truncated (72.69 → 72).
+
+**Its direction is the view's**: `projectile_aim` gives a grenade (type 0x13F3) and the player's
+rocket the thrower's body angles (`+0x228` pitch, `+0x22C` yaw, `0x80044EF0`), and in the
+grenade stances (6, 9) those are the view's angles: measured, the soldier's `+0x228` equalled
+`inv+0x178` (60.07) and the grenade flew along the view yaw. The start is the hand point
+(`gun_points` on the arms model's bones); the GTE rotation truncates toward minus infinity.
+The replay's throw (~12° down) is the same rule with the view pitched down.
 
 ### What soldiers do with them
 
@@ -496,14 +547,12 @@ dumps from headless runs are repeatable, but they are not the recorded play past
 
 ## Open
 
-- Door models of other levels (their speeds); what bits 4 and 32 (closing) are sent by.
-- How the player's grenade pitch relates to the view's: the measured throw left at ~12° down
-  with the soldier's pitch at -148 units (-13°); `projectile_aim`'s bones for the grenade
-  model were not read.
-- A throw into open space was not watched (the replay's throws hit a wall or rolled at the
-  player's feet).
-- 0x1774 and 0x1771 seen in play; whether 0x1405 is the dog (no dump shows its model).
-- The colour cycles' exact use (`g_level+0xDC`, lights or palette).
+- 0x1771 (1:1's spinning prop, model 0xC2E34354) and 0x1774 (9:4's V2) not watched in play;
+  whether 0x1405 is the dog (no dump shows its model).
+- The toggling door scripts (open with 16, close with 4: 360 of 900) not watched in play.
+- The colour cycles: the world drawer `0x80089D68` takes `g_level+0xDC` as a table (to the
+  scratchpad, `0x1F8003C8`), so world polygons tagged with a cycle are drawn in its current
+  colour (`+0xC`, inferred: flickering lamps); which TSP field picks the cycle wasn't read.
 
 ## Names
 

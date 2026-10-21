@@ -41,6 +41,8 @@
 
 # --- LEVEL.BIN ---
 80039D90 overlay_base
+8003D218 fire_stance_table          # fire_gun: stance -> aim at the crosshair point (0,1,7,8) or not
+8003D240 fire_weapon_table          # fire_gun: weapon -> bullet / SMG bullet+climb / rocket / pellets
 8003DC10 leaf_sweep                 # segment vs a leaf's triangles
 8003E3F0 chunk_sweep                # the k-d tree walk of one chunk's collision
 8003EB44 chunk_collision_setup      # TSP collision block -> chunk entry
@@ -86,6 +88,10 @@
 80044470 projectile_think           # life, fuse, gravity, rolling, explosion at fuse 0
 80044D18 angles_from_to
 80044E0C gun_points                 # two points on the gun from the model's bones +0xD4/+0xD6
+80044EF0 copy_shooter_angles        # projectile angles = shooter's +0x228 (grenades, player rockets)
+80045084 projectile_aim_at_point    # start inv+0x198, angles to the aim point inv+0x1A4; mask off until there
+80045160 copy_camera_pos            # scoped shot start = the camera entity's position
+80045184 angles_to_camera_look      # scoped shot angles toward the camera's look point
 800451B0 projectile_aim             # start and angles: camera (scoped) or along the barrel; enemies: at the target
 8004532C projectile_create          # +0xF8 damage
 80045808 grenade_spawn              # (thrower, model, bone a, bone b, fuse, speed, target, ...)
@@ -197,6 +203,7 @@
 80058C38 op_event_0d                # -> sop_event
 80058C58 op_event_42                # -> sop_event
 80058C78 sop_event                  # ops 0x0D/0x0E/0x42: store an event
+80059718 sop_property               # model-script op 0x1F: set a field by selector (3: eye height +0x2D4)
 80059B8C sop_turn                   # op 0x25: angles += operands
 8005A0C8 sight_test                 # head-bone facing, FOV brain +0xB4, range, blockers, world sweep
 8005A574 op_query                   # op 0x2E
@@ -311,6 +318,7 @@
 8006A3BC offscreen_keep             # (e, camera): within the far distance; cap rule: behind and 3501+ away -> despawn now
 8006A570 cull_countdown             # off screen and not near the player: +0x290 -= 1
 8006A5B4 entity_draw_model          # pose (unless off screen and seen before) and draw
+8006A8FC model_by_index             # [0x8009EC58] + i * 0x100
 8006A910 model_find                 # hash -> index in g_models
 8006A96C model_instance_init        # (inst, model, flags, entity): pose buffers, hit parts from model +0xC0
 8006B350 entity_defaults
@@ -371,8 +379,12 @@
 80075E7C role_axis_curve
 80075FB4 role_axis                  # (port, role, ?)
 80076008 role_axis_alt              # (port, role_axis_of, role_cfg, ?): pitch from the forward stick
+80076094 look_mode_set              # (port, mode) -> g_look_mode
 800760AC look_mode                  # (port): 0x8009E3A0[port], 0 spring, 1 free, 2 free when aiming
 80076118 mp_pad_config              # as player_pad_config; Up+Triangle+shoulders drops a pickup (debug)
+80078350 plane_crosses_capsule      # walker plane test before the push
+8007848C walls_gather_leaf          # triangles of a leaf near the walker -> planes
+800787C0 walls_gather_chunk
 80078BCC capsule_plane_dist
 80078C4C wall_push                  # push a walker out of a plane, horizontally (the PsyQ match "UserFuncExecute" is wrong)
 80078D1C wall_first_hit
@@ -449,6 +461,7 @@
 80088744 stars_init                 # 255 stars, height from g_level+0x58F
 800888C4 sky_init                   # moon from g_level+0x594/+0x596
 80088980 sky_gradient_init          # 16 POLY_G4 strips, colour g_level+0x58C..+0x58E
+80089D68 tsp_draw_chunk             # world drawing; 4 x 0x800AA168 = the near-subdivision distance
 8008A6A8 music_ring_init
 8008A6D8 music_transfer_done        # rewinds at the end of the file
 8008A7B8 music_irq
@@ -566,6 +579,7 @@
 800A012C g_music_left               # bytes of the file still to play
 800A0130 g_spu_alloc
 800A0134 g_music_ring               # two SPU addresses, +0x1C the half to refill
+800AA168 g_subdiv_dist              # 250 standing, 300 crouched; x4 = polygons subdivided nearer
 800AA178 g_pvs_b                    # camera leaf's mask B; nodes need +0x10 & this
 800AA17C g_pvs_a                    # camera leaf's mask A; nodes need +0x14 & this
 800AA184 g_chunk_loading            # slot being streamed (-1: none), skipped by draw/collision

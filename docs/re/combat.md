@@ -12,7 +12,8 @@ fire through the same spawners. With an empty clip it does nothing.
    - Most guns: one bullet, `bullet_spawn` (`0x80045A78`), type `0x13F6` (weapon 11: `0x13F7`).
    - Shotgun: six pellets, `0x80045F14` (type `0x13F7`, damage 2.0 each).
    - Bazooka: a rocket, `0x80045CA0` (type `0x13F1`).
-   - Weapon 11 also climbs recoil (`inv+0x50` += 1.0, up to 1.0) and has spread 2^11.
+   - Weapons 1, 6 and 11 (the SMGs and the BAR) also climb recoil (`inv+0x50` += 1.0, up to
+     1.0) and have spread 2^11 (measured: player.md, Weapons in play).
 4. **Noise.** `0x8004D8DC(soldier+0x152, 0, 100, 3)` (7 for some weapons): the shot is heard by
    enemies (enemies.md, to come).
 5. **Effects.** Muzzle flash (`0x8006DCA0(inv+0x1D4)`), the weapon's sound (`0x80041CE8`;
@@ -77,7 +78,7 @@ Bullets are entities, not instant rays:
 - Speed: random 600–669 units per tick (`+0x224`), along the bullet's angles (`+0x228`: pitch,
   yaw); the player runs at about 35 per tick. At 3000 units a bullet needs about 5 ticks (0.17 s): a moving target can
   leave the line of fire after the trigger was pulled on it.
-- Spread: none, except weapon 11: ±2^11 ×512 (16.16) added to pitch and yaw, ±16 angle units
+- Spread: none, except weapons 1, 6 and 11 (and the shotgun's pellets, ±64): ±2^11 ×512 (16.16) added to pitch and yaw, ±16 angle units
   (4096 per turn): ±1.4°.
 - Tracer: `0x8004572C(bullet, 230, 180, 70, 40, 20, 10)`.
 - Touch handler (`bullet+0x37C`) = `bullet_touch` (`0x80043AD4`).

@@ -162,8 +162,29 @@ Action 3 (L2) **toggles** (`inv` flag 2):
 - Jumping is not possible while crouched (the jump checks flag 2). A ladder stands you up.
 - The easing has a quirk for targets not a multiple of 20 away (only -150): within 18 of the
   target while moving crouched, the step is `current - target` (away from it), then ±20.
-- Crouching also raises `0x800AA168` to ≥ 300 (standing: ≤ 250), a value the world renderer
-  (`tsp_draw`) reads; not the projection (that stays 400).
+- Crouching also raises `0x800AA168` to ≥ 300 (standing: ≤ 250; measured 250 → 300 → 250).
+  It is a **drawing distance only**: the world drawers (`0x80089D68` in LEVEL.BIN, `0x80010B60`
+  in the exe) copy it to the scratchpad and flag the polygon vertices nearer than 4× it (1000
+  standing, 1200 crouched; a second flag under 200), which picks the polygons to subdivide
+  near the camera (inferred: against texture warping close to the low camera). No gameplay
+  effect; the projection stays 400.
+
+**The eye height `+0x2D4`** (the collision capsule's height, below; not the camera's) is set by
+(`fn.py grep` for stores to `+0x2D4`, then watched in 1:1):
+
+| Who | Value | When |
+|---|---|---|
+| `player_soldier_init` | 240 | level start |
+| `model_instance_init` | the model's `+0xA0`: **188** for every player arms model | **every weapon switch** (`weapon_draw` swaps the soldier's model) |
+| `weapon_draw` | 80 | the switch, while crouched |
+| `player_crouch_done` / `player_stand` | 80 / `inv+0x34` (240) | crouch reached / stood up |
+| `player_update` | 80 | crouched while riding a parent |
+| the model-script op 0x1F (`property`, selector 3) | any | no player script uses it |
+
+Measured: 240 at start; 188 after the first switch; 80 crouched; 240 after standing; 188 again
+at the next switch, 80 if switched while crouched. So the player's capsule is 52 units shorter
+from his first weapon switch until he next crouches and stands (the 1:3 session's 188). The
+camera's height is unaffected (`camera_obj+0x94` stays -240).
 
 ## Jumping and falling
 
@@ -189,6 +210,18 @@ the input again).
 **No fall damage** (code): nothing in the landing or the player's `world_contact` hurts; the
 only height death is y > +5000 (falling out of the world).
 
+**Ceilings don't stop a jump.** Measured in 1:3 (`tools/recon/mv_column.py` found a flat ceiling
+491 above the floor at (-3246, 2596), walked there, jumped): the full 24, 22, ..., 2 rise, apex
+156, the same 23-tick arc as in the open, and no contact flag (`+0x38` 0x8000) at all. Read from
+the code: `walker_slide`'s push-out is horizontal only, so a flat ceiling (no horizontal normal)
+moves nothing; and `entity_move`'s one ceiling branch (on a wall contact: if the contact normal's
+vertical part ≥ 0x801, the move went up, **and** the vertical speed is positive (down): vy = 0,
+y back) needs a falling speed while moving up, which only a rolled entity could have: **dead for
+the player**. With the capsule's top 444 above the feet standing (levels.md), a jump pushes it
+into ceilings lower than ~600; the camera (eye) can reach 396 above the floor, so a ceiling
+lower than that would be seen through (inferred; none tested). A sloped ceiling's horizontal
+normal does push the walker sideways like a wall.
+
 ## Steps, slopes, edges
 
 On the ground, after each move (`entity_move` with `floor_find`, levels.md): the floor search
@@ -201,19 +234,29 @@ takes floors below the feet or at most **32** above them. Then, with `d` = feet 
 - No floor at all (-0x7FFF): the move is undone (the player can't walk off the collision
   mesh).
 
-The steep flag (floors steeper than ~30°, `0x80060138`) is not used by `entity_move`. Inferred:
+The steep flag (floors steeper than ~30°, `floor_in_chunk` `0x80060138`) is **read by nothing**:
+it is the fourth halfword of the normal that `floor_find` copies out, and none of its four
+callers (`entity_move`, `destructible_spawn`, the pickup drop `0x800833A0`, `obj1774_think`)
+reads that halfword back (`fn.py show`; their stack copies are never loaded). Inferred:
 how steep a slope can be climbed is set by the 32-unit step rule and the wall push-out of
 `walker_slide`, not by an angle; at full run a rise of more than 32 per 34.9 (about 43°) per
 tick finds no floor ahead. Observed: walking crouched up a gentle slope in 1:1, every fourth
-tick the soldier was pushed back ~25 units and down 10 (the slide's horizontal push-out against
-the slope ahead, inferred); standing on another slope it climbed smoothly.
+tick the soldier was pushed back ~25 units and down 10; standing on another slope it climbed
+smoothly. **Cause** (read from `walker_slide`'s plane test `0x80078BCC`, inferred, not
+re-measured): a plane facing up is tested at the capsule's centre, `eye - 16` above the feet,
+less the radius (100). Standing that point is 224 up, and a floor plane through the feet is
+only "penetrated" when steeper than ~63° (224·cos θ < 100). Crouched it is 64 up, so **every
+sloped floor triangle within the radius counts as a wall**, and the push-out moves the soldier
+horizontally along that triangle's normal, downhill; flat floors (no horizontal normal) push
+nothing. The floor snap then puts him back on the slope, lower: the "back 25, down 10".
 
 ## Collision shape
 
 The soldier is a walker (flags A 0x8; `walker_slide`, levels.md): a vertical capsule of radius
 `+0x2EC` = **100** (the 1:3 dump; soldiers have 60), whose height comes from the eye height
 `+0x2D6` (centre `eye - 16` above the feet, half-height `eye - 20` in `walker_slide`; the shape
-is detailed in levels.md): 240 standing, 80 crouched. Walls push it out horizontally (it slides
+is detailed in levels.md): 240 standing, 80 crouched, **188 standing after any weapon
+switch** (Crouching, the eye height). Ceilings never stop it (Jumping and falling). Walls push it out horizontally (it slides
 along them; measured: about 32 per tick along a wall hit at an angle). The entity sphere
 (touching pickups, triggers, enemies) has radius `+0x2E8` = 200 and centre 100 above the feet
 standing, at the feet crouched.
@@ -262,13 +305,16 @@ The soldier's body angles (`+0x228`, `+0x22C`) follow the view through `aim_upda
 in stances 7 and 8, so the gun trails a fast turn; in the other stances they are set to the
 view's angles directly. Movement always uses the view yaw `inv+0x184`.
 
-Pitch `inv+0x178` depends on the look mode `0x8009E3A0[port]` (an option; 1 in both dumps):
+Pitch `inv+0x178` depends on the look mode `0x8009E3A0[port]` (an option, set by the pad
+layout code `0x80076240`; 1 in both dumps). Modes 0 and 2 were measured in 1:1 by poking it
+(`--poke-on-call 80044470:8009E3A0=M`, the first projectile's think, after firing once), with
+the right stick held up (`--stick F:ry=0:60`):
 
 | Mode | Pitch |
 |---|---|
-| 0 | Look spring: `pitch = (3·pitch - role)/4`, i.e. follows the stick's position and returns when released (at most ±60 units: 5°). L3 toggles a lock (`inv` flag 0x10) |
+| 0 | Look spring: `pitch = (3·pitch - role)/4`, i.e. follows the stick's position and returns when released (at most ±60 units: 5°). Measured: 14.94, 26.15, 34.55, ... → 59.75 held; × 3/4 per tick back to 0 when released. L3 toggles a lock (`inv` flag 0x10): **the pitch freezes and the stick is ignored** until L3 again (measured). While aiming the pitch is free (+11.21 per tick, the aiming scale); on leaving aim mode it springs back × 3/4 per tick |
 | 1 (default) | `pitch -= role/2` (29.9 per tick at full stick, measured), clamped to ±682 (±59.9°). Center view (action 7, L3) **while held**: `pitch = (7·pitch + 1)/8` while above 160 units (14°), then `(3·pitch + 1)/4` (measured) |
-| 2 | As mode 1 while aiming; otherwise eases back to level as center view does. L3 toggles the lock |
+| 2 | As mode 1 while aiming; otherwise **the stick does nothing** and the pitch eases back to level as center view does (measured: 168.09 → 147.08 (7/8) → 110.31 (3/4) → ... → 0 after leaving aim; a held stick outside aim mode left it at 0). L3 still sets flag 0x10 (no visible effect) |
 
 No pitch scaling applies outside aiming but the aim friction and the scope.
 
@@ -306,7 +352,9 @@ kick  = kick > 0 ? kick - 0.5 : (kick < -0.125 ? kick + 0.125 : 0)
 climb = max(climb - 0.125, 0)
 ```
 
-Only weapon 11 sets `climb` (+1.0 per shot, at most 1.0, `fire_gun`), so only it kicks.
+Weapons 1, 6 and 11 (the SMGs and the BAR) set `climb` (+1.0 per shot, at most 1.0,
+`fire_gun`'s case for them), so only they kick (measured on 1: 14.5 pixels after 20 rounds held;
+player.md, Weapons in play).
 
 ### Being hit
 
@@ -338,8 +386,11 @@ When health reaches 0 (`apply_damage` sets contact flag 0x4000), the next `playe
   eye and look point follow the animation's bones), easing shift 3; its variable 2 picks the
   death animation: 30 if crouched, 20 if killed by an explosion (type 0x31), otherwise 50%
   10–12, 50% 0–2. The soldier copies the camera's position and angles every tick.
-- When the camera script ends: a fade (50 ticks) and the level is lost (`0x8009C840` |= 2).
-  Without a camera animation: only a fade.
+- When the camera script ends: a 50-tick delay, then a 15-tick fade (which the game shows as
+  a cut; hud.md, Fades), and the level is lost (`0x8009C840` |= 2). Without a camera
+  animation: only the delay and fade.
+- What follows (the level restarts in place, no file reload, unlimited retries) is in
+  [shell.md, Inside LEVEL: the loop, pausing, dying](shell.md#inside-level-the-loop-pausing-dying).
 
 ## Debug and options seen on the way
 
@@ -354,12 +405,11 @@ after 30 ticks of `inv+0x134` with the velocity held at 0):
 
 ## Open
 
-- Ceilings: `walker_slide` only pushes horizontally; whether a jump into a ceiling stops
-  (`entity_move`'s check on `dy ≥ 0x801`) wasn't tested.
-- What reads the steep-floor flag, and the crouched slope push-back's exact cause.
-- The soldier's eye height `+0x2D4` changing in play (188 in the 1:3 dump): who sets it.
-- `0x800AA168` (250 standing, 300 crouched, grows with zoom): what the renderer does with it.
-- Look modes 0 and 2 weren't exercised.
+- The crouched slope push-back is explained from the code, not re-measured against a slope's
+  normal; the walkers' plane gathering (`0x8007848C`, `0x80078350`) wasn't read in full (which
+  triangles count as near).
+- A ceiling lower than the eye (396 above the floor at a jump's apex): whether the view passes
+  through it (no such place was looked for).
 
 ## New names
 
@@ -392,4 +442,23 @@ after 30 ticks of `inv+0x134` with the velocity held at 0):
 8009E3AC g_axis_curve               # 128-byte stick response curve
 800B74B0 g_role_axes                # analog role config, port*0xA0 + role*0x28
 800B75F0 g_role_buttons             # digital role config, port*0xD0 + role*0x34
+```
+
+## New names (2)
+
+```
+80045084 projectile_aim_at_point    # start inv+0x198, angles to the aim point inv+0x1A4; mask off until there
+80044EF0 copy_shooter_angles        # projectile angles = shooter's +0x228 (grenades, player rockets)
+80045160 copy_camera_pos            # scoped shot start = the camera entity's position
+80045184 angles_to_camera_look      # scoped shot angles toward the camera's look point
+80059718 sop_property               # model-script op 0x1F: set a field by selector (3: eye height +0x2D4)
+80089D68 tsp_draw_chunk             # world drawing; 4 x 0x800AA168 = the near-subdivision distance
+80076094 look_mode_set              # (port, mode) -> g_look_mode
+8006A8FC model_by_index             # [0x8009EC58] + i * 0x100
+8007848C walls_gather_leaf          # triangles of a leaf near the walker -> planes
+80078350 plane_crosses_capsule      # walker plane test before the push
+800787C0 walls_gather_chunk
+800AA168 g_subdiv_dist              # 250 standing, 300 crouched; x4 = polygons subdivided nearer
+8003D218 fire_stance_table          # fire_gun: stance -> aim at the crosshair point (0,1,7,8) or not
+8003D240 fire_weapon_table          # fire_gun: weapon -> bullet / SMG bullet+climb / rocket / pellets
 ```
