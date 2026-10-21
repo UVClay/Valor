@@ -151,6 +151,7 @@
 80053464 show_text                  # level built-in 8: a message-table text on screen
 8005351C record_has_tag             # level built-in 9
 8005359C record_tags_match          # filter 5 of register_msg
+800536F4 entity_test                # (entity, object, n): 0 is the player (flags A 1), 1 is dead (flags A 0x20000000)
 8005372C objective_add
 8005380C objective_remove
 800538B0 objective_complete
@@ -257,13 +258,25 @@
 80064374 level_entry                # LEVEL.BIN entry point
 8006450C overlays_clear
 80064550 overlays_draw              # 12-entry list at 0x8009C844 (empty)
+8006488C record_prop_kind1          # push_property readers, by record kind (levels.md, Record properties)
+80064AE4 record_prop_kind2
+80064EC8 record_prop_kind3
+800654E8 record_prop_kind4
+800658A0 record_prop_kind5
+80065B24 record_prop_kind6
 80065F34 push_property              # level VM: a property of an entity's record, by the record's kind
 80066000 script_var_addr            # (entity, object, index): entity variables at record+0x20
 8006602C script_of                  # (entity, object): the script id from the record (+0x64, or +0x78 for kind 3)
+80066110 level_scripts_init         # g_level_scripts from the header, the built-in table
 800662CC send_event
 80066318 msg_run_one
 800663B8 msg_run_all
 800664A0 script_run_message         # (entity, object, message): runs that handler
+800665BC msg_start                  # (entity, object): script_run_message(entity, object, 0)
+800665FC msg_entity_removed         # (entity): message 0x1A to its script, then drops its subscriptions
+80066790 msg_lists_init             # one subscription list per message id; the node pool at 0x800AD460 (1024 x 0x24)
+8006692C msg_register               # (msg, entity, object, filter, handle, a, b, pc, script): add a subscription (0x24-byte node)
+80066C14 msg_unregister             # the same arguments; filter 0 removes all of this entity's/object's for the message
 80066EA0 msg_send                   # subscriptions -> the queue
 80066EA8 msg_filter_dispatch        # message subscriptions by filter type (1: has_tag, 5: tags_match)
 800670E8 msg_enqueue
@@ -271,6 +284,29 @@
 8006949C align_up
 800694C8 script_handler_get         # a script's Nth handler {message, offset}
 80069514 lvl_register_msg           # built-in 0
+80069714 bi_unregister_msg          # level built-in 1
+800698F0 bi_send                    # level built-in 2: broadcast from this script
+80069968 bi_send_to                 # level built-in 12: broadcast, only to the target's record's subscriptions
+80069A08 bi_set_flags               # level built-in 3 -> 0x800660F4 (entity +0x40 |=)
+80069A74 bi_activate                # level built-in 4 -> record_activate
+80069ACC bi_remove_entity           # level built-in 5
+80069B14 bi_explosion               # level built-in 6 -> lvl_explosion
+80069B88 bi_sound                   # level built-in 19
+80069CC4 bi_sound_stop              # level built-in 20
+80069D04 bi_level_set               # level built-in 13
+80069D5C bi_entity_test             # level built-in 7: the level function table 0x80098630
+80069DEC bi_objective_add           # level built-in 14
+80069E44 bi_objective_remove        # level built-in 15
+80069E84 bi_objective_complete      # level built-in 16
+80069EC4 bi_objective_is_complete   # level built-in 17
+80069F2C bi_world_anim_step         # level built-in 18
+80069F6C bi_world_anim_set          # level built-in 21
+80069FC4 bi_show_text               # level built-in 8
+8006A038 bi_has_tag                 # level built-in 9
+8006A0C8 bi_tags_match              # level built-in 10
+8006A184 bi_set_home                # level built-in 11
+8006A204 msg_still_subscribed       # a queued context runs only if its subscription still exists
+8006A570 cull_countdown             # off screen and not near the player: +0x290 -= 1
 8006A5B4 entity_draw_model          # pose (unless off screen and seen before) and draw
 8006A910 model_find                 # hash -> index in g_models
 8006A96C model_instance_init        # (inst, model, flags, entity): pose buffers, hit parts from model +0xC0
@@ -299,13 +335,20 @@
 800730D4 enemy_drops_update         # weapon block +0x49C: falling particles that lie on the floor (blood, inferred)
 80073BA8 particles_spawn            # type 0x31 particle entity, no collision
 80074A2C mp_player_death            # drops a pickup at the body (mp_drop_spawn)
+80074BB8 record_spawn_type          # (type, pair): an entity of that type for the record (the player, ladders), message 0
+80074C54 record_spawn_model         # kinds 2, 3, 6: spawn_from_model, message 0
+80074CE8 record_spawn_pickup        # kind 4: pickup_spawn, its model script, message 0
+80074E10 record_enter_kind0         # kind-0 records by class: level end, chunk streaming, ladder
 80074EE8 spawn_queue_push
 80074F9C spawn_queue_run_one
 80075034 spawn_queue_run_all
 8007505C record_spawn               # by kind: template (+0x60/+0x74) -> model -> entity; kind 4 a pickup
 80075118 entity_leave_ground        # +0x284 = 0
+80075210 records_start_scripts      # message 0 to every record of kind 1..6
 8007529C entity_records_register    # the BSD entity table
 8007540C paths_parse                # BSD header +0x5A0 -> g_paths
+800754CC player_start_record        # the 0x8877B646 record with +0x34 == player number
+80075684 records_clear_state        # every pair's state &= ~3 at level start
 8007570C action_held                # (port, action)
 80075778 action_pressed             # (port, action)
 800758B4 role_button_set_speed      # (port, role, n, mode): mode 4 max >> n, 2 restore
@@ -358,6 +401,9 @@
 800824D0 model_render               # skeletal models -> 0x80082948 -> skinning
 80082E90 health_pickup_touch        # +13 / +32 / +64, capped at 128
 800830BC ammo_pickup_touch
+800832C0 item_pickup_touch          # pickup kinds 15..19: messages 0x2F, 0x30, 0x31, 0x69, 0x6A
+8008335C pickup_kind_find           # hash -> table index and model hash
+800833A0 pickup_spawn               # (record, kind hash): the type-101 entity from the table at 0x8009E8E8
 80083D30 record_contains            # (pos, ?, record pair): the record's volume: sphere, cylinder, box
 80083EF0 record_enter               # +0x38 / +0x40 message lists, kind 0 by class
 8008406C record_leave               # +0x3C / +0x44
@@ -383,6 +429,7 @@
 80086F24 bsd_reloc_vtx_tables       # +0x57C -> +0x584
 80086F98 zones_parse                # BSD +0x598 -> g_zone_records
 80087080 model_relocate
+80087294 player_spawn               # the camera entity and the player's soldier from the player start
 80087308 level_load                 # reads the TAF and BSD, relocates, builds spawners
 80087FA0 casing_think
 80088040 casing_spawn
@@ -437,6 +484,7 @@
 80098624 g_bPrimaryObjectivesComplete
 80098628 g_msg_line_y               # show_text's line: 120..156, +12 per new message
 8009862C g_msg_last                 # last message shown by show_text
+80098630 g_level_functions          # entity_test's table: 0x800539A8 is_player, 0x800539B4 is_dead
 80098984 g_chunk_count
 80099AB8 g_dyn_frames               # per dynamic group (< 99): current frame, 0xFF unset
 80099B20 g_dog_count
@@ -465,6 +513,9 @@
 8009CC64 g_level                    # the BSD level header
 8009CC74 g_music_started
 8009D5AC g_level_scripts
+8009D5B0 g_msg_subscriptions        # per message id, the list of subscription nodes
+8009D5B8 g_msg_head                 # queue read index (0..127)
+8009D5BC g_msg_tail                 # queue write index
 8009D5C0 g_level_builtins           # 22 level script built-ins (levels.md)
 8009D61C g_update_stamp
 8009D620 g_hit_list                 # 12-byte {entity, distance, part, done}, nearest-first bullet hits

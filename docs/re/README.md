@@ -12,6 +12,7 @@ combat, enemies, levels. Each document says how its claims were checked.
 | [soldier.md](soldier.md) | The enemy soldier's behaviour scripts read into plain behaviour: alerting, combat, cover, grenades, alarms, 2:1's disguise |
 | [enemy_types.md](enemy_types.md) | Every actor with a brain across the game (soldier, dog, mounted gun), each level's soldier script set and what it adds, witnesses, script events |
 | [levels.md](levels.md) | Level files, the level header, entity records, spawners |
+| [messages.md](messages.md) | Every level message id: who sends it, who handles it, what it means; the subscription filters and context slots |
 | [animation.md](animation.md) | Skeletons, animation frames, playback and blending, root motion, hit spheres from the pose |
 | [movement.md](movement.md) | The player's movement and camera: speeds, crouch, jump, steps and falls, turning, aim mode, use, death |
 | [formats.md](formats.md) | Every file type on the disc (BSD, TSP, TAF, VB, RSC, TIM, STR) and what a new engine needs to load a level |
