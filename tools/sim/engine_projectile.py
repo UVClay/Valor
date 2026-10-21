@@ -1098,23 +1098,37 @@ def bullet_touch(eng, e, other):
     o = m.u32(e + 0x388)
     if handle_same(eng, o + 0x54, other) or m.s32(other + 8) in PROJECTILE_TYPES:
         return 0
-    if not m.u32(e + 0x10) & 4:
-        eng.note("bullet_touch without a sweep (sphere_vs_object_planes) not implemented")
-        return 0
-    from engine_planes import projectile_planes
-    hit = projectile_planes(eng, e, other)
+    swept = m.u32(e + 0x10) & 4
+    if swept:
+        from engine_planes import projectile_planes
+        hit = projectile_planes(eng, e, other)
+    else:
+        # a sphere (grenades): sphere_vs_object_planes, its normal kept
+        from engine_planes import sphere_vs_object_planes
+        r, nrm = sphere_vs_object_planes(eng, e, other)
+        hit = (None, nrm, None) if r else None
     if hit is None:
         return 0
     res = 0
     if m.s32(other + 8) != 0x1777:
         res = 1
         point, normal, _ = hit
-        for k in range(3):
-            m.w32(e + 0x20C + 4 * k, s32(point[k] << 16))
-            m.w16(e + 0x364 + 2 * k, s16(-normal[k]))
+        if swept:
+            for k in range(3):
+                m.w32(e + 0x20C + 4 * k, s32(point[k] << 16))
+                m.w16(e + 0x364 + 2 * k, s16(-normal[k]))
+        elif normal is not None:
+            for k in range(3):
+                m.w16(e + 0x364 + 2 * k, normal[k])
         if m.u16(o + 0x38) & 0x100:
-            eng.note("explosive round's hit on an object not implemented")
-            eng.remove(e, "explosive round")
+            for k in range(3):
+                m.w16(e + 0x364 + 2 * k, 0)
+            from engine_explosion import explosion_spawn, explosion_sound
+            x = explosion_spawn(eng, e, 6, 6, 0x4B, 0x10000, 0x1000, 0x40000, 5, 0)
+            if x and m.u32(other + 0xC) & 0x10000000:
+                m.w32(x + 0x10, m.u32(x + 0x10) | 0x100000)
+            explosion_sound(eng, e)
+            eng.remove(e, "explosive hit on an object")
             return 1
         if m.u32(other + 0x10) & 0x4000:
             impact_sound(eng, e)
@@ -1126,8 +1140,9 @@ def bullet_touch(eng, e, other):
             snd = (eng.rand.draw(*FN["hit"]) >> 15) + 0xC
             eng.audio.play(0, snd, e, 0x20000, 0, 0x10000, 0x4CCD, 0, 0, 0, 0)
         eng.remove(e, "bullet hit an object")
-    from engine_combat import call
-    call(eng, "touch", m.u32(other + 0x37C), other, e)
+    if swept:
+        from engine_combat import call
+        call(eng, "touch", m.u32(other + 0x37C), other, e)
     return res
 
 

@@ -104,6 +104,140 @@ def segment_box(eng, a, b, o):
     return [s16(x) for x in pw], [s16(x) for x in nw], hit[2]
 
 
+def rot_local(m, o, v):
+    """0x8004ADC8: a vector into the object's frame (RotMatrixYXZ(-angles), GTE >> 12, the low
+    halves kept)."""
+    import brain_sim as bs
+    r = bs.rot_yxz(s16(-m.s16(o + 0x22A)), s16(-m.s16(o + 0x22E)), s16(-m.s16(o + 0x232)))
+    mac, _ = gt.mul([r[0:3], r[3:6], r[6:9]], [s16(x) for x in v], sf=12)
+    return [s16(x) for x in mac]
+
+
+def sphere_vs_object_planes(eng, e, o, force=0):
+    """sphere_vs_object_planes (0x8004B6DC, e against the object o's planes): returns (flags, the
+    world normal of the last side pushed against): 1 it came to stand on top, 2 pushed out of a
+    side. Its sphere centre (+0x2E0), feet (centre x, z at its y) and head (its y - +0x2D6) and its
+    velocity (+0x27C.. + the integer parts of the strafe and vertical speeds and of forward +
+    local forward, turned by its matrix: the player's (0, view yaw, roll) scaled; or, all zero,
+    this tick's move) are taken into the object's frame. Per plane: d = n.centre >> 15 - dist,
+    and the feet's (floor-like planes, ny < 0) or head's distance; 'near' if d < 0, d within the
+    sphere radius +0x2E8, or within the velocity's size (max + (mid + min) / 4); 'behind' if
+    d < 0; 'within' if the feet/head distance is at most +0x3C8. A top plane (flags 1), moving
+    down or not, near, with the masks satisfied (behind & +0xC == +0x10, near & +0x14 == +0x18):
+    stands on it (y on the plane, vy 0, attach bits 1 and 4 and the riding handle +0x2C, on the
+    ground; the object's +0x18 | 8). A side (flags 2), with the velocity non-zero (or forced),
+    near, in front (d >= 0), the masks and 'within' too, overlapping by +0x3C8 - the feet/head
+    distance > 0 (or forced), the centre's local y not below the box: pushed out by the overlap
+    along the normal (the object's matrix; unless forced), and if moving into it (velocity . n <
+    0, or forced): +0x38 | 0x8000 (flags 8: | 0x40 and the object's damage when +0x48 <= 0 for
+    flags A & 5), an up-facing side under a falling or level mover pushes it up (in the air) and
+    stops its fall (the object's +0x18 | 0x10), its speeds 0, the world normal kept."""
+    m = eng.m
+    if not m.u16(o + 0x2EE):
+        return 0, None
+    import brain_sim as bs
+    res, behind, within, near = 0, 0, 0, 0
+    lst = m.u32(o + 0x300)
+    cx, cy, cz = (m.s16(e + 0x2E0 + 2 * k) for k in range(3))
+    y = m.s16(e + 0x212)
+    P1 = to_local(m, o, [cx, cy, cz])
+    P2 = to_local(m, o, [cx, y, cz])
+    P3 = to_local(m, o, [cx, s16(y - m.s16(e + 0x2D6)), cz])
+    v = [s16(m.u16(e + 0x27C) + m.s16(e + 0x21A)), s16(m.u16(e + 0x27E) + m.s16(e + 0x21E)),
+         s16(m.u16(e + 0x280) + (s32(m.s32(e + 0x200) + m.s32(e + 0x220)) >> 16))]
+    if not any(v):
+        v = [s16(m.s16(e + 0x20E + 4 * k) - m.s16(e + 0x25A + 4 * k)) for k in range(3)]
+    else:
+        if m.u32(e + 0xC) & 1:
+            r = bs.rot_yxz(0, s16(m.s32(m.u32(e + 0x388) + 0x184) >> 16), s16(m.s32(e + 0x230) >> 16))
+            sc = [m.s32(e + 0x270 + 4 * k) >> 4 for k in range(3)]
+            R = [[s16((r[3 * i + k] * sc[k]) >> 12) for k in range(3)] for i in range(3)]
+        else:
+            R = [[m.s16(e + 0x340 + 6 * i + 2 * k) for k in range(3)] for i in range(3)]
+        _, ir = gt.mul(R, v, sf=12)
+        v = [s16(x) for x in ir]
+    v = rot_local(m, o, v)
+    if m.u32(e + 0x18) & 1:
+        return 0, None
+    n = m.u16(o + 0x2EE)
+    d1s, d2s = [], []
+    for i in range(n):
+        q = lst + 0x1C * i
+        nv = [m.s16(q + 4 + 2 * k) for k in range(3)]
+        dist = m.s16(q + 0xA)
+        d1 = (s32(sum(nv[k] * P1[k] for k in range(3))) >> 15) - dist
+        P = P2 if nv[1] < 0 else P3
+        d2 = (s32(sum(nv[k] * P[k] for k in range(3))) >> 15) - dist
+        d1s.append(d1)
+        d2s.append(d2)
+        bit = 1 << i
+        if d1 < 0:
+            near |= bit
+            behind |= bit
+        elif m.u16(e + 0x2E8) >= d1:
+            near |= bit
+        else:
+            a = sorted(abs(x) for x in v)
+            if d1 - (a[2] + ((a[0] + a[1]) >> 2)) <= 0:
+                near |= bit
+        if m.s16(e + 0x3C8) >= d2:
+            within |= bit
+    normal = None
+    M = [[m.s16(o + 0x340 + 6 * i + 2 * k) for k in range(3)] for i in range(3)]
+    for i in range(n):
+        q = lst + 0x1C * i
+        bit = 1 << i
+        fl = m.u32(q)
+        nx, ny, nz = (m.s16(q + 4 + 2 * k) for k in range(3))
+        masks_ok = (behind & m.u32(q + 0xC)) == m.u32(q + 0x10) and (near & m.u32(q + 0x14)) == m.u32(q + 0x18)
+        if m.s32(e + 0x21C) >= 0 and fl & 1 and near & bit and masks_ok:
+            num = s32((m.s16(q + 0xA) << 15) - s32(nx * P1[0] + nz * P1[2]))
+            h = int(num / ny)
+            m.w32(e + 0x210, s32(m.s32(o + 0x210) + (h << 16)))
+            m.w32(o + 0x18, m.u32(o + 0x18) | 8)
+            m.w32(e + 0x21C, 0)
+            m.w32(e + 0x18, m.u32(e + 0x18) | 1)
+            m.w32(e + 0x2C, m.u32(o))
+            m.w32(e + 0x18, m.u32(e + 0x18) | 4)
+            if not m.s32(e + 0x284):
+                res |= 1
+            m.w32(e + 0x284, 1)
+        if not (force or any(v)) or not fl & 2 or not near & bit or d1s[i] < 0 or not masks_ok:
+            continue
+        if (within & m.u32(q + 0x14)) != (near & m.u32(q + 0x14)):
+            continue
+        over = s32(m.s16(e + 0x3C8) - d2s[i])
+        if over <= 0 and not force:
+            continue
+        if P1[1] < m.s16(o + 0x2F2):
+            continue
+        c = [s16((s32(nx * over * 2) + 0x8000) >> 16), 0, s16((s32(nz * over * 2) + 0x8000) >> 16)]
+        mac, _ = gt.mul(M, c, sf=12)
+        if not force:
+            m.w32(e + 0x20C, s32(m.s32(e + 0x20C) + (mac[0] << 16)))
+            m.w32(e + 0x214, s32(m.s32(e + 0x214) + (mac[2] << 16)))
+        if not force and s32(v[0] * nx + v[1] * ny + v[2] * nz) >= 0:
+            continue
+        if not fl & 8:
+            m.w32(e + 0x38, m.u32(e + 0x38) | 0x8000)
+        else:
+            m.w32(e + 0x38, m.u32(e + 0x38) | 0x40)
+            if m.s32(e + 0x48) <= 0 and m.u32(e + 0xC) & 5:
+                from engine_combat import apply_damage
+                apply_damage(eng, e, m.s32(o + 0xF8), o)
+        if ny > 0 and m.s32(e + 0x21C) <= 0:
+            if not m.s32(e + 0x284):
+                m.w32(e + 0x1F4, s32(m.s32(e + 0x1F4) + ((s32(ny * over * 2) + 0x8000) & 0xFFFF0000)))
+            m.w32(e + 0x21C, 0)
+            m.w32(o + 0x18, m.u32(o + 0x18) | 0x10)
+        res |= 2
+        for k in (0x200, 0x218, 0x220):
+            m.w32(e + k, 0)
+        _, ir = gt.mul(M, [nx, ny, nz], sf=12)
+        normal = [s16(x) for x in ir]
+    return res, normal
+
+
 def projectile_planes(eng, e, o):
     """0x8004B624: the projectile's path this tick (+0x258 to +0x20C, integer) against the object's
     planes, unless it is attached (+0x18 bit 0)."""

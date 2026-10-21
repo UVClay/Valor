@@ -112,7 +112,9 @@ def walker_move(eng, e):
     ev = log.get("event")
     if ev == "landing":
         res |= 1
+    # entity_move's contact 2: walker_slide's result 2 (free after pushing out) or a slide
+    # along walls (entities.md, the contact word)
     slide = log.get("slide")
-    if slide and slide[0] > 0:
+    if slide and (slide[0] > 0 or slide[1] == 2):
         res |= 2
     return res

@@ -555,16 +555,43 @@ def player_hit_part(eng, e, p, o, op):
 # ---------------------------------------------------------------- touching
 
 def object_planes(eng, e, o):
-    """sphere_vs_object_planes (0x8004B6DC): only objects with plane shapes (+0x2EE) answer."""
-    if eng.m.u16(o + 0x2EE):
-        eng.note("sphere_vs_object_planes not implemented", f"type {eng.m.s32(o + 8):X}")
-    return 0
+    """sphere_vs_object_planes (0x8004B6DC, engine_planes.py): its result flags."""
+    from engine_planes import sphere_vs_object_planes
+    return sphere_vs_object_planes(eng, e, o)[0]
 
 
 def enemy_touch(eng, e, o):
-    """enemy_touch (0x8005291C): against an object's planes (stop, or slide along it)."""
-    r = object_planes(eng, e, o)
-    return 1 if r else 0
+    """enemy_touch (0x8005291C): against an object's planes: on top, forward speed 0 and +0x38
+    | 2; against a side, +0x3C | 2. With brain +4 bit 4 it turns along the side: the yaw =
+    ratan2(normal x, z) -+ 0x400, the side by the sign of (fz dx - fx dz) >> 12 (its forward
+    column, the object's offset; GTE OP) and brain +8 bits 0x10 / 8; brain +8 | 0x20."""
+    from engine_planes import sphere_vs_object_planes
+    import combat_sim as cs
+    m = eng.m
+    r, nrm = sphere_vs_object_planes(eng, e, o)
+    if not r:
+        return 0
+    if r & 1:
+        m.w32(e + 0x200, 0)
+        m.w32(e + 0x38, m.u32(e + 0x38) | 2)
+    elif r & 2:
+        m.w32(e + 0x3C, m.u32(e + 0x3C) | 2)
+    b = m.u32(e + 0x38C)
+    if m.u32(b + 4) & 4:
+        fx, fz = m.s16(e + 0x344), m.s16(e + 0x350)
+        dx = s16(m.s16(o + 0x20E) - m.s16(e + 0x20E))
+        dz = s16(m.s16(o + 0x216) - m.s16(e + 0x216))
+        side = gt.sat16((fz * dx - fx * dz) >> 12)
+        nx, nz = (nrm[0], nrm[2]) if nrm else (0, 0)
+        a = cs.ratan2(nx, nz)
+        if side < 0:
+            a = a + 0x400 if m.u32(b + 8) & 0x10 else a - 0x400
+        else:
+            a = a - 0x400 if m.u32(b + 8) & 8 else a + 0x400
+        m.w32(e + 0x22C, s32(a << 16))
+        eng.matrix(e)
+        m.w32(b + 8, m.u32(b + 8) | 0x20)
+    return 1
 
 
 def player_touch(eng, e, o):

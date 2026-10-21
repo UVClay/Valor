@@ -259,6 +259,38 @@ character's sphere against the object's planes, turned into the object's frame; 
 standing on it, 2 against a side). The shape turns and moves with the door, and nothing stops
 a door: it pushes the player along (inferred: no code makes a door wait).
 
+**`sphere_vs_object_planes`** (`0x8004B6DC(e, object, normal out, force)`), exactly
+(`tools/sim/engine_planes.py`): nothing while e is riding (`+0x18` bit 1). Into the object's
+frame (`0x8004AEA0`, `0x8004ADC8`): e's sphere centre `+0x2E0`, its feet (centre x, z at its
+y) and head (y - `+0x2D6`), and its velocity: `+0x27C..+0x280` plus the integer parts of `+0x218`,
+`+0x21C` and `+0x200 + +0x220`, turned by its matrix (the player's (0, view yaw, roll) scaled by
+`+0x270`, others `+0x340`; GTE >> 12), or, all zero, this tick's move (`+0x20C - +0x258`). Per
+plane i (normal n, distance dist): d1 = (n·centre >> 15) - dist; d2 the same for the feet
+(planes with ny < 0) or the head; bit i is *behind* if d1 < 0, *near* if behind, d1 ≤ the
+sphere radius `+0x2E8`, or d1 ≤ the velocity's max + (mid + min)/4, and *within* if d2 ≤ the
+radius `+0x3C8`. Then per plane, two tests whose masks are (behind & `+0xC`) == `+0x10` and
+(near & `+0x14`) == `+0x18`:
+- **On top** (plane flags 1, e not moving up, near): y = the object's y + ((dist << 15) - nx·cx -
+  nz·cz) / ny (local centre; C division) << 16; vy 0; e rides the object (`+0x18` | 5, `+0x2C`
+  = its handle; the object's `+0x18` | 8); on the ground; result | 1 if it was not.
+- **Against a side** (flags 2; e moving, or forced; near; d1 ≥ 0; also (within & `+0x14`) ==
+  (near & `+0x14`); overlap = `+0x3C8` - d2 > 0, or forced; the local centre y not below the
+  box's bottom `+0x2F2`): pushed out by (n·overlap·2 + 0x8000) >> 16 on x and z through the
+  object's matrix (unless forced); then, if moving into it (velocity · n < 0) or forced: `+0x38`
+  | 0x8000 (flags 8: | 0x40 and, if `+0x48` ≤ 0 and e has flags A & 5, the object's damage
+  `+0xF8`); an up-facing side (ny > 0) under e not moving up stops its fall (pushed up by
+  (ny·overlap·2 + 0x8000) & ~0xFFFF if in the air; the object's `+0x18` | 0x10); speeds
+  `+0x200`, `+0x218`, `+0x220` 0; result | 2; the world normal (object matrix · n) out.
+
+**`enemy_touch`** (`0x8005291C`): result 1: forward speed 0, `+0x38` | 2; result 2: `+0x3C` | 2
+(scripts read it as "bumped into something"). With brain `+4` bit 4 the soldier turns along the
+side: yaw = ratan2(normal x, z) ∓ 0x400, the sign by (fz·dx − fx·dz) >> 12 (its forward column
+against the object's offset, GTE OP) and brain `+8` bits 0x10 / 8; brain `+8` | 0x20. The
+player's touch (`0x8007C030`) rebuilds its matrix after any result. `bullet_touch` without a
+sweep (grenades) uses it too: a hit takes the side's normal into `+0x364`, and a grenade
+(bit 0x100) explodes at once (6, 6, 75), its explosion marked flags B 0x100000 on objects with
+flags A 0x10000000.
+
 ## Destructibles and scenery (0x1770, 0x1777, 0x1778, 0x1779)
 
 `0x8005D678` makes both 0x1770 and 0x1778; `0x8005E7B0` makes 0x1777, 0x1779, 0x177A.

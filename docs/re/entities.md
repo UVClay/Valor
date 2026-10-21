@@ -324,7 +324,8 @@ velocity's z `+0x220` (the player's included; the flinch reads it the next tick)
 
 The contact word `+0x38` for walkers and the player (the next think reads it, then it is
 cleared): `walker_slide`'s result 2 (free after pushing, or nothing hit after a gather) sets
-0x8000; a slide that left walls (its return > 0) sets 0x8000, zeroes `+0x218`/`+0x220` and
+0x8000 and makes `entity_move` return contact 2 (so a soldier's `walker_world_contact` sets
+`+0x3C` bit 2: 1:3 tick 6404); a slide that left walls (its return > 0) sets 0x8000, zeroes `+0x218`/`+0x220` and
 keeps the move's delta (integer, before the slide) in `+0x364..+0x368`; result 1 (still inside)
 undoes the move for the player (position = `+0x3BC`, `+0x284` restored).
 
