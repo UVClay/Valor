@@ -21,7 +21,7 @@ does with them is below.
 |---|---|---|
 | `DATA\MSNm\LVLl\m_l0.TAF`, `m_l1.TAF` | TIM images, then a VAB table: u32 count, then `count` u32 offsets (from the table) to VABs | The level's **sound banks**. `0` German, `1` American (the viewer's reading): the digit is `0x8009A618` (levels.md). Only the soldiers' voice bank differs between the two |
 | `DATA\MSNm\LVLl\Mm_l.VB` | Headerless SPU ADPCM, 16-byte blocks, mono, 22050 Hz, 83..441 s | The level's **music**, streamed |
-| `DATA\MSNm\LVLl\Mm_lA.VB` | The same, an alternate mix: same length (±1%), same first and last seconds, different in between (`snd_vb.py stats` on 1:3: per-second RMS of the difference 1000..3600 against 900..8000 for the music) | Streamed instead of the plain file when `0x80038658` is set; SHELL's audio menu (`maudio.sst`, `0x8003D9D8`) points one of its widgets at that word. Which option it is (the menu has music, effects, stereo and a "dia" item) isn't established |
+| `DATA\MSNm\LVLl\Mm_lA.VB` | The same length (±0.3%), same first and last seconds | The **ambience-only** mix: streamed instead of the plain file when `g_music_alt` (`0x80038658` = `g_game+0x8C`) is set, i.e. the shell's audio option Background = "ambience only" (below) |
 | `MOVIE\*.STR` | MDEC video with interleaved XA audio | Played by the movie player through the CD mixer (`SpuSetCommonCDMix(1)`, CD volume 0x7FFF at init); not part of the level audio |
 
 MSN12 (the two-player arenas, shell.md) has a single bank and only 12:5 has a VB.
@@ -196,7 +196,7 @@ ones at point blank.
 | Effects volume S | `g_params+0xA` (`0x800939FE`) = the shell's setting (`g_game+0x88`, 0..6) × 42 | 0..252, default 168 (4) in every dump |
 | Music volume | `0x8003864C` (also `g_params+0x9`), 0..6 | Voice 0 volume 0, 0x800, 0x1000, 0x2000, 0x3000, 0x3800, 0x3FFF (`music_voice_on`, `0x8008AA38`); default 4 = 0x3000 |
 | Stereo | `g_params+0xF` (`0x80093A03`) = (`g_game+0x84` == 0) | 1 stereo (every dump), 0 mono |
-| Alternate music | `0x80038658` | 0 in every dump |
+| Ambience only | `0x80038658` (`g_game+0x8C`, saved) | 0 music and ambience (every dump), else `Mm_lA.VB` |
 
 The script op `sound` (below) has its own scale for its stereo-fixed mode: S 0 → silent, 1 →
 half, 2 → as is, 3 → double; it compares S with 0..3, so with S = 42·setting only setting 0
@@ -339,6 +339,105 @@ There is **no dynamic music**: one track per level, started by the level script,
 or faded by combat; the only other control is the pause freeze. Ambience comes from the track
 and from sound emitters (the alarm, looping script sounds), not from separate ambient streams.
 
+### The two mixes
+
+`Mm_lA.VB` is the plain track **with the music taken out**: the audio menu's Background
+choice "music and ambience" / "ambience only" (shell.md) writes `g_game+0x8C`, which is
+`0x80038658`; `audio_menu_init` (SHELL `0x8003D9D8`) points its four widgets' value pointers
+(`+0x84`) at `0x80038654` (effects), `0x8003864C` (background volume), `0x80038650` (stereo) and
+`0x80038658`, in the menu's order. LEVEL reads it in `level_set` (`0x80052E4C`) and the level
+start (`0x80062050`) to pick the file.
+
+Checked on the files (`tools/recon/sh2_audio.py mix M L`): projecting the plain track onto the
+`A` track gives a coefficient of 1.00 (1:1, 1:3, 2:1, 5:1; 0.99 for 9:1, 0.93 for 3:2), i.e. the
+plain track is the `A` track unchanged **plus** a layer uncorrelated with it (the music); the `A` track is always
+quieter (whole-track RMS 1850 against 2351 in 1:1, 922 against 1939 in 5:1), the two are
+identical in places (1:3's last 10 s: difference RMS 78, correlation 1.00) and differ through
+the middle (correlation 0.4..0.9 per 10 s). In 3:3 and 7:1 the `A` file is 0.6 s longer and the samples don't
+line up, so the test needs an offset there (not done). Not listened to.
+
+## What the samples are
+
+Measured on the disc files with `tools/recon/sh2_audio.py bank FILE.TAF BANK [OUT]` (length,
+RMS, spectral centroid, zero crossings, an 8-slice envelope; optional WAVs under build/) and
+`sh2_audio.py same` (byte comparison between two banks), then tied to the code and scripts that
+play each id. No speech recognition was available (no whisper/vosk), and nothing was listened
+to: names below that rest only on the sound's shape are marked "inferred".
+
+### Empty slots
+
+Both bank 0 and the voice banks are **fixed id spaces with per-level content**: a level's bank
+holds a real sample only for the ids it needs and a 96-byte stub (12 units of 8 bytes, silence)
+elsewhere. `voice_start` skips anything shorter than 13 units, so **playing a stub does
+nothing**. Some calls do hit stubs: 1:3's level scripts play 0:0x31 (decimal 49, the scripted
+explosion layer) and 0:0x28 (40, with message 243), both stubs in 1:3; 2:1's bank 0 has no 0x09,
+so half of its `explosion_sound` layers are silent; in 1:3 the soldiers' group-15 shouts 0x14,
+0x16, 0x17 are stubs (only 0x15 sounds). A new engine should treat a missing sample as silence,
+not as an error.
+
+### Bank 0
+
+Across all 31 levels (`*1.TAF`; the `0` TAFs have the same bank 0): ids 0x00..0x23 are the same
+sample wherever present (except 0x09 in 2:2/3:1, 0x0F, 0x22 and 0x23 noted below); 0x24 and up
+are per-level, mostly for level scripts. 0x08, 0x0E, 0x39, 0x3A, 0x47 are stubs everywhere.
+
+| Id | Length | What (how known) |
+|---|---|---|
+| 0x00..0x06 | 0.30..0.60 s | Bullet impacts on walls, one at random (`impact_sound`: `rand()·7 >> 15`, so 0..6) |
+| 0x07 | 0.27 s | Unknown: bright and short (centroid 4.8 kHz), in every level; no code or 1:3 script plays it (inferred: a ricochet or metal hit, for some object's script) |
+| 0x09, 0x0A | 1.79, 1.61 s | Explosions (`explosion_sound`). 2:2 and 3:1 carry a shorter 0x09 (0.83 s) |
+| 0x0B | 1.86 s | A third explosion-like sound (low, centroid 1.9 kHz), played at half volume and half pitch (a 3.7 s rumble) by `0x80089174` when its countdown `0x8009EC90` reaches 1 (a screen effect; hud.md) |
+| 0x0C, 0x0D | 0.33, 0.31 s | Bullet hitting a body (`bullet_touch`; 0x0D also in `player_hit_part`) |
+| 0x0F | 0.20..0.31 s | Footstep; five different recordings by level (inferred: the level's main surface) |
+| 0x10, 0x11 | 0.56, 0.47 s | Shell casings landing (`casing_think`) |
+| 0x12 | 0.62 s | Unplayed by code; the same spectrum as the casings (centroid 5.7 kHz, zero crossings 8.2k/s like 0x10) (inferred: a third casing, e.g. a shotgun shell) |
+| 0x13 | 0.08 s | Short chime: the pause menu opening, an alarm starting |
+| 0x14..0x18 | 0.17..0.30 s | Weapon draw/holster: 0x14 pistols, 0x15 SMGs, 0x16 bazooka, 0x17 grenades, 0x18 rifles and shotgun (the weapon table) |
+| 0x19, 0x1A | 0.50, 0.47 s | Body falls (soldier scripts, bank 0; inferred, above) |
+| 0x1B, 0x1C | 0.27, 0.18 s | The player's grunts when hurt |
+| 0x1D | 0.39 s | Played at run time (seen in the replay) from a model script; which one wasn't found |
+| 0x1E, 0x1F | 0.68, 0.43 s | Health pickups (0x1F the small one) |
+| 0x20 | 0.12 s | Ammo pickup |
+| 0x21 | 0.11 s | Pause menu item changed (low click, centroid 0.9 kHz) |
+| 0x22 | 0.22 s | Melee / hit part kind 5 (MSN12 has its own) |
+| 0x23, 0x25, 0x27 | 0.40, 0.23, 0.46..1.21 s | Destructibles by model (objects.md); 0x23 and 0x25 also the helmet / head shot sounds (`enemy_hit_part`). 0x27 differs per level (1:3's script 84 plays it as the break) |
+| 0x24, 0x26, 0x28..0x38 | 0.2..2.5 s | Per level, played by the level scripts (`sound(...)`, decimal ids in `lvs.py` output): 0x29 (41) a door in 2:1, 0x2A (42) doors in 2:2, 0x2D (45) and 0x38 (56) used with `activate` in 2:2/3:2, 0x31 (49) the scripted explosion (two layers, pitch 1.0 and 0.5), 0x33 (51) and 0x37 (55) script events, 0x35/0x36 (53, 54) objective jingles |
+| 0x32 | 0.22 s | The message beep (with on-screen texts); in every level |
+| 0x51 | 1.30 s | 9:4's level start (on voice 0) |
+| 0x52 | 0.46 s | 2:2's objective (`objective_complete(27)` with text 57) |
+| 0x3B..0x50 | | One to three levels each: those levels' own script sounds |
+
+### The voice bank (37 sounds)
+
+Over the 21 levels with a 37-sound bank: ids 0x00..0x06, 0x1A, 0x1B and 0x1F are **the same
+bytes in the German and American TAFs** (`0` and `1`) wherever present (but for a few that
+exist in only one); 0x07..0x10, 0x12, 0x14..0x17, 0x1C..0x1E, 0x22, 0x23 differ between the two.
+That splits the bank into non-verbal sounds and speech. 0x11, 0x13, 0x18, 0x19, 0x20, 0x21 and
+0x24 are stubs in every level. Use from 1:3's soldier
+scripts (`sst.py`, soldier.md for the script numbers), 11025 Hz:
+
+| Id | Length (1:3) | Language | Use |
+|---|---|---|---|
+| 0x00, 0x01 | 0.23, 0.30 s | same | Pain grunts: 45% on a hit (scripts 4, 152, 128) |
+| 0x02 | 0.30 s | same | Not played in 1:3 (inferred: a third grunt) |
+| 0x03 | stub in 1:3 | same | 5% when thrown by an explosion (120, 123), and the sentry's death (198) |
+| 0x04..0x06 | 0.58, 0.64 s, stub | same | **Death cries**: voice group bit 16 (script 74 via 153, 190, 191) |
+| 0x07..0x0C | 0.4..1.5 s (0x0B, 0x0C stubs) | speech | **Barks**: voice group bit 17 (script 74 via 23, 206) |
+| 0x0D..0x0F | 0.43..0.61 s (0x0E stub) | speech | **Alert shouts** (209: 10% each when first alerted near the player) |
+| 0x10, 0x12, 0x1C | 0.4..1.2 s | speech | Not played by 1:3's soldier scripts (inferred: lines for other levels' scripts, e.g. the disguise levels) |
+| 0x14..0x17 | 0x15 0.76 s, others stubs | speech | **Combat shouts**: voice group bit 15 (script 74 via 201, 207, 208: going for an alarm, sentry/strafe shouts) |
+| 0x1A, 0x1B | 0.71, 0.56 s | same | Not voices: quiet noise (centroid 2.8 kHz, peak 9000). 0x1A is the **helmet hitting the floor**: the part table's entry 0 (`0x800980B0`: sound 0x1A, range 1, bank −1 = the helmet model's bank) via `0x80055198`, whose `rand()·range >> 15` is always 0, so 0x1B is never picked |
+| 0x1E | 0.64 s German, stub American | speech | Script 114 (running onto a grenade, soldier.md): a German-only line |
+| 0x1D | | speech | Present in 3 levels only; not mapped |
+| 0x1F | | same | Present in 5 levels; soldier.md's alarm runner "shout 0x1F" (2:x's script 201); being the same in both languages it is a non-verbal call (inferred) |
+| 0x23 | | speech | Script 38 (reload), for kind-2 weapons with bit 3 |
+
+Which of the group's ids a soldier picks depends on script 74's `params` and variable 0x73
+(per mission and level) and a roll; a new engine can take "group → ids" per level from that
+script. The 81-sound banks of the disguise levels (2:1, 2:2, 3:1) share 0x00..0x05 and 0x1A/0x1B
+with the others and are the same in both languages; their extra ids serve the papers dialogue
+(soldier.md's voices v25 1..6), not mapped here.
+
 ## Checked at run time
 
 Replaying the session (1:3 from vblank ~2000, 2:1 by 30000, 2:2 by 50000, to 95000) with
@@ -359,10 +458,14 @@ code doesn't account for.
 
 ## Open questions
 
-- What the `A` music mix is and which audio-menu option selects it (`0x80038658`).
-- Names of the bank 0 sounds that aren't tied to code above (0x14..0x18 are the weapon
-  draw/holster sounds; 0x24..0x3F are level script sounds), and which voice-bank ids are which
-  shout; listening to them (`snd_vb.py wav`) would settle it.
+- Bank 0 ids 0x07, 0x12, 0x1D and the per-level 0x24+ sounds not seen in the five dumped levels'
+  scripts: which model or level script plays them. Running `sst.py` over every entity type of
+  more levels' dumps would settle most.
+- Voice bank: 0x02, 0x10, 0x12, 0x1C, 0x1D, the 81-sound disguise banks' extra ids, and which
+  id of each group a given mission/level picks (script 74's `params`/variable 0x73 branches).
+  Names here come from where the scripts play them, not from listening; a listen (or offline
+  speech recognition) would give the actual words.
+- The `A` mix check in 3:3 and 7:1 (files offset by 0.6 s).
 - The pan reading (front sources nearly centred) is from the code; whether that matches the feel
   should be checked by ear in the emulator.
 
@@ -372,6 +475,9 @@ code doesn't account for.
 - `tools/recon/snd_vb.py stats FILE [FILE2]` / `wav FILE OUT [RATE]`: decode SPU ADPCM; compare
   two tracks.
 - `tools/recon/snd_calls.py [ADDR...]`: the calls of `sound_play` with their constant arguments.
+- `tools/recon/sh2_audio.py mix M L | bank FILE.TAF BANK [OUTDIR] | same A.TAF B.TAF BA BB`
+  (host python with numpy): the two music mixes compared; per-sample measurements of a bank and
+  WAVs (put them under build/, never in the repo); which samples two banks share.
 
 ## Names
 
@@ -418,7 +524,7 @@ code doesn't account for.
 8008A9E4 music_rewind
 8008AA38 music_voice_on
 8008AB48 music_stop
-80038658 g_music_alt                # 1: play mM_La.vb (SHELL audio menu)
+80038658 g_music_alt                # g_game+0x8C: 1 = Background "ambience only": play mM_La.vb (the track without music)
 8003864C g_music_volume             # 0..6
 80090FC8 g_keyon_pending
 80090FCC g_pan_phase                # 0..3, positional voices re-panned on 3

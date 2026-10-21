@@ -72,7 +72,7 @@ slot 7. In slot 7 the third level is played as LVL4 (levels.md). Menus number mi
 |---|---|---|
 | 1 | New Game (`0x8005C5D0`, after `new_game`), the title's mission/briefing items (`title_input` `0x80059030`), the mission select (`0x8004FF60`), the post-mission menu (`postmis_input` `0x8006B664`) | slot → `g_rating_slot`, its next level → `g_rating_level` and `g_game+0x98`, its mission → `+0x94`; **if the level has never been completed (best rating -1), `g_cheats &= 3`** |
 | 2 | Multiplayer start (`mp_start`) | mission 11, level `g_mp_arena` |
-| 3 | `0x8007064C` (mission and level from `0x8007E898`/`0x8007E89C`): the developer level select `m_dev` (inference) | no slot; results are shown but never recorded |
+| 3 | `0x8007064C` (mission and level from `0x8007E898`/`0x8007E89C`): the developer level select `m_dev` (inference: its handler; no code builds its address, so it's in a table). **Unreachable**: see below | no slot; results are shown but never recorded |
 
 All modes clear `g_level_end` (13 weapon ammo halfwords to -1, kills to 0, health and the
 objectives flag to 0).
@@ -88,15 +88,120 @@ LEVEL reads g_game when it starts (`level_read_parameters`, player.md). When it 
 `level_exit(reason)` (LEVEL `0x80062298`) stores the reason in `g_params+8` and an **exit code**
 in `g_level_exit` (`0x80039C58`), and on a finished level runs `level_end_carry` (player.md):
 
-| LEVEL flags (`0x8009C840`) | Reason | Exit code | Carry |
+| LEVEL flags (`g_level_flags`, `0x8009C840`) | Reason | Exit code | Carry |
 |---|---|---|---|
 | 0x04 (the level-end trigger / `level_set(3)`: \|= 0x24) | 4 | 0 | yes |
 | 0x08 | 1 | 3 | yes |
 | 0x40/0x80 (the pause menu's Quit sets 0x60) | 2 | 1 | no |
 | 0x01 | 3 | 2 | no |
+| 0x10 | 4 | 0 | yes |
 
-(What sets 0x08 and 0x01 wasn't traced.) The shell also uses the same variable: 4 after a new
-campaign or default settings, 5 once a level's results are recorded or a game is loaded.
+**Nothing in the retail game sets 0x01, 0x08 or 0x10.** Every access to `0x8009C840` in
+LEVEL.BIN (`shell_refs.py` over LEVEL, LEVEL2P and the exe, base registers included) is one of:
+`level_set(3)` and the level-end trigger record (`0x80074E10`, class 0xD1BA7D1E) `|= 0x24`;
+`player_think_dead` `|= 2` or `|= 0x202`; the pause menu `|= 0x60`; the level loop's own
+`|= 0x20`/`0x60`; `level_load_all` (`0x8006240C`) `&= ~4`, `&= ~0x100`; `level_start`
+`&= ~2`. The only other path is `level_start` handing `&g_level_flags` to `0x80061158`, an empty
+function (`jr ra`): a stripped debug hook, as are the empty `0x8008B3C4` and `0x8008B3CC` the
+loop calls before exits 0x01 and 0x10 (and `0x8008B3D4`, which just returns 1 and gates the
+whole loop). So in practice LEVEL exits with code 0 (finished, reason 4) or 1 (quit, reason 2);
+exit codes 2 and 3 never happen, and 0x100/0x200 are set or cleared but never tested. The shell
+also uses the same variable: 4 after a new campaign or default settings, 5 once a level's
+results are recorded or a game is loaded.
+
+### Inside LEVEL: the loop, pausing, dying
+
+`level_entry` (`0x80064400`) loops `level_main` (`0x800640B4`) until flag 0x20. Read from the
+disassembly (m2c folds the loops wrongly):
+
+```
+level_main:
+  while !(flags & 0xF1):
+    if flags & 0xF9:                       # any end flag
+        if flags & 0x0C: level_exit(flags & 8 ? 1 : 4); flags |= 0x20   # finished
+        continue
+    level_load_all()                       # files, models, TSPs (once per level)
+    while !(flags & 0xF5):
+        if flags & 2: level_restart()      # died: the same as level_start, screen cleared to black
+        else:         level_start()        # 0x80061E14
+        while !(flags & 0xF7):             # one game frame per pass
+            if start_handler() == 0:       # not paused
+                game_frame(); if flags & 0xF5: msg_run_all()
+            else: sound_update()
+  # out: 0x01 -> level_exit(3), 0x10 -> level_exit(4), 0x40/0x80 -> level_exit(2); flags |= 0x60
+```
+
+**Dying restarts the level in place.** When the player's health reaches 0,
+`player_think_dead` (`0x80079A50`; movement.md, Death) lets the death camera play; when the
+camera's script ends (camera `+0x54` = -1) it starts a fade to black (a type 0x32 fade entity,
+`fade_start(1, 0x32, 15, ...)`, `0x8004F748`: 50 ticks' delay, then 15; hud.md) and, once that entity is gone, sets flag 2 (if no
+fade entity could be made, at once). Without a death animation, and with the soldier's flags A
+0x100000, it sets 0x202 at once, with two white fades (5 and 25 ticks; fades show as cuts, hud.md). Flag 2 ends the frame
+loop and the level restarts without reloading any file (`level_restart` `0x800624AC` →
+`level_start` `0x80061E14`):
+
+| Restarted | How |
+|---|---|
+| Every entity but type 8 | removed, then the level's records spawn again; objectives cleared (`g_objective_count` = 0) and re-added by the level script's message 0 |
+| Voices 1..23, the music | stopped; the music starts again from the top when the script asks |
+| Statistics (`0x80039CA8..0x80039D10`, per-weapon kills `g_weapons[].+0x30`) | zeroed (`stats_reset`, `0x8006192C`) |
+| Ammo | every slot's reserve = `g_weapons[w].+0x06`, the amount the level started with (`level_read_parameters` set it from the level's row; nothing changes it during play); clips empty, refilled by the first draw |
+| Health | 128.0, or with `g_game+0x74` set (CAPTAINDYE) the level row's health (`player_reset`, `0x80061D08`) |
+| The alarm, fog, sky, look-up state | reset (`0x80052C18`, `sky_init`, ...) |
+| `inv+0x140` | + 1: a count of starts of this level (nothing reads it) |
+
+What survives a death: `g_game` (nothing in it changes during a level), the pad option flags and
+the debug combinations' `inv` flags below (`player_soldier_init` isn't re-run). There is **no
+lives limit**: `g_game+0x9C` (5) goes to `g_params+0xC`, which only `level_read_parameters`
+reads, to print it. Checked twice: the 1:3 recording dies three times (vblanks 22674, 32930,
+44699: health 0, flag 2 set 238, 176, 242 vblanks later, restarted 27 vblanks after that with
+health 128.0 and `inv+0x140` + 1; `VALOR_WATCH` on the flags, health and `inv+0x140`, log
+`build/sh2/flags.log`); and a 1:3 run with flag 2 poked at the first projectile think
+(`--poke-on-call 80044470:8009C840=2`) restarted 95 vblanks later with the shot count back to
+0 and the Garand's reserve back from 24 to 32 (`build/sh2/deathB/log.txt`).
+
+**The pause menu** (`start_handler`, `0x800625BC`, every frame before the game frame). Start
+(pad bit 0x800) on port 0, or the controller being pulled out (`0x8009A600`, which adds "INSERT
+CONTROLLER 1 AND PRESS START"), pauses: `g_paused` (`0x8009A5E0`) = 1, every SPU voice's volume
+and pitch saved and zeroed, the on-screen texts beyond the first two saved away (restored on
+resume), a dark translucent box and these texts (`text_add`, screen x, y in 512×240):
+
+| Text | Where | Colour |
+|---|---|---|
+| PAUSED | 220, 28 | yellow |
+| MISSION OBJECTIVES | 148, 48 | white |
+| TOTAL ENEMIES NEUTRALIZED + `g_stat_kills` | 100, 68 / 416, 68 | grey / orange |
+| One line per objective, 16 lines apart from y 88: a box glyph `$`, with `#` (the tick) over it when done, then the objective's text | 48 / 72 | orange |
+| "X" TO ACCEPT "START" TO CONTINUE | 48, 188 | grey |
+| CONTINUE, QUIT | 100, 208 / 388, 208 | the selected one red (0x80, 0x40, 0x40), the other grey |
+
+There are only two items: **no options, no restart** in the game. Left or right on the d-pad
+(bits 0x8000, 0x2000; or the analog stick in analog mode) toggles the selection (sound 0:0x21);
+Cross (0x40) plays 0:0x13 and acts on release. CONTINUE resumes; Start resumes from anywhere
+in the menu, but only 10 frames after the pause began (`0x8009CC78/7C`). QUIT shows QUIT / ARE
+YOU SURE? / NO (left) YES (right), NO selected (`0x8009A5EC` = 1); Cross on NO resumes the game
+(not the pause menu); Cross on YES sets flags 0x60: `level_exit(2)`, exit code 1, no carry, and
+the shell opens on `m_title`. While paused the game frame doesn't run (`sound_update` still
+does). Checked in a headless 1:3 run (Start, Right, Cross, Left, Cross; screenshots in
+`build/sh2/pause/shots/`): the screens above, then "Returning to base". The recording quits 1:3
+the same way (exit code 4 → 1 at vblank 27878).
+
+**Debug button combinations** (`player_pad_config`, `0x8007A050`). They are tested only when
+the function runs: at spawn (`player_soldier_init`), and when the pad's mode byte
+(`0x80093B78[port]`, digital/analog) differs from `inv+0x153`, i.e. when the controller's
+ANALOG button is pressed or a different controller is plugged in. Holding at that moment (pad
+bits as libetc's PadRead: Up 0x1000, Down 0x4000, Triangle 0x10, Cross 0x40, L2 0x1, R2 0x2,
+L1 0x4, R1 0x8):
+
+| Hold | Sets in `inv` word 0 | Effect |
+|---|---|---|
+| L1 + L2 + R1 + R2 + Triangle + Up (0x101F) | 0x10000000 | Low gravity: 0.125 per tick, terminal 4.6875, jump 6.5 (movement.md) |
+| L1 + L2 + R1 + R2 + Cross + Down (0x404F) | 0x20000000 | **The player's damage ×4**: `apply_damage` (`0x8004AC58`) shifts the damage left 2 when the attacker is the player's soldier (flags A 0x1) with this bit (combat.md) |
+
+Neither is cleared by the function or by a death restart; `player_soldier_init` sets word 0 to
+0x400000 at the next level. (Other code testing `lui 0x2000` masks reads entity flags A
+0x20000000, "dead", not this word.) LEVEL2P has the same 0x101F test in its own pad function
+(`0x80076118`), which drops a multiplayer pickup at the player (below, DENNISMODE).
 
 Back in the shell, `shell_init` (`0x8005FE04`) picks the first screen (`g_next_screen`,
 `0x8007BA68`, looked up by name in the screen list `0x8007BA6C`):
@@ -178,16 +283,16 @@ Defaults from `game_defaults` (memset 0, then the values below) and `new_game`.
 | +0x00F | u8 | game_player_mode (printed; no writer found) | 0 |
 | +0x010..+0x03C | s32 ×12 | Career totals (`career_add`, levels.md): shots, hits, wounds, objects destroyed, kills, head, torso, groin, ... | 0 |
 | +0x040..+0x070 | s32 ×13 | Career kills per weapon (the weapon table's order) | 0 |
-| +0x074 | s32 | CAPTAINDYE entered (counts toward the DWI medal) | 0 |
+| +0x074 | s32 | CAPTAINDYE entered: **health carries over** (every level start and restart takes the level row's +0x1C instead of 128.0, `player_reset` `0x80061D08`); counts toward the DWI medal | 0 |
 | +0x078 | u32 | Multiplayer characters available, bit per uniform entry (28) | 0x7F |
 | +0x07C | u32 | Multiplayer arenas available, bit per arena entry (7) | 0x1F |
 | +0x080 | s32 | Music ("background") volume → `g_params+9` | 4 |
 | +0x084 | s32 | 0 stereo, 1 mono (`g_params+0xF` = stereo) | 0 |
 | +0x088 | s32 | Sound effects volume (`g_params+0xA` = × 42) | 4 |
-| +0x08C | s32 | Background: 0 music and ambience, else ambience only (inference: LEVEL then loads `Mm_lA.VB` instead of `Mm_l.VB`) | 0 |
+| +0x08C | s32 | Background: 0 music and ambience, else ambience only (`g_music_alt`, `0x80038658`: LEVEL then streams `Mm_lA.VB`, the track without its music, instead of `Mm_l.VB`; audio.md) | 0 |
 | +0x094 | s32 | Mission index (0-based) | 0 |
 | +0x098 | s32 | Level (0-based) | 0 |
-| +0x09C | s32 | Lives (`g_params+0xC`, player.md's "life") | 5 |
+| +0x09C | s32 | Lives (`g_params+0xC`, player.md's "life"); only printed: deaths are unlimited | 5 |
 | +0x0A0 | s32 | Career has data (set by `career_add`; the evaluation screen) | 0 |
 | +0x0A4 | s32 | Evaluation screen state (a random 0/1) | 0 |
 | +0x0A8 | s32 | Campaign slot | 0 |
@@ -264,7 +369,7 @@ INVASION in a headless run set exactly `g_game+0x21C` (MSN1 block +0x90) to 1.
 |---|---|---|---|
 | 0-7 | DENNISMODE, SPRECHEN, BRADALARM, TRACERON, ICOSIDODEC, GOBLUE, BADCOPSHOW, MOSTMEDALS | `0x80048830` | cheat bit # unlocked (`+0xD4`) |
 | 8-15 | INVASION, BIGGRETA, DASBOOT, STUKA, KOMET, TWOSIXTWO, MISSLEAGE, VICTORYDAY | `0x80048850` | slot #-8's mission film unlocked in the gallery (block +0x90) |
-| 16-19 | COOLCHICK, AJRULES, DWIGALLERY, DWIMOHTEAM | `0x800487B4` | `0x8007B67F` = 1 and `0x8007E874` = 1, 2, 0, 3: read by the DWI staff gallery screens (`m_dwiemp`, `0x8006D050`); not followed further |
+| 16-19 | COOLCHICK, AJRULES, DWIGALLERY, DWIMOHTEAM | `0x800487B4` | `0x8007B67F` = 1 (the Enigma screen then leaves for `m_dwiemp`) and `0x8007E874` = 1, 2, 0, 3: a slide show of photo pages, `data\scr3\<set>\<a>\<b>.rsc` (TIMs `l`, `r` and one more, `dwi_page_load` `0x8006D050`); the page counter `0x8007E870` starts at 1, page n is a = (n−1)/10 + 1, b = n mod 10 (10 for 0). DWIGALLERY (0): `mdwiemp`, pages 1..17 (folders 1 and 2). DWIMOHTEAM (3): `mdwiteam`, pages 1..21. COOLCHICK (1): the one page `mdwiemp\15\1`; AJRULES (2): `mdwiemp\15\2`. Past the last page (`dwi_input` `0x8006D3C4`) it returns to `m_title` and resets the code to 0. (The pictures are DreamWorks Interactive staff, by the folder names: inference) |
 | 20-27 | RETTUNG, ZERSTOREN, BOOTSINKT, SENFGAS, SCHWERES, SICHERUNG, EINSICKERN, GESAMTHEIT | `0x8004889C` | slot #-20's first level unlocked (row 0 +0x20). RETTUNG's slot 0 is open anyway; EINSICKERN (slot 6) does nothing |
 | 28-55 | GUNTHER, JIMMY, ROBBIE, MANON, ULF, HELMUT, HEINRICH, WECANDOIT, EVILKURT, INTHENAVY, TIREDJOHAN, DASBOOTY, MANLYMAN, SCARYKARL, HOODDOWN, ROCKETMAN, ARTCRITIC, COOLSHADES, HOODUP, BIGFATMAN, FINESTHOUR, HERRZOMBIE, BEACHBALL, WOOFWOOF, IKEANDKEN, NUTCRACKER, SSPIELBERG, PAYBACK | `0x800488F4` | multiplayer character #-28 (`+0x78` bit) |
 | 56-57 | MACOOCOO, SPYSCHOOL | `0x80048918` | multiplayer arena 5, 6 (`+0x7C` bit) |
@@ -283,14 +388,35 @@ when starting a level that has never been completed.
 
 | Bit | Password | Unlocked by | Effect (where read) |
 |---|---|---|---|
-| 0x01 | DENNISMODE | MSN1 all two stars | Only in LEVEL2P (`0x8008175C`): the object it spawns gets a random one of 13 models instead of 0x4EFA45A0 (what it is wasn't identified) |
+| 0x01 | DENNISMODE | MSN1 all two stars | Multiplayer only (LEVEL2P, `mp_drop_spawn` `0x8008175C`): a dying player normally drops a **PLAYER AMMO** pickup holding their ammo (model 0x4EFA45A0); with the cheat it drops a random **power-up** instead (below). Nothing in LEVEL reads the bit |
 | 0x02 | SPRECHEN | MSN2 | `level_entry` sets `g_taf_variant` (`0x8009A618`) = 1: the level loads `m_l1.TAF`, the other language's sound set (formats.md) |
-| 0x04 | BRADALARM | MSN3 | `0x8005EA54` (spawns an entity of type 0x2C; called by `level_set(4)` and `0x8005C710`) picks a random variant from a 25-entry table (`0x8003C2E0`); effect not identified |
+| 0x04 | BRADALARM | MSN3 | **Silly alarms**: `alarm_spawn` (`0x8005EA54`, the alarm entity of audio.md) replaces the alarm's sound with one of 25 at random (`0x8003C2E0`): bank 0 sounds 0x0C, 0x0D (flesh hits), 0x0F (footstep), 0x10, 0x11 (casings), 0x12, 0x13, 0x19, 0x1A (falls), 0x1B, 0x1C (grunts), 0x1D, 0x1E, 0x1F (health), 0x20 (ammo), 0x21, 0x22, 0x23, 0x2C (the real bell), 0x32 (message beep), or (entries 20..24) the soldier voice bank's 0x00, 0x01, 0x04, 0x05, 0x1F (bank from model 0xB8534EAA's `+0xC8`). Half the time the pitch is also randomised: 0x2000 + rand·0x2EE0/32768 (0.125..0.31) for voice-bank sounds, 0x19, 0x1A, 0x1F, and 0x2C in mission 2 or a mission's first level (`g_params` +0/+4 = 2/1, 1-based as in audio.md's alarm pitches), else 0x4000 + rand·0x4E20/32768 (0.25..0.56); otherwise the caller's pitch, without the per-mission pitch the normal alarm gets |
 | 0x08 | TRACERON | MSN4 | `level_entry` sets `0x800AA174` = 1: `tsp_draw` draws the world with `0x80089D68`, red wireframe (seen in a headless run with the bit poked) |
 | 0x10 | ICOSIDODEC | MSN5 | Faster refire (player.md) |
 | 0x20 | GOBLUE | MSN7 | Larger player bullets (player.md) |
-| 0x40 | BADCOPSHOW | MSN9 | Unlimited ammo: reloads don't take from the reserve (`0x800460F4`), thrown weapons don't use ammo (player.md) |
+| 0x40 | BADCOPSHOW | MSN9 | Unlimited ammo: every slot starts (and restarts) with its reserve at the weapon's maximum (`player_reset_inventory` `0x80061A2C`), reloads don't take from the reserve (`0x800460F4`), thrown weapons don't use ammo (player.md) |
 | 0x80 | MOSTMEDALS | medal 0x800 | The player takes no damage (player.md, combat.md) |
+
+**DENNISMODE's power-ups.** When a multiplayer player dies (`0x80074A2C`, contact flag 0x4000),
+LEVEL2P spawns a pickup at the body. Its template comes from a table of 14 in LEVEL2P's data
+(`0x8009AF38`, 0x34 bytes each: model hash, ..., a 32-byte name, a colour). Without the cheat
+it's entry 0, PLAYER AMMO, loaded with the dead player's reserve + clip per slot (`+0x24`
+halfwords, slots up to 4). With the cheat, `rand() & 31` picks:
+
+| Name | Model | Chance /32 | Name | Model | Chance /32 |
+|---|---|---|---|---|---|
+| 4X FIRE RATE | 0xE4F2812F | 2 | AIR WALKING | 0x30C394AB | 3 |
+| ACHILLES MODE | 0x0BD11E86 | 2 | SWAP AMMO | 0x5EDAF160 | 1 |
+| REFLECTING SHOTS | 0xD7D56DF3 | 3 | FROZEN | 0xB669339C | 2 |
+| 4X DAMAGE | 0x82292D75 | 3 | SLOW | 0x03929C69 | 3 |
+| HALF DAMAGE | 0x7995EE22 | 2 | REVERSE CONTROLS | 0x98CD33D8 | 2 |
+| FORCE | 0x745C9F92 | 2 | RANDOM CONTROLS | 0x839771D3 | 3 |
+| BLINK | 0xC56C576D | 3 | (13: PLAYER AMMO, empty) | 0x4EFA45A0 | 1 |
+
+with a second hash picked by which of the two players died (0x7FC2236C or 0xE6CB72D6, both in
+every MSN12 BSD).
+What each power-up does when picked up is LEVEL2P code that wasn't followed (out of scope: the
+two-player game).
 
 ## Medals (`g_game+0xD0`)
 
@@ -339,8 +465,17 @@ The graph `shell_sst.py` prints, in short:
   `m_brief`; `m_movie_g1..8` and the two medal films → `m_gallery`.
 - `m_title`: `n_mission` (continue the campaign, inference: not shown on a fresh game), new game
   → `m_pname`, war records → `m_war`, briefing (the slot's briefing film), multiplayer →
-  `m_play`, gallery → `m_gallery`, options → `m_option`. Left idle it plays `m_movie_demo`
-  (a countdown, `0x8007BBD0`; inference).
+  `m_play`, gallery → `m_gallery`, options → `m_option`. Left idle it plays `m_movie_demo`:
+  the title's input reader (`title_read`, `0x8005A430`) counts `0x8007BBD0` down once per
+  frame from 960 (reset to 960 by any input) and at 0 returns event 10.
+- **`m_dev` is unreachable.** `title_input` (`0x80059030`, called with the reader's event) sets
+  `0x8007BBB8` = 1 on event 5, and with that set the next title item chosen (unless the demo
+  timer fired) goes to `m_dev` instead of its own target
+  (`data\scr2\mdev.rsc`, init `0x8006FCC4`, a mission/level picker whose handler is
+  presumably `dev_level_start`, mode 3). But `title_read` only returns 0, 2, 3, 4 and 10, and
+  nothing else writes `0x8007BBB8` (cleared by the title's init `0x80058CC8`): event 5 and the
+  developer menu are left over from development. Mode 3 therefore never happens in the retail
+  game.
 - `m_war`: mission log → `m_mission`, personal records → `m_commend` (→ `m_medals`, `m_eval`),
   load → `m_load`, save → `m_save`, new game → `m_pname`.
 - `m_play`: start, game type/weapons/arena → `m_multopt`, map room, uniforms → `m_uniform`.
@@ -356,14 +491,11 @@ codename. In a level, the objectives and messages come from the level's message 
 
 ## Open questions
 
-- What sets LEVEL's end flags 0x08 (exit code 3) and 0x01 (exit code 2).
-- The effects of cheat bits 0x01 and 0x04 (what the spawned objects are).
-- The DWI gallery codes' state (`0x8007E874`) and what each shows.
-- How `m_dev` (and mode 3) is reached from the title (`0x8007BBB8`).
-- LEVEL's in-game button combinations (`0x8007A050`): L1+L2+R1+R2+Triangle+Up sets flag
-  0x10000000 on the player's object (jump speed 6.5 instead of 26), L1+L2+R1+R2+Cross+Down sets
-  0x20000000; when they are checked (the function runs at spawn and on controller changes) and
-  what 0x20000000 does weren't followed.
+- What each DENNISMODE power-up does in LEVEL2P (out of scope here).
+- The third TIM of a DWI gallery page and how the pages advance (inference: Cross, like the
+  slide shows).
+- The soldier's flags A 0x100000 that gives the instant death restart with a white flash: what
+  sets it wasn't looked for.
 
 ## Names
 

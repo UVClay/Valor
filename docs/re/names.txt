@@ -93,6 +93,10 @@
 80045CA0 rocket_spawn
 80045F14 pellet_spawn
 800460F4 weapon_reload              # (soldier): clip from reserve; 0 if nothing to do
+80046574 ammo_hud_icon              # icon texture by slot, then ammo_hud_update
+80046700 ammo_digits                # (buf, value, pos, width 2|3): space-padded digits
+800467EC ammo_hud_update            # inv+0x108 clip, +0x10C reserve strings; empty for the papers
+80046874 ammo_hud_init              # icon quad (415..447, 15..35) and the two permanent digit texts
 80046A88 prop1771_think
 80046B2C prop1771_spawn
 80046C50 camera_shake               # (camera, amplitude, count): y += amp, amp = -amp/2 per tick
@@ -119,6 +123,16 @@
 8004D43C entity_bounds
 8004D974 controller_manager
 8004DE3C input_poll                 # reads the controllers (was game_tick: it's run per tick, but only polls)
+8004E798 menu_box_add               # pause menu panel: size, colour, position (start_handler)
+8004E8FC menu_boxes_draw            # (level, port): the visible panels of g_menu_boxes
+8004EB98 menu_box_remove
+8004EBC0 menu_box_move
+8004EE0C menu_box_size
+8004F21C menu_box_colour
+8004F488 fade_think                 # delay, then colour ramp (not shown), then end colour for hold+1 ticks
+8004F670 fade_draw
+8004F700 fade_find                  # first entity of type 0x32
+8004F748 fade_start                 # (flags, delay, duration, hold, r0,g0,b0, r1,g1,b1, rect): type 0x32, subtractive quads
 800503D4 render_pass
 800504F8 render_flip
 80050658 dist2d_approx              # (a, b): |dx| + |dz| - min/2
@@ -183,22 +197,44 @@
 8005EA54 alarm_spawn
 8005EDF8 alarm_think
 8005F068 alarm_from_level           # level_set(4, id)
-8005F28C text_add                   # (text, x, y, scale, r, g, b, ticks, id, ...): 32-byte entries at 0x80099F4C, at most 50
+8005F260 texts_clear
+8005F28C text_add                   # (text, x, y, r, g, b, semi, ticks, id, mask, &id_out): 32-byte entries at 0x80099F4C, at most 50
+8005F3E8 text_add_fade              # text_add + hold, fade-in length, per-tick colour steps
+8005F5A0 text_remove                # (index): last entry moves into its place
+8005F60C texts_remove_id            # (id)
 8005F69C texts_update               # on-screen texts: lifetime, colour fade
+8005F86C texts_draw                 # (ot, prims, port): 10x7 glyphs every 12 px
 8005FEA0 floor_pick                 # the leaf's triangles: nearest floor, steps of up to 32
 80060034 floor_leaf                 # k-d descent to the leaf; its zone id
 80060138 floor_in_chunk             # + the steep-slope flag
 8006028C floor_search               # over the chunks holding the point
 80060474 floor_find                 # (entity, normal out): the floor height under it; zone id -> +0x390
+800604D0 compass_init
+80060548 hit_wedges_init            # four quarter wedges, (64,0,0)
+800606E0 hud_init                   # health ring (32 segments, r 14..20 around (60,44)), wedges, compass
+80060924 compass_place              # RotMatrixZ(-yaw) on 0x8009A5A0's points -> the rose quad
+80060AFC hud_draw                   # from draw_level: ring from health, hit wedges and their timers, compass
+80060FC4 hit_indicator              # (player, attacker): attacker's back-step in view space -> a 40-tick wedge
+80061130 ammo_hud_init_player       # ammo_hud_init(g_soldier)
+80061158 debug_flags_hook           # empty (stripped): gets &g_level_flags at level start
 800611D0 ladder_think               # player in range: inv+0x70 = top
 80061244 ladder_spawn               # type 0x4C: radius and top from the trigger record
 80061350 spawn_by_type              # (record, spawner): by spawner+0xFC
 800616E4 game_frame                 # input, then per tick: entities_update, entities_collide, texts_update; then draw
+8006192C stats_reset                # 0x80039CA8..0x80039D10, g_weapons[].+0x30
+80061A2C player_reset_inventory     # reserves from g_weapons[].+6 (max with cheat 0x40), clips 0, draw
+80061D08 player_reset               # inventory, stats, health 128.0 or the row's (g_game+0x74, CAPTAINDYE)
+80061E14 level_start                # entities respawned, player reset, music, fade in; clears flag 2
 8006210C level_end_carry            # inventory -> weapon table ammo -> g_level_end
 80062298 level_exit                 # (reason): g_level_exit, level_end_carry when finished
 80062358 clear_colour_set           # g_level+0xCE..+0xD0 -> draw environments (unless +0xA0)
+8006240C level_load_all             # "InitLevel()": level_load, clears flags 4 and 0x100
+800624AC level_restart              # after a death: level_start
 800625BC start_handler              # pause
+800640B4 level_main                 # load once, start/restart, frame loop until an end flag
 80064374 level_entry                # LEVEL.BIN entry point
+8006450C overlays_clear
+80064550 overlays_draw              # 12-entry list at 0x8009C844 (empty)
 80065F34 push_property              # level VM: a property of an entity's record, by the record's kind
 80066000 script_var_addr            # (entity, object, index): entity variables at record+0x20
 8006602C script_of                  # (entity, object): the script id from the record (+0x64, or +0x78 for kind 3)
@@ -224,6 +260,7 @@
 8006C714 entities_draw              # every entity's +0x370 from render_pass
 8006C83C entity_move
 8006D2E4 model_draw                 # place + render; sets +0x298 (drawn once)
+8006D600 entity_find_type_group     # (type, +0x35 group): first live one
 8006D670 brain_alloc                # 0x124 bytes
 8006D6F0 spawn_from_model           # (model, template): spawn_by_type, then the model's script +0x94
 8006DA88 handles_free_removed
@@ -236,6 +273,7 @@
 800729C0 enemy_drops_draw
 800730D4 enemy_drops_update         # weapon block +0x49C: falling particles that lie on the floor (blood, inferred)
 80073BA8 particles_spawn            # type 0x31 particle entity, no collision
+80074A2C mp_player_death            # drops a pickup at the body (mp_drop_spawn)
 80074EE8 spawn_queue_push
 80074F9C spawn_queue_run_one
 80075034 spawn_queue_run_all
@@ -253,6 +291,7 @@
 80075FB4 role_axis                  # (port, role, ?)
 80076008 role_axis_alt              # (port, role_axis_of, role_cfg, ?): pitch from the forward stick
 800760AC look_mode                  # (port): 0x8009E3A0[port], 0 spring, 1 free, 2 free when aiming
+80076118 mp_pad_config              # as player_pad_config; Up+Triangle+shoulders drops a pickup (debug)
 80078BCC capsule_plane_dist
 80078C4C wall_push                  # push a walker out of a plane, horizontally (the PsyQ match "UserFuncExecute" is wrong)
 80078D1C wall_first_hit
@@ -267,11 +306,14 @@
 8007A6B0 player_update
 8007B350 player_weapon_update
 8007B4B8 player_world_contact       # landing: velocity = 0
+8007B534 scope_draw                 # the scope model flat in front of the camera
 8007B8F4 player_draw                # player soldier's +0x370
 8007BA20 player_stance              # inv+0x1C8 from aim mode and weapon (0..9)
 8007BADC view_pitch_target          # camera look point height = eye + 2 - 200 tan(pitch)
 8007BE04 player_soldier_init        # health 128, eye height 240, pitch limits
 8007C1D0 player_hit_part
+8007C71C reticle_at_aim_point       # stance 0: the aim point projected; inv+0x194/+0x196 = it - crosshair
+8007CAF8 crosshair_draw             # aim mode only: red broken cross; bazooka shape in stance 5
 8007CF4C throw_weapon
 8007D5C8 fire_gun
 8007DD4C weapon_draw
@@ -279,6 +321,7 @@
 8007F084 center_view
 8007F1E0 ladder_climb               # forward input / 2 -> vertical speed, gravity off
 8007F300 player_controls
+8008019C hud_overlay_draw           # menu panels, ammo icon (inv+0xB8)
 80080240 stat_kill                  # (attacker, n)
 80080304 stat_wounded
 80080328 stat_hit
@@ -286,6 +329,7 @@
 80080380 weapon_holster
 8008080C model_draw_static          # model +0x2C faces, 10-bit packed vertex indices
 80080DD4 model_draw_skinned         # face tables / bones (inferred from the fields it reads)
+8008175C mp_drop_spawn              # PLAYER AMMO with the dead player's ammo, or a random power-up (DENNISMODE)
 800824D0 model_render               # skeletal models -> 0x80082948 -> skinning
 80082E90 health_pickup_touch        # +13 / +32 / +64, capped at 128
 800830BC ammo_pickup_touch
@@ -356,23 +400,37 @@
 8009263C g_bank_sizes               # 8 x 0x200: the VAB size tables
 80093640 g_weapons                  # 13 x 0x44 weapon definitions, player.md
 800939F4 g_params                   # "PARAMETER DATA": mission, level, mode, music, sound, ...
+80096E60 g_menu_boxes               # 9 x 0x1EC
 80097FCC g_last_vsync
 80097FE0 g_alarm
 80097FF0 g_enemy_weapons            # 48-byte entries: type, burst timing, sound
 80098620 g_objective_count
 80098624 g_bPrimaryObjectivesComplete
+80098628 g_msg_line_y               # show_text's line: 120..156, +12 per new message
+8009862C g_msg_last                 # last message shown by show_text
 80098984 g_chunk_count
 80099AB8 g_dyn_frames               # per dynamic group (< 99): current frame, 0xFF unset
 80099B38 g_script_ops               # 74 x {handler, opcode, size}
+80099ED0 g_text_count
+80099F4C g_texts                    # 50 x 32 bytes
+8009A590 g_hit_timer                # 4 s32: right, left, front, behind; 40 ticks
+8009A5A0 g_compass_points           # 3 x SVECTOR: (0,0,320), (23,-23,320), (23,23,320)
 8009A5C0 g_vblank_timer             # +1 per vblank; game_frame sends message 0x59 per 20
 8009A5D0 g_ticks_dropped
 8009A5D4 g_catchup_ticks
 8009A5D8 g_frame_count              # +1 per game_frame (displayed frame)
 8009A5DC g_tick
 8009A5E0 g_paused
+8009A5E4 g_pause_confirm            # QUIT -> ARE YOU SURE? shown
+8009A5EC g_pause_confirm_no         # 1 NO selected (default), 0 YES
+8009A5F4 g_pause_continue           # 1 CONTINUE selected, 0 QUIT
+8009A600 g_pad_missing              # controller 1 out: pauses
 8009A608 g_music_requested
 8009A60C g_level_starting
 8009A618 g_taf_variant              # TAF digit (cheat bit 0x2)
+8009AF38 g_mp_drops                 # 14 x 0x34: model hash, ..., name[32], colour
+8009C840 g_level_flags              # 0x02 died (restart), 0x04 finished, 0x20 leave, 0x40/0x80 quit; 0x01/0x08/0x10 never set in retail
+8009C844 g_overlays                 # 12 x 0x58 (unused)
 8009CC64 g_level                    # the BSD level header
 8009CC74 g_music_started
 8009D5AC g_level_scripts
@@ -407,6 +465,9 @@
 800AA17C g_pvs_a                    # camera leaf's mask A; nodes need +0x14 & this
 800AA184 g_chunk_loading            # slot being streamed (-1: none), skipped by draw/collision
 800AA188 g_explosion_light          # r, g, b, radius, radius^2
+800AB970 g_health_ring_prims        # 32 POLY_F4 per buffer (+0xC00)
+800AD170 g_compass_prims            # POLY_FT4 x 2 buffers
+800AD1C0 g_hit_wedge_prims          # 4 POLY_F3 per buffer (+0x50): right, behind, left, front
 800AD260 g_vm_stack                 # 8-byte {type, value}, top index 0x8009D5A8
 800B6460 g_msg_queue                # 128 x 32 bytes
 800B74B0 g_role_axes                # analog role config, port*0xA0 + role*0x28
@@ -438,7 +499,9 @@
 80050C38 level_unlocked             # (menu mission 1..7, level 1..): row +0x20
 80050CAC level_best_rating          # (menu mission, level): best rating + 1
 80057FB8 mp_start                   # level_begin(2), quits the shell
+80058CC8 title_enter                # title screen's +0x5C handler; clears g_dev_menu
 80059030 title_input
+8005A430 title_read                 # title input -> event 0/2/3/4, 10 after 960 idle frames (demo)
 8005FC28 shell_main                 # the overlay's entry
 8005FE04 shell_init                 # picks the first screen from the play mode and the level exit code
 80060B0C game_defaults              # g_game cleared, options' defaults
@@ -460,14 +523,22 @@
 80067C74 secret_menu_input          # toggles g_cheats bits
 80069EE4 medals_screen_init
 8006B664 postmis_input              # save / continue / replay / war room
+8006D050 dwi_page_load              # data\scr3\mdwiemp|mdwiteam\a\b.rsc
+8006D3C4 dwi_input                  # next page; past the last, m_title
 8006E380 load_screen_update         # validates "MOH" at 0 and 0x77C, copies 0x780 bytes to g_game
 8006EB8C load_apply
+8006FCC4 dev_screen_init            # m_dev (unreachable): data\scr2\mdev.rsc
 8007064C dev_level_start            # (inference) level_begin(3)
 8007344C level_rating               # 0..2 stars: objectives, kills, health > 75%
 80075F20 codename_input
 8007A30C g_save_request             # 0x94 bytes: name, data, size, title, icon pointers
+8007B67F g_dwi_pending              # set by the DWI passwords: the Enigma screen goes to m_dwiemp
 8007B680 g_passwords                # 61 x {handler, char[12]}
 8007BA68 g_next_screen
 8007BA6C g_screens                  # screen list, linked through +0x80
+8007BBB8 g_dev_menu                 # set only by title event 5, which nothing produces
+8007BBD0 g_title_idle               # frames until the demo film (960)
 8007BFFD g_shell_quit
 8007C004 g_new_rating               # the level's rating, from level_rating
+8007E870 g_dwi_page
+8007E874 g_dwi_set                  # 0 DWIGALLERY, 1 COOLCHICK, 2 AJRULES, 3 DWIMOHTEAM

@@ -261,8 +261,9 @@ extern "C" void hook_world_polygon(Cpu *c, RecompFn body) {
     interp_note_near_polygon(sxy);
 }
 
-// 0x8008019C: draws the HUD (messages, ammo, compass) with packets from the primitive pool, whose
-// next free byte is [0x80098958]: those packets are the HUD whatever their coordinates.
+// 0x8008019C: draws HUD packets (the ammo icon, the pause menu's panels; docs/re/hud.md) from the
+// primitive pool, whose next free byte is [0x80098958]: those packets are the HUD whatever their
+// coordinates.
 extern "C" void hook_draw_hud(Cpu *c, RecompFn body) {
     uint32_t before = r32(0x80098958);
     body(c);
