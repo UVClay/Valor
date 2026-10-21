@@ -159,6 +159,15 @@ health 128.0 and `inv+0x140` + 1; `VALOR_WATCH` on the flags, health and `inv+0x
 `build/sh2/flags.log`); and a 1:3 run with flag 2 poked at the first projectile think
 (`--poke-on-call 80044470:8009C840=2`) restarted 95 vblanks later with the shot count back to
 0 and the Garand's reserve back from 24 to 32 (`build/sh2/deathB/log.txt`).
+(The recording now in `recordings/` does not die in 1:3: those vblanks are from an earlier one.)
+Watched again in the present recording's replay, which runs on past the end of its match into
+2:3 and dies there three times (`tools/recon/ver_ai.py --watch`, player health and flags B and
+the character slots, run with a copy of the recording's card): health 0 at vblanks 68765,
+76324, 83736; flags B | 3 two vblanks later (dead); **health 128.0 again 291, 251 and 271
+vblanks later**, the player back at the level's start point (x -25788, z 4333, the same both
+times it was logged), flags B back to its living value, and every character slot refilled
+with new handles (the serials jump: `n0` 0x010700AB → 0x017E00B2 at 69081), i.e. the soldiers
+spawned afresh by the level's records.
 
 **The pause menu** (`start_handler`, `0x800625BC`, every frame before the game frame). Start
 (pad bit 0x800) on port 0, or the controller being pulled out (`0x8009A600`, which adds "INSERT

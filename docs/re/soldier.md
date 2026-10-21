@@ -23,9 +23,10 @@ named. Claims come from the disassembly; where an opcode handler was needed it w
   (101 values, so "roll < 25" is 25/101). Below these print as `roll = rand 0..100`.
 - **`query.HHFF A B C`** (op 0x2E, `0x8005A574`): FF the fact, A the destination, and with mask
   0x08 (every soldier query) the last word is variable 0x1F, the target: `query.FF09 0 -1 31`
-  is "v0 = distance to the entity in v1F". With mask 0, operand B is an entity type and HH an
-  index (`0x8006D600`: the first entity of that type and `+0x35`): `query.8 0 5107 0` finds a
-  live entity of type 0x13F3. Facts:
+  is "v0 = distance to the entity in v1F". With mask 0, operand B is an entity type and HH a
+  group (`0x8006D600`: the first live entity of that type with `+0x35` = HH), or with HH = FF the
+  nearest live one within 1000 vertically (`0x80057768`): `query.8 0 5107 0` finds a live entity
+  of type 0x13F3; B = -1 with HH = FF is the soldier itself (enemies.md, op 2E). Facts:
 
 | Fact | Result |
 |---|---|
@@ -51,19 +52,28 @@ named. Claims come from the disassembly; where an opcode handler was needed it w
 - **Events** (op 0x0D/0x0E/0x42, matched each tick by `script_run_b`, `0x8003FBFC`): the mask
   says which entity word must have all the bits: printed `on s38&BITS` for `+0x38`, `s3C`, `s40`.
   The stored instruction runs in the registering channel (a stored `goto` moves its program
-  counter, a stored `nop` deletes the record); 0x0D and 0x42 are the same, 0x0E stores into
-  channel 0's table from either channel. The three words are one-tick pulses, cleared after
+  counter to a word of the channel's own script and drops its call stack and waits, a stored
+  `call` does nothing, a stored `nop` deletes the record); 0x0D and 0x42 are the same, 0x0E
+  stores into channel 0's table from either channel. What the start script (200) registers goes
+  to the model's table and is copied into channel 0's at **every** channel-0 script start, so
+  the hit events of 200 are re-armed at each change of state (enemies.md, Starting a script). The three words are one-tick pulses, cleared after
   every think; who sets each bit, and the matching rules: enemy_types.md, Events. In `+0x38`: **0x40 hit from in front, 0x20 hit
   from behind** (`damage_from_hit`, `0x8004C324`, by the sign of the soldier's forward vector ·
   (attacker − hit point), `0x8004C108`); 0x400000 arrived, 0x800000/0x1000000 path ends (the
-  brain). Bits 0x20..0x100 are cleared each tick while the `+0x48` invulnerability timer runs.
+  brain). Bits 0x20..0x100 and 0x180000 are cleared each tick while the `+0x48` invulnerability
+  timer runs.
 
 ## Channels and entry points
 
 **Channel 0 runs the soldier's mind; channel 1 its current action.** `other_script N` (op 0x08,
 `0x800589E8`) and `jump_script` (0x1D) restart **the channel they run in** (`script_start(e, N,
-flag, 0x80099EB8)`, the current channel set by `script_step`), not the other one as enemies.md's
-table says: the state machine is a chain of `other_script` on channel 0. `start_script` (0x3B)
+flag, 0x80099EB8)`, the current channel set by `script_step`): the state machine is a chain of
+`other_script` on channel 0. `other_script` is unforced and `jump_script` forced, which makes no
+difference for the soldier (every script is class 1 and no script changes the class masks, so
+every start succeeds, with a 4-tick cross-fade of the pose); both go on running the new script
+in the same tick, so a chain of `other_script` decisions takes no time (checked with the
+interpreter, enemies.md, Checking: 175 → 210 → 27 → 28 → 157 and 209 → 210 → 19 → 25 with 40
+started on channel 1, each within one tick of the 1:3 replay). `start_script` (0x3B)
 starts a script on channel 1 unless it already runs, `clear_script` stops channel 1,
 `current_script` reads it (-1 none); channel 0 polls it to wait for strafes and throws. When
 channel 0 runs off its end, `script_run_a` takes the first script with weight >
@@ -85,6 +95,7 @@ v22 > 0 → 77; else end → 202.
 | 0x0B | Poll period in ticks (1..4 in the dumps): `wait v0B` between decisions |
 | 0x0F | Weapon kind: 0 SMG, 1 rifle, 2 MG, 3 Panzerfaust (enemies.md) |
 | 0x10, 0x22 | Path mode and path id (records `+0x5E`, `+0x6E`); v22's range also picks the walk style |
+| 0x13 | The heading (16.16): the think copies it in before the scripts and back after, so scripts turn the soldier by writing it; `node_take` (111:22) and `follow` (114, 117) are given 0x13 for their facing |
 | 0x14, 0x15 | Sight results; also a node's score; v15 the brain's remaining distance to a node |
 | 0x16 | Fire state |
 | 0x1A, 0x1B | Words for the hit hook `0x800523E4`: v1A 4 plus bits during grenade throws, 1..3 plus 0x80000000 and v1B a part during deaths (a bit per attachment plus an action; enemy_types.md, Resolved items) |
@@ -136,6 +147,22 @@ the player's shots and other soldiers' alike, so gunfire draws every soldier wit
 seconds and alerts spread from soldier to soldier. Checked by reading the code; the voice fields
 are from the sound functions that fill them (`0x80041CE8`, `0x80041FC4`, `0x80042250`) and the
 per-tick update `0x8004137C` that ages `+0x28`.
+
+**Watched** (the replay of 1:3, 2:1, 2:2 and on into 2:3, the five character slots' scripts
+and variables and the 23 effect voices logged every tick: `tools/recon/ver_hear.py`, which
+lists for each detection, variable 4 going 0 → 1, the player's distance and every hearable
+voice with its distance from the soldier). In 1:3 (sight range `+0xB0` 1500 in every slot)
+26 detections from idle or patrol; 15 of them with the player 1700..5700 away, beyond sight
+and the 1000 of proximity, and each of those had a hearable sound within 1500 of the soldier:
+a **dog's bark** (bank 5, sounds 4/5) 196..540 away (vblanks 4893, 5865, 6603, 7922, 8358,
+11260, 12393) or a **comrade's alert shout** (bank 0 sound 0xF) 485..1482 away (2897, 8845
+twice, 10866 twice, 12965 twice, 14015). The rest had the player within 1000 or within 1500
+in view. No detection was preceded only by sounds beyond 1500. So hearing works as read, and
+in practice it is what spreads an alert: a barking dog or one shouting soldier sets off every
+soldier within 1500 of it. The silenced pistol: in 2:1 and 2:2 every voice started by one of
+the player's pistol shots (bank 2 sound 0, 8 shots) had flags 2 (unheard), while the other
+weapons' shot voices had 0 (24 in 1:3, 5 in 2:2); the detections around those shots (2:1, vblanks
+21980..22016) had the player within 750 and no hearable sound.
 
 **Alert (209):** stop. Bit 2 → 17 (bit 20 set: 210). Bit 20 already set → 210. Else set bit 20
 and, with the player within 3000: anim 215, then 10% each one of three shouts (sounds 0xD, 0xE,
@@ -212,7 +239,21 @@ Each pass: grenade events (43), hit events by weapon (24: SMG → 1/2, MG → 29
    2.1% per pass with the dumps' values, i.e. about every 1.6..6 s at v0B 1..4. Bit-3 soldiers
    instead: 50% the dodge roll, 50% crouch (anim 238, anim 239 2..6 times, 55% anim 303, cover
    search 3000) while still aimed at.
-10. Otherwise **cover search** (91, within 1000) and loop.
+10. Otherwise **cover search** (91, within 1000; never finds one in 1:3 and 2:1, Cover) and loop.
+
+**Watched** (the replay through 2:2 and its 2:3 continuation; `tools/recon/ver_fire.py` reads the
+fire loop's program counter and variable 3, and the time spent in 25's `wait v0B`):
+- **Rifle fire decision:** 10 shots in 34 decisions in 1:3 (29%) and 13 in 40 in 2:3 (33%), the
+  soldiers' v26 being 30: the per-tick roll `roll < v26` out of 101 (29.7%) as read.
+- **SMG fire decision:** too few decisions to measure (42 in 1:3, 17 in 2:2): the player killed
+  most SMG soldiers within a burst or two.
+- **Dodges:** 14 entries into 135, but only 3 from the combat loop (2:1, slot 1, vblanks 22016,
+  22080, 35620, all with the player under 1000, in about 44 close-range passes: more than the
+  expected 0.5..1, too few to say more); the other 11 came through the pain script 6 and the
+  scripts after it (173, 171, 34, 299, 75: the hit-reaction chains that end in a dodge), so most
+  dodges seen in play follow a hit.
+- **Running to cover:** no soldier entered 110 in the whole replay (no 0x11 node found), so the
+  "no firing while running to cover" reading could not be watched.
 
 ### Dodges (135; moves 139..147)
 
@@ -256,6 +297,12 @@ beyond 3000 or unseen → 150 → 175.
 (0x10 for bit 2). **Accept** (90): kind 0x10 if the score ≤ 1200 (i.e. any valid angle); other
 kinds if the score ≤ 300 (the player within ±26° of the node's facing) and the player 500..6000
 away. Then v1D = old node, v1E = new, → 94.
+
+**1:3 and 2:1 have no AI nodes**: the level's node table (BSD `+0x540`, the world object's
+`+0x4`/`+0xC`) has count 0 in every dump of them (4 in the 2:2 dump `build/re/mid_50000.bin`),
+and `compute` (0x80040F48) and `node_eval` (0x8005B32C) both stop at that count, so every cover
+search there returns -1 (90 returns at once) and none of the cover behaviour below happens. The
+interpreter (enemies.md, Checking) agrees only with find-node results of -1 in those levels.
 
 **Moving (94)**, every tick: score and kind of v1E; kind 0x10: invalid → 210, player < 300 → 17
 (stand and engage), > 7000 → 175; other kinds: score > 300 → 175, player < 500 → 17, > 6000 → 175;
@@ -394,7 +441,22 @@ record fields (enemies.md).
 30 ticks per second. Decisions every v0B ticks (1..4); rifle shot attempts 6..8 ticks apart
 after the bolt; kneeling rifle 10..30 ticks of aim, Panzerfaust 10..20 + 10; search looks
 20..30; cover 15..50 hidden; grenade throw 20 + 50 around the animation; corpse ~96. Burst and
-move lengths are animation lengths (Open) within the weapon table's limits (enemies.md).
+move lengths are animation lengths within the weapon table's limits (enemies.md); with the frame
+counts of animation.md's soldier table (one frame per tick):
+
+| What | Animations | Ticks |
+|---|---|---|
+| SMG fire loop: a "no" | anim 26 | 4 |
+| SMG burst (fire 1) | 1..4 × anim 27 (4) | 4..16 per decision |
+| Rifle shot cycle (40) | anim 20 (16, fire 2 on it) + anim 21 (37, the bolt), then `wait 0` per decision | 53 + 1 per "no" (first: anim 20 + wait 6) |
+| MG fire loop | anim 247 frames 0..2 (3), wait 6; "yes": anim 248 (11) | 9 per "no", 14 per burst |
+| Dodges (135) | 139 anim 13: 22; 140 anim 12: 21; 141 anim 9: 24; 142 anim 8: 16; 143 anim 11 ×2 + 17: 47; 144 anim 10 ×2 + 16: 45; rifle 145 anim 22: 27, 146 anim 23: 31, 147 anim 24: 31; MG 250/251/252: 31/24/24 | as listed |
+| Cover run (110) | anim 14 per cycle | 18 per cycle |
+| Peek (111) | anim 82 (5) in, lean anim 84/88 (16) × 4 at fire 4 | 64 of firing per peek |
+| Kneel (148) | anim 59 | 30 |
+| Grenade throw (35, 37) | anim 261 (45), 219 (15), 220 (54, release at frame 21) | ~114 plus the waits |
+| Pain flinches (6) | anims 30..33 | 22, 22, 22, 19 |
+| Corpse (15) | wait 15, 19 blink ticks, 2 × wait 0, wait 60 | 96 (watched: 45 of 53 corpses in the replay removed 94..98 ticks after entering 15, the rest 92..169; `ver_ai.py`) |
 
 ## 2:1's soldier
 
@@ -471,10 +533,15 @@ So **0x800 means "in a low zone"** (overlapping zones counted): the player can't
 (`player_stand`, movement.md) and sight checks against the player use half the sweep (query
 0xB), so these are crawl spaces under something low. **0x400 means "undetectable"**: soldiers' detection
 (44) skips sight and proximity (hearing still counts) and Panzerfaust soldiers fire straight
-ahead (fire 3) instead of aiming. Neither changed in a replay of the recorded session up to
-vblank 96,000 (it never entered such a zone); found by reading the scripts (`lvs.py`,
+ahead (fire 3) instead of aiming. Found by reading the scripts (`lvs.py`,
 `sst.py`) and the records' lists (`+0x38`/`+0x3C`, u32 count then u32 messages, read by
-`0x80083DE8`). What the zones are in the world (shadows, foliage) is not checked.
+`0x80083DE8`). **Watched** (`VALOR_WATCH` on the player's flags B through the replay, run with
+a copy of the recording's own card; an earlier note here that the replay never entered a zone
+was wrong): 0x800 set and cleared on walking in and out of a low zone in 2:1 (vblanks 29746 →
+30666) and twice in 2:3 (61928 → 62743, 63678 → 63883; the first one inside the part of 2:3
+that still matches the recording); flags B went 0x21000 → 0x21800 and back, nothing else
+changing. No soldier detected the player during those stays, so the halved sight sweep was
+not tested. 0x400 was never set. What the zones are in the world (shadows, foliage) is not checked.
 
 The player's `+0x11E` (sensor 0x66) is its **body script number** (channel 0's current script,
 set by `script_start`; -1 when none). In 1:3 the player's model has 17 scripts; 13 is the jump
@@ -487,7 +554,7 @@ showed 0, 7, 13, 8, 10, 9, 16, 12, 1, 15 and 14.
 - v22 > 200 paths (78) by level.
 - `send_event` 0x33 and 0x75 in detail (2:x); ops 0x1C/0x41 on corpses, `fall`/`accel`'s operands.
 - The other levels' script sets: enemy_types.md, Level differences.
-- Animation lengths, which bound burst lengths and every "anim" timing above.
+- The SMG fire chance and the dodge rate in play: too few samples in the replay (below, Watched).
 
 Resolved since (enemy_types.md): events and `send_event` 0x1B/0x4/0x1E; `+0xEC` bits 1 and 2; `s3C`
 0x1, 0x2, 0x8000, 0x10000; v1A/v1B (attachments); `route` results (v2 a turn kind 0..3, v3 the

@@ -24,6 +24,15 @@ entities exist yet. New tools:
   `--grep RE DUMP...`.
 - `tools/recon/et_events.py DUMP [--type T]`: every event registration (condition, stored
   action, the scripts that register it).
+- Checking in play: `tools/recon/ver_ai.py --watch --vars` gives a `VALOR_WATCH` list for the
+  five character slots (type, flags, health, both channels' script and program counter, the
+  variables, the position) and the player; `ver_ai.py LOG --dump RAM --pc` prints every script
+  change with the distance to the player, and the program counters as `script:word` (the
+  counter rests on the word after the instruction that yielded). `ver_hear.py` adds the effect
+  voices and explains each detection; `ver_fire.py` measures fire decisions and dodges. A
+  replay must run with a copy of the recording's own card (`--memcard` pointing at a copy of
+  its `card/` folder): with an empty card the 1:3 part never loads and nothing is logged before
+  2:1.
 
 Code was read with `fn.py c`/`show`; the dog's state was checked against the replay dump
 `build/re/mid_8000.bin` (1:3, one dog, killed).
@@ -230,6 +239,39 @@ sideways, -30 up; yelp 38 (sound 2/3), v13 = 4, anim 17 until it lands: on the g
 Unused: 7 (bark loop), 9 (empty), 13 (a pad-button event). The dog's sounds 0..7 are its own
 bank (audio.md: bank 5 in 1:3).
 
+**Timings** (animation.md's frame counts for the dog, `ent_anims.py table 0x1405`; one frame per
+tick): alert 17 = turn anim 22/23 (25) + anim 1 (10), 35 ticks, or 10 without a turn; leap (8 on
+channel 1) = anim 5 (7) + anim 6 (15) + 2 × anim 3 (12) = 46, cut at 10 by channel 0's move to
+22; bite (10) = anim 7 (14), then with the player within 500 anim 9 (24), anim 4 (25) and two run
+cycles (24): 87 if nothing cuts it; snap (11) = 2 × anim 10 (23) = 46; hits 27/28 = anim 12 (10) /
+anim 14 (15); death 34 = anim 15 (48); corpse 36 = 15 + 19 + 60 = 94.
+
+**Watched** (the replay of the recorded session through 1:3, vblanks 2119..13747: 14 dog lives
+in the character slots, every script change, the variables and positions logged each tick,
+`tools/recon/ver_ai.py --watch --vars`, and `VALOR_TRACE_DAMAGE=1`):
+- **Alert 17 → chase 19** after 35 ticks (turning) or 8..10 (straight ahead), as above.
+- **Leap 21** entered 12 times with the player 394..504 away (positions at the end of the tick,
+  after the leap's first frame and the player's move; one at 588), never from closer: the
+  370..475 band as read. Channel 0 went on to **22 exactly 10 ticks later** every time the leap
+  was not cut by a hit (6 of 6).
+- **Bite 22 → 19** after 11..12 ticks (4 times: the player already beyond 475, so anim 8 or 3
+  and back) or 29..31 (2). No dog ever went from 19 straight to 22 or 23 (the player under
+  370): they always arrived running and leapt first, so the 70/30 bite/snap split and the snap
+  (23) were not seen.
+- **Damage**: the three times a dog hurt the player (2.0 each, vblanks 8483, 11529, 11629) were
+  all **during a leap**, 3..5 ticks after it started: the attack part that 8 turns on bites on
+  contact while the dog is in the air, before 22 starts.
+- **Hits**: 27 (front) back to 19 after 10 ticks, 28 (behind) after 15. The player's rifle took
+  2.5 of the dogs' 4 health; the second hit killed (34, the ordinary death: no explosion).
+- **Death 34 → corpse 36 after 48 ticks** (all 14), removed (flags A 0x80000) **94 ticks** after
+  entering 36.
+- **The leash** (vblanks 2966..3088, the player about 3000 from the dog's home): the dog cycled
+  19 → 20 (go home) → 15 (path, arrived at once) → 17 (detection) → 19 every 12..25 ticks, a
+  loop at the edge of v5; it broke when the player came nearer.
+- Dogs' barks (sounds 4/5) are heard by soldiers: seven 1:3 soldiers were alerted by a bark
+  196..540 away with the player beyond their sight (soldier.md, Hearing).
+- Not seen: the hit-comrade run (16) and the grenade fetch (35).
+
 ## The mounted gun and its gunner (0x1772)
 
 The gun (objects.md: firing, the player's use) is driven by events on its `+0x3C` from whoever
@@ -266,7 +308,9 @@ valid, tests whether it sees the victim with its long range (`+0xB2`, the sight 
 answer that with 201 (the dog 16): run to where the victim was hit, then alert (209).
 
 So shooting a soldier in view of up to five others (by list order, not distance) pulls those
-that can see him to the spot, one candidate per frame.
+that can see him to the spot, one candidate per frame. Not watched: in the replay (1:3, 2:1,
+2:2) no soldier entered 201 and no dog 16; at most five characters exist and the others were
+rarely in view of the one hit.
 
 ## Events: what the scripts react to
 
@@ -372,7 +416,12 @@ hit-reaction particle pulse at frame 31: smoke, inferred) else 149, 150 ×1..3, 
 (44) every v0B ticks, the group alert (`s40` 0x100), an alarm or a comrade-hit report → get
 up (anim 152, then anim 61 from frame 27) → 17 (stand and engage). Hit: pain, below 10% the
 ordinary death, else anim 153 and the get-up → 17. (The pose being seated is inferred from the
-animations.)
+animations.) **Watched** in 2:3 (the replay past the end of the recording's match, still the
+game's own logic; `ver_ai.py`, vblanks 64313..64579): spawned straight into 201 with 204 on
+channel 1, played anim 148 four times (64 ticks) then 149; detection at 64447 with the player
+1820 away and nothing hearable (2:3's sight ranges reach 4000) → 202: anim 152 for 27 ticks;
+hit at 64511 during the anim-61 tail → 203: anim 153 (16 ticks) + anim 61 frames 27..40 (14) →
+17 at 64573, then engaged. Lengths: 148 16, 149 13, 150 16, 151 11, 152 27, 153 16, 154 60.
 
 **P, path advance** (`s40` 0x4000000 → 80/81; 1:1, 2:3, 5:1, 7:3, 9:1, the same scripts): 1:3's
 empty 80 becomes a patrol (paths below id 50 walk with script 87 without a path goal, others
@@ -409,6 +458,15 @@ dying or the gun gone: 97 releases it (0x1000 | 0x400), shows the weapon, clears
 soldier runs to a free kind-8 node within 1500 and raises the alarm there (70% per tick at the
 node); the alarm then sends every soldier to 188 (50% stand and watch, 50% search) instead of
 1:3's empty 195.
+
+Watched in 2:2, where the same scripts are 200..204 (2:1's 195..199; 2:2's soldier list has
+five more scripts) and the alert is 308 (2:1's 303): a soldier alerted at vblank 53402 (204:
+anim 215, a shout through 315) went to 200 at 53481 with the run (206) on channel 1, reached
+the kind-8 node at 53535, played anim 283 (11 ticks) and **raised the alarm** at about 53558
+(the 70% branch on the first try), then 308 at 53571. At 53566 a soldier 3238 away entered 201
+(the alarm pulse) and, a path soldier, went on to 79 through the search; later alarms (57073,
+57158, 57186) sent three soldiers through 201: two to 303 (2:2's stand and watch) and one to
+180 (search), the 50/50 as read.
 
 **F, foxhole ambush** (2:3 `s40` 0x1 → 209 and 205..217; 4:1 `s40` 0x1 → 200 and 196..208):
 hidden (anim 139, 30..90 ticks, then 50% 140/142 or 143/145 with holds), detection every 4 ticks
@@ -557,7 +615,11 @@ firing"; soldier.md's "+0x11E = 8, 3 or 4" reads as the classes.
 - The 0x1407 weapon's identity (enemies.md calls it a pistol, soldier.md an MG; its burst is 11
   shots 12 ticks apart).
 - Mission indices 6 and 8 crash when warped to: whether the shell ever maps to them.
-- Animation lengths (the dog's leap and bite timings depend on them).
+- Not reached in play (no recording covers their levels, and warped starts don't get near them
+  without a route): the sentries (T), gun crews (G), low-wall nodes (L), foxholes (F), hidden
+  ambushers (H), workers (W), the crawl-space chaser (C), assault soldiers (X), technicians (R)
+  and the papers chain. The path advance (P) was seen entering 81 in 2:3 (vblanks 63057, 63141,
+  70497) but its stand/walk timings were not measured.
 
 ## Names
 

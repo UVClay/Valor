@@ -184,6 +184,12 @@ Sliding doors (scripts 4, 6) then wait in script 7 for bit 4 or 32 and slide bac
 **bit 4 slides back 360 (script 4), bit 32 slides back 900 (script 6)**, whichever was used to
 open; swinging and rising doors stay open (scripts 8, 9, 11 end in an idle loop). While moving,
 flags B bit 7 (variable 0x87) is 1. There is no acceleration (constant speed, then stop).
+**Watched** in 2:1 (the replay, `VALOR_WATCH` on the five door entities' angles, position and
+scripts, vblanks 20495..40736): four doors opened, each a swing of exactly **1025 units** of
+yaw in steps of 25 per tick, over 41 ticks (vblanks 29208..29287 and 29210..29289, a pair
+opening together, one +1025 and the other -1025; 31243..31324; 31814..31892), the model's
+script pointer moving on at the start; none ever swung back. The sliding scripts were not
+triggered in the replay.
 Scripts 2 and 3 (yaw ∓307 per tick for 20 ticks, then pitch ∓51 per tick for 20: a spin and a
 fall) are not reached from the events; nothing found starts them.
 
@@ -319,7 +325,11 @@ from record `+0x5C`, collision radius 100, home angles from the record (`+0x18..
 - **0x1774** (`0x800905C0`; the model exists only in **9:4**, the V2: catalogue.md; the
   model lists of the 2:3 and 4:2 dumps have none): solid, scripted, with two particle systems of
   40 (smoke and fire). Variable 2 set: each tick it climbs 300 units (vertical velocity -300),
-  turns 200 units of yaw and wobbles in pitch and roll (a rocket lifting off, inferred);
+  turns 200 units of yaw and wobbles in pitch and roll (a rocket lifting off; **watched** with
+  variable 2 poked to 1 in a 9:4 warped start, the entity at `0x800F3DA0`: from the next tick it
+  rose **298.5625** units a tick (not quite 300), yaw +200 a tick, pitch and roll ±64 units in a
+  16-tick circle (variable 6 counting 1..16), and it kept rising for the rest of the run, 33,000
+  vblanks, never removing itself: what ends it in play is the level's script);
   variables 3 and 5 trigger smoke and fire bursts, the latter with a camera shake (125, 30) and
   noise 250. Its floor test sets `+0x38` bit 2 when it is within 550 above the floor.
 - **0x1775: switches, valves, levers** (`0x8005E510`; 3:4, 4:3, 5:1, 5:2, 5:3, 9:1:
@@ -328,8 +338,12 @@ from record `+0x5C`, collision radius 100, home angles from the record (`+0x18..
   answers once with `set_flags(2)` and a report message (5:1: 0x72, and 0x5B). Its model
   (5:1's 0x579B641F, `mv_models.py`) animates on the `+0x40` bits: **2** turns it, pitch +20
   per tick for 100 ticks (2000 units, half a turn: a valve wheel or lever), the next 2 turns it
-  back (-20); bit 1 starts it in the turned state, bit 4 in the unturned one. Read, not
-  watched.
+  back (-20); bit 1 starts it in the turned state, bit 4 in the unturned one. **Watched** with the
+  bit poked rather than sent by the level (5:1 warped start, the switch at `0x800E3640`,
+  `--poke-on-call 80044470:800E3680=2`, the poke landing at vblank 8566): pitch +20 per tick
+  for exactly 100 ticks (0 → 2000), its script moving on at the first and the last tick. The
+  Use → message 0x2E → `set_flags(2)` path was not exercised (the player never reached a
+  switch).
 - **Type 0x31 without parts**: particle bursts (`0x80073BA8`, think `0x80073B08`) share the
   explosion's type but have no collision (mask 0, no parts), so `player_hit_part`'s type test
   never meets them.
@@ -547,9 +561,12 @@ dumps from headless runs are repeatable, but they are not the recorded play past
 
 ## Open
 
-- 0x1771 (1:1's spinning prop, model 0xC2E34354) and 0x1774 (9:4's V2) not watched in play;
+- 0x1771 (1:1's spinning prop, model 0xC2E34354) not watched in play (not spawned at the
+  level's start); 0x1774 watched only with its variable poked (above);
   whether 0x1405 is the dog (no dump shows its model).
-- The toggling door scripts (open with 16, close with 4: 360 of 900) not watched in play.
+- The toggling door scripts (open with 16, close with 4: 360 of 900) not watched in play: the
+  doors of 3:1, 4:1 and 7:2 are spawned by triggers, not at the level's start, so a warped start
+  without a route never makes them.
 - The colour cycles: the world drawer `0x80089D68` takes `g_level+0xDC` as a table (to the
   scratchpad, `0x1F8003C8`), so world polygons tagged with a cycle are drawn in its current
   colour (`+0xC`, inferred: flickering lamps); which TSP field picks the cycle wasn't read.
