@@ -113,7 +113,7 @@ def instance_init(eng, e, inst, model, pool):
     m.w32(inst + 0x94, pool + 16 * nb)
     for k in range(3):
         m.w32(e + 0x270 + 4 * k, m.u32(model + 0xA4 + 4 * k))
-    m.w32(e + 0x2D4, m.u16(model + 0xA0) << 16)
+    m.w32(e + 0x2D4, m.u32(model + 0xA0))
 
 
 def brain_alloc(eng):

@@ -101,6 +101,9 @@ class Rand:
         self.misses = []
 
     def start_tick(self, tick):
+        if os.environ.get("ENG_TRACE_RAND") and (self.left or [x for x in self.misses if x[0] == getattr(self, "tick", None)]):
+            print(f"rand tick {getattr(self, 'tick', None)}: left {[(hex(f), hex(r), v) for f, r, v, vb in self.left]}"
+                  f" missed {[(t, [hex(x) for x in f]) for t, f in self.misses if t == getattr(self, 'tick', None)]}")
         self.tick = tick
         self.left = list(self.feed.rand.get((self.level, tick), ()))
 

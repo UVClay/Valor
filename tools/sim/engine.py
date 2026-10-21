@@ -178,6 +178,8 @@ class Engine:
         engine_enemy.register(self)
         engine_player.register(self)
         engine_objects.register(self)
+        import engine_projectile
+        engine_projectile.register(self)
         self.logic.adopt()
 
     # -- notes: what the engine left out, kept to report
@@ -290,12 +292,13 @@ class Engine:
         m.w32(G_SLOTS_USED, used)
 
     # -- creating and removing (entities.md, Creating, activating and removing entities)
-    def entity_create(self, etype, obj_size=0, model=0, addr=None, parts=None, channels=0, list_n=0):
+    def entity_create(self, etype, obj_size=0, model=0, addr=None, parts=None, channels=0, list_n=0,
+                      instance=False):
         """entity_create (0x8006B5B8): the entity, its object, the animation instance, the hit
         parts, the script channels' blocks; a handle; the defaults (0x8006B350)."""
         m = self.m
         nparts = (m.u16(model + 0xBE) if model else 0) if parts is None else parts
-        inst_size = 0xB0 if model else 0
+        inst_size = 0xB0 if model or instance else 0
         size = 0x3CC + obj_size + inst_size + 0x48 * nparts + 2 * 0x3C * channels + 0x1C * list_n
         e = addr if addr is not None else self.alloc(size)
         if addr is not None:
@@ -332,7 +335,7 @@ class Engine:
         m.w32(e + 0x39C, 0)
         self.entity_defaults(e)
         m.w32(e + 8, etype)
-        if inst_size:
+        if model:
             self.instance_init(e, model)
         self.stats[f"created {etype:X}"] += 1
         return e
@@ -405,7 +408,7 @@ class Engine:
         m.w32(inst + 0x84, m.u32(model + 0x9C))
         for k in range(3):
             m.w32(e + 0x270 + 4 * k, m.u32(model + 0xA4 + 4 * k))
-        m.w32(e + 0x2D4, m.u16(model + 0xA0) << 16)
+        m.w32(e + 0x2D4, m.u32(model + 0xA0))
 
     def remove(self, e, why=""):
         """entity_remove (0x8006B8F0): flagged, the record's state and messages, unlinked, the
@@ -582,6 +585,9 @@ class Engine:
                     f.write(json.dumps(line, separators=(",", ":")) + "\n")
                 if compare:
                     compare(line)
+            path = getattr(self, "dumps", {}).get(self.tick_no)
+            if path:
+                open(path, "wb").write(bytes(self.m.d))
             self.end_frame()
         if f:
             f.close()
@@ -655,6 +661,7 @@ def main():
     before = [d for d in lines if d["tick"] <= t0]
     lines = [d for d in lines if d["tick"] > t0]
     eng = Engine(level, seed, feed, frames_of(lines))
+    eng.dumps = {int(a.split(":")[0]): a.split(":", 1)[1] for i, a in enumerate(args) if i and args[i - 1] == "--dump"}
     # the seed is the state at the drawing of tick t0's frame: the frame's end comes first
     eng.vblank_prev = before[-1]["vblank"]
     eng.world.skip_to(before[-1]["vblank"])

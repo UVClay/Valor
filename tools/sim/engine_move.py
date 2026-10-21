@@ -88,10 +88,10 @@ def entity_move(eng, e):
     h = eng.handlers.get(("move", t))
     if h:
         return h(e)
-    if fa & 8:
+    if fa & 8 and not eng.m.u32(e + 0x10) & 0x45:
         return walker_move(eng, e)
-    eng.note(f"entity_move of type {t:X} not implemented")
-    return 0
+    from engine_projectile import generic_move
+    return generic_move(eng, e)
 
 
 def walker_move(eng, e):
