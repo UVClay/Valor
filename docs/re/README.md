@@ -59,6 +59,9 @@ Run inside the container (`./dev ...`).
 - `VALOR_WATCH="name=EXPR:LEN;..."` makes the runtime log, every game tick, what changed in
   those bytes (EXPR: hex, `[EXPR]` to follow a pointer, `+HEX`/`-HEX`), e.g.
   `VALOR_WATCH="inv=[8009D654]+3CC:80"`. `VALOR_WATCH_HALF=1` logs signed halfwords.
+- `tools/recon/run.sh NAME SECONDS LOG [args]` runs the game in the container without `./play`'s
+  build step, headless (replays hold without a display), and stops its container after SECONDS
+  (`timeout ./play` leaves the game running); it takes `--warp M:L` like `./play`.
 - `--dump-ram FRAME:PATH` and replays of recordings (`./play --replay DIR`) give RAM at known
   moments of real play to compare against.
 
