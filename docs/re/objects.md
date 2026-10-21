@@ -429,7 +429,9 @@ damage 10.0 (`+0xF8`, a direct hit's), life 150 ticks (`obj+0x3A`), collision sp
   variable is inferred).
 - **Wind-up**: the throw animation (script 0xC for a charge under 12, an underhand lob; 0xE
   otherwise) and `inv+0x120` ticks before the grenade leaves the hand: 8 for grenades; stick
-  grenades 18 (charge < 12) or 15. The refire delay is the weapon's (-60: 2 s,
+  grenades 18 (charge < 12) or 15. Exactly: the starting tick sets `inv+0x124` = 1 and goes on
+  to the count; each call adds 1 to `inv+0x124` and throws when the count **before** the add
+  was at least `inv+0x120` (1:3: started at 5884, thrown at 5891), then resets it to 0. The refire delay is the weapon's (-60: 2 s,
   `inv+0x44`/`+0x48`).
 - **Launch speed: 55 + 2 × charge units per tick** (55..115), along the throwing arm's line
   (`projectile_aim` from the model's bones `+0xD4`/`+0xD6`, as for bullets: where the soldier
@@ -437,8 +439,9 @@ damage 10.0 (`+0xF8`, a direct hit's), life 150 ticks (`obj+0x3A`), collision sp
   grenade's yaw) and vertical velocity (`+0x21C`), and the grenade's own pitch is set to 0.
   Without the cheat 0x40 a grenade is taken from the slot.
 - **No throwing through walls**: the segment from the grenade back toward the thrower (as long
-  as their horizontal distance) is swept against the world; a hit moves the grenade to it,
-  ~5 units back. If that segment crosses an entity's sphere, the grenade starts at the far end
+  as their horizontal distance, max + min/4, along the grenade's forward column) is swept against
+  the world; a hit moves the grenade to it, 20 units back toward the thrower (the column × -5
+  >> 10). If that segment crosses an entity's sphere, the grenade starts at the far end
   (behind the hand) instead. Below the thrower's floor, it is lifted to 32 above it with at most
   55 downward speed.
 
@@ -454,8 +457,9 @@ Each tick (the think, then `entity_move`, then the world contact handler if anyt
    it stops (all velocities 0, rolling cleared). A bounce sound (7 or 8) on bounce ticks.
 4. Moving: forward speed along the yaw, the vertical velocity; swept against the world from
    the old position to the new (walkers' sliding does not apply). A wall: the horizontal
-   velocities go to 0 and, the grenade having flag A 0x80, it goes back to its old position
-   plus 2 units along the wall's normal. The floor (`entity_move`): landing with 8 or more
+   velocities go to 0 and, the grenade having flag A 0x80, its x and z go back to the old position
+   plus the wall's normal × 32 / 65536 rounded to whole units (16 units for an axis normal), y
+   kept. The floor (`entity_move`): landing with 8 or more
    units of fall this tick reflects the vertical velocity (vy = -|vy|) and reports a ground
    contact; less, it lands (on ground, vy = 0).
 5. World contact (`0x80043284`), when something was hit:
@@ -471,7 +475,15 @@ Each tick (the think, then `entity_move`, then the world contact handler if anyt
      (`0x8004C64C`), so soldiers can walk up to it.
    - A wall while not rolling: speed × 2/3 again. Every contact: the direction is reflected
      about the contact normal (`0x800431EC` turns the reflected vector into pitch and yaw) and
-     the spin halved.
+     the spin halved. Exactly: d = (forward column x, 0, forward column z), k = -((d · n) >> 17)
+     (n the contact normal `+0x364`, 32767 long), d += (k · n) >> 12 (GTE GPF); yaw =
+     ratan2(dx, dz) << 16, pitch = -ratan2(0, ·) = 0, roll 0; each spin speed is negated when
+     its angle and the new one have the same sign, and with no spin left the spin angles take
+     the new ones. "Speed × 2/3" is `speed - speed / 3` (C division); rolling, `speed -
+     (speed >> 1)`. A floor bounce's contact normal is the floor face's (`floor_find`'s out),
+     unless a wall was hit in the same move.
+   - The bounce sound every bounce while not rolling: sound 7/8 of bank 1 (grenades), else
+     `rand · 7 >> 15` of bank 0.
 
 **Measured** (replay, `VALOR_WATCH` on the player's soldier and on one of his grenades, 1:3
 vblanks 34151..34207, every value matching the rules above):
@@ -523,7 +535,7 @@ on the grenade's `+0x3C` (op 0x3F, soldier.md):
 | Bit | | Effect on the grenade |
 |---|---|---|
 | 1 | Kicked (anim 217) | If a soldier is within 80 (`0x8005788C`): the grenade takes its angles, speed 25.0, vertical -33.0 (up), fuse and life +8 ticks |
-| 2 | Picked up (anim 218) | Attached to the soldier's bone 17; life 120, **fuse reset to 90**, spin stopped |
+| 2 | Picked up (anim 218) | Attached to the soldier's bone 17; life 120, **fuse reset to 90**, spin stopped. While attached, `entities_update` puts it on the bone each tick (`model_bone_point`, after the think) and it does not move itself; the think zeroes its velocities |
 | 4 | Thrown back (anim 220) | Released along the soldier's facing: d = distance to the player - 700 (at least 0); speed min(d/64 + 30, or + 35 beyond 1300, 65); vertical -25 (-30 beyond 2000); life 120, fuse 90 |
 | 8 | Dropped (the soldier was hit) | Detached; falls |
 
@@ -595,7 +607,11 @@ shrinking, the damage stops. The **smoke puffs**: same placement, start after 8.
 grow by 5.0 to 20..29, hold 45 ticks, shrink by 5.0, rise faster (-1/8 per tick²). The
 explosion entity is removed when both systems are done (about 2.5 s).
 
-**Its first think** (the tick after it is made): the burst of particles (`0x80070DEC`, var0),
+The soldier "within 80" is `0x8005788C(grenade, 0x50, -1)`: the nearest living character by
+`dist_approx` (max + (mid + min)/4, 16-bit) less than 1000 apart in y.
+
+**Its first think** (the tick after it is made): the burst of particles (`0x80070DEC`, var0:
+an entity of type 0x23 with 5 pairs of sparks, three draws each, removed after 3 thinks),
 a camera shake of (3000 - d) / 16 for 10 ticks and a noise of that strength (`0x8004D8DC`)
 if the player is within 3000 (d: max + (the two others)/4).
 

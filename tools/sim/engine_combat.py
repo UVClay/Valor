@@ -512,7 +512,16 @@ def player_hit_part(eng, e, p, o, op):
             return 0
     hp0 = m.s32(e + 0xF4)
     if ot == 0x31:
-        eng.note("player hit by an explosion not implemented")
+        # an explosion whose fireballs still hold, within 300 (dist2d_approx): its part's damage
+        # is 1000.0 for this hit
+        from engine_objects import dist2d_approx
+        q = part(m, o, op)
+        save = m.u32(q + 0x10)
+        if dist2d_approx(m, e, o) < 0x12C and m.s16(m.u32(o + 0x388) + 0xC + 6) > 0:
+            m.w32(q + 0x10, 0x03E80000)
+        if not m.u32(G_CHEATS) & 0x80:
+            damage_from_hit(eng, e, p if p else 1, o, op)
+        m.w32(q + 0x10, save)
     elif not m.u32(G_CHEATS) & 0x80:
         damage_from_hit(eng, e, p, o, op)
     if hp0 != m.s32(e + 0xF4):

@@ -94,6 +94,32 @@ class Collision:
     def floor(self, pos):
         return ms.floor_find(self.w, pos)
 
+    def floor_normal(self, pos):
+        """floor_find (0x80060474) with its normal out: (floor, zone, (nx, ny, nz, steep)) as
+        move_sim.floor_find chooses them, the normal being the chosen face's (floor_in_chunk
+        0x80060138: steep = 1 when ny < 0 and -16 ny / max(|nx|, |nz|) < 28)."""
+        x, y, z = s16(pos[0] >> 16), s16(pos[1] >> 16), s16(pos[2] >> 16)
+        best, zone, nrm = ms.NONE, 0xFFFF, None
+        for ch in self.w.loaded():
+            r = ch.rect
+            if x < r[0] or r[2] < x or z < r[1] or r[3] < z:
+                continue
+            h, zn, fn = floor_leaf_face(ch, (x, y, z))
+            take = False
+            if best == ms.NONE:
+                take = True
+            elif h != ms.NONE:
+                a0 = s32(pos[1])
+                if a0 < h:
+                    take = h < best if a0 < best else (h - a0) < abs(best - a0)
+                else:
+                    take = (h - a0) < abs(best - a0)
+            if take:
+                best, zone = h, zn
+                if h != ms.NONE:
+                    nrm = steep_normal(ch.norms[fn])
+        return best, zone, nrm
+
     def point_floor(self, p):
         """func_8003EE30(point, 0, 1, &normal, 0, 0), integer point: over the loaded chunks (slot
         order, the loading one left out) whose rectangle holds (x, z), the chunk's leaf
@@ -128,6 +154,59 @@ class Collision:
         if out is None:
             return None
         return out[1], out[2], out[3]
+
+
+def steep_normal(n):
+    nx, ny, nz = n[0], n[1], n[2]
+    steep = 0
+    if ny < 0:
+        big = max(abs(nx), abs(nz))
+        if big > 0 and int(-16 * ny / big) < 0x1C:
+            steep = 1
+    return (nx, ny, nz, steep)
+
+
+def floor_leaf_face(ch, p):
+    """move_sim.floor_leaf / floor_pick, keeping the face picked (its normal index)."""
+    xmin, zmin = ch.rect[0], ch.rect[1]
+    n = ch.nodes[0]
+    while n[0] >= 0:
+        a, b, split, _ = n
+        if b >= 0:
+            sp = s16(xmin + split)
+            if p[0] >= sp:
+                xmin, n = sp, ch.nodes[b]
+            else:
+                n = ch.nodes[a]
+        else:
+            sp = s16(zmin + split)
+            if p[2] < sp:
+                n = ch.nodes[a]
+            else:
+                zmin, n = sp, ch.nodes[~b]
+    count, start, zone = ~n[0], n[1], n[3]
+    best, best_below, best_above, best_dist, face = ms.NONE, 0, 0, 0x7FFF, None
+    for fi in ch.idx[start:start + count]:
+        f = ch.faces[fi]
+        if not ms.tri_holds(ch, f, p[0], p[2]):
+            continue
+        h = ms.plane_height(ch, f, p[0], p[2])
+        y = p[1]
+        dist = abs(h - y)
+        below = y < h
+        above = (not below) and not (h + 32 < y)
+        cand_below = below if not above else False
+        if not (cand_below or above):
+            continue
+        if best_below:
+            take = True if not cand_below else h < best
+        elif best_above:
+            take = dist < best_dist
+        else:
+            take = True
+        if take:
+            best_below, best_above, best_dist, best, face = cand_below, above, dist, h, f[3]
+    return best, zone, face
 
 
 def nearest_floor(ch, x, y, z):

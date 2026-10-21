@@ -706,8 +706,9 @@ def player_weapon_update(eng, e):
     if not m.u32(e + 0x38) & 0x4000:
         w = m.u8(inv + 0x55)
         if w in (3, 10):
-            if get_var(m, e, 1) & 0xFF or m.s32(inv + 0x124):
-                eng.note("throw_weapon not implemented")
+            from engine_grenade import throw_weapon
+            wt = G_WEAPONS + 0x44 * w
+            throw_weapon(eng, e, m.s16(wt + 0xC), m.s16(wt + 0xE), get_var(m, e, 1) & 0xFF, m.s32(inv + 0x11C))
         elif w == 7:
             if get_var(m, e, 1):
                 d = m.s32(inv + 0x40)

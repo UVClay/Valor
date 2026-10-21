@@ -188,6 +188,10 @@ class Engine:
         engine_attach.register(self)
         import engine_planes
         engine_planes.register(self)
+        import engine_grenade
+        engine_grenade.register(self)
+        import engine_explosion
+        engine_explosion.register(self)
         self.logic.adopt()
 
     # -- notes: what the engine left out, kept to report
@@ -574,9 +578,18 @@ class Engine:
             m.w32(e + 0x38, 0)
             m.w32(e + 0x3C, 0)
             m.w32(e + 0x40, 0)
+            # attached (+0x30): to a stale or removed target it is let go; else it sits on the
+            # target's bone +0x34 (model_bone_point) and does not move itself
             attach = self.resolve(m.u32(e + 0x30))
             if attach:
-                self.note("attached entities not implemented")
+                if self.handle_dead(m.u32(e + 0x30)) or m.u32(attach + 0xC) & REMOVED:
+                    m.w32(e + 0x30, 0)
+                else:
+                    from engine_sense import model_bone_point
+                    p = model_bone_point(self, attach, m.s8(e + 0x34))
+                    for k in range(3):
+                        m.w32(e + 0x20C + 4 * k, s32(s16(p[k]) << 16))
+            attach = self.resolve(m.u32(e + 0x30))
             if not attach and not m.u32(e + 0xC) & 0x20000:
                 from engine_move import entity_move
                 res = entity_move(self, e)

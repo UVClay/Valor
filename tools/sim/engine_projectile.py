@@ -224,9 +224,12 @@ def projectile_create(eng, owner, etype, model, speed, bone_a, bone_b, a6, a7, d
                       aimed, fa, fb, mask):
     """projectile_create (0x8004532C), in its order."""
     m = eng.m
-    p = eng.entity_create(etype, obj_size=extra + 0x90, parts=2)
     if model != -1:
-        eng.note("projectile with a model not implemented")
+        # entity_create(1, ..., the model, 0x147, 2): an instance, model_instance_init (its parts)
+        p = eng.entity_create(etype, obj_size=extra + 0x90, parts=2, instance=True)
+        eng.model_swap(p, model, 0x147)
+    else:
+        p = eng.entity_create(etype, obj_size=extra + 0x90, parts=2)
     o = m.u32(p + 0x388)
     m.w32(p + 0x36C, PROJECTILE_THINK)
     m.w32(p + 0x370, PROJECTILE_DRAW)
@@ -317,8 +320,13 @@ def projectile_aim(eng, owner, p, bone_a, bone_b, target, attach, off_a, off_b, 
         eng.note("scoped shot (copy_camera_pos) not implemented")
         return
     t = m.s32(p + 8)
-    if t in (0x13F3, 0x13F1):
-        eng.note("grenade/rocket aim not implemented")
+    if t == 0x13F3 or (t == 0x13F1 and m.u32(owner + 0xC) & 1):
+        # a grenade, the player's rocket: from the hand point with the thrower's angles
+        # (copy_shooter_angles 0x80044EF0)
+        pa, pb = gun_points(eng, owner, bone_a, bone_b, attach, off_a, off_b)
+        for k in range(3):
+            m.w32(p + 0x20C + 4 * k, s32(pb[k] << 16))
+            m.w32(p + 0x228 + 4 * k, m.u32(owner + 0x228 + 4 * k))
         return
     pa, pb = gun_points(eng, owner, bone_a, bone_b, attach, off_a, off_b)
     for k in range(3):
@@ -409,25 +417,41 @@ def projectile_think(eng, e):
             m.w32(e + 0x14, m.u32(o + 0x3C))
     parts_box(m, e)
     if m.s32(e + 8) == 0x13F3:
-        eng.note("grenade_soldier_bits not implemented")
+        from engine_grenade import grenade_soldier_bits
+        grenade_soldier_bits(eng, e)
     if m.u16(o + 0x38) & 0x40:
         t = m.u8(o + 0x41)
         if t:
             t -= 1
             m.w8(o + 0x41, t)
             if not t:
-                eng.note("projectile fuse (explosion) not implemented")
+                if m.u32(o + 0x44):
+                    eng.note("projectile fuse callback (obj+0x44) not implemented")
+                elif m.u16(o + 0x38) & 0x100:
+                    # the fuse: the explosion (8, 10, 85), sparks, the sound
+                    from engine_explosion import explosion_spawn, explosion_sound
+                    for k in range(3):
+                        m.w16(e + 0x364 + 2 * k, 0)
+                    explosion_spawn(eng, e, 8, 0xA, 0x55, 0x10000, 0x1000, 0x40000, 5, 0)
+                    n = ((eng.rand.draw(*FN["grenade"]) * 5) >> 15) + 0xF
+                    particles_spawn(eng, [m.s32(e + 0x20C + 4 * k) for k in range(3)], 5, n, 0x28, 0x19, 0x50,
+                                    0x1E, 0x3FF, 0x3F, 0x3E0, 0xFF, 1, 0x10000, 0, 0)
+                    explosion_sound(eng, e)
                 eng.remove(e, "fuse")
                 return
     att = eng.resolve(m.u32(e + 0x30))
     if att and m.s8(e + 0x34) >= 0:
-        eng.note("projectile attached to a bone not implemented")
+        # held on a bone (entities_update places it): no velocity, no spin, behaviour & 0xFDF6
+        # (the bone point computed here is not kept)
+        for k in (0x23C, 0x238, 0x234, 0x220, 0x21C, 0x218, 0x200):
+            m.w32(e + k, 0)
+        m.w16(o + 0x38, m.u16(o + 0x38) & 0xFDF6)
         return
     for k in range(3):
         m.w32(o + 0x68 + 4 * k, s32(m.s32(o + 0x68 + 4 * k) + m.s32(o + 0x74 + 4 * k)))
     f = m.u16(o + 0x38)
     if f & 0x400:
-        eng.note("rolling projectile (0x400) not implemented")
+        rolling(eng, e, o, f)
     f = m.u16(o + 0x38)
     if f & 1:
         if not f & 2:
@@ -439,6 +463,35 @@ def projectile_think(eng, e):
     if m.u16(o + 0x38) & 0x10:
         eng.note("projectile smoke trail (0x10) not implemented")
     m.w32(o + 0x80, m.u32(e + 0x200))
+
+
+def rolling(eng, e, o, f):
+    """projectile_think, a rolling grenade (0x400): on the ground, the bounce sound on a bounce
+    tick, the pitch and the yaw spin halved, obj+0x70 = 0x04000000, the speed down 3.0 a tick (1.0
+    at 24.99 or less); below 0 it stops (velocities, spin and rolling cleared); off the ground (or
+    stopped) its rolling voice obj+0x30 is stopped."""
+    m = eng.m
+    if m.s32(e + 0x284):
+        if f & 2:
+            snd = ((eng.rand.draw(*FN["grenade"]) * 2) >> 15) + 7
+            eng.audio.play(1, snd, e, 0x40000, 0, 0x10000, 0x40AC, 0, 0, 0, 0)
+        if m.s32(e + 0x228):
+            m.w32(e + 0x228, m.s32(e + 0x228) >> 1)
+        if m.s32(o + 0x78):
+            m.w32(o + 0x78, m.s32(o + 0x78) >> 1)
+        m.w32(o + 0x70, 0x04000000)
+        sp = m.s32(e + 0x200)
+        sp = s32(sp - ((3 if sp > 0x18FFFF else 1) << 16))
+        m.w32(e + 0x200, sp)
+        if sp >= 0:
+            return
+        for k in (0x220, 0x218, 0x23C, 0x238, 0x234, 0x200):
+            m.w32(e + k, 0)
+        for k in (0x7C, 0x78, 0x74, 0x68):
+            m.w32(o + k, 0)
+        m.w16(o + 0x38, m.u16(o + 0x38) & 0xFBFF)
+    if m.s32(o + 0x30) > 0:
+        m.w32(o + 0x30, 0)               # voice_stop: sound only
 
 
 # ---------------------------------------------------------------- entity_move, the general case
@@ -480,6 +533,7 @@ def generic_move(eng, e):
     world = m.u32(G_WORLD)
     if world and m.u32(e + 0x14) & m.u32(world + 0xC):
         fb = m.u32(e + 0x10)
+        hit = None
         if fa & 8 and not fa & 1 and not fb & 1:
             if not fb & 0x44:
                 eng.note("generic entity_move: walker_slide for a non-walker not implemented")
@@ -502,8 +556,10 @@ def generic_move(eng, e):
                         for k in range(3):
                             m.w32(e + 0x20C + 4 * k, s32(point[k] << 16))
                     else:
-                        eng.note("generic entity_move: bouncing (flags A 0x80) not implemented")
-        res = floor_step(eng, e, res, ground0, vy16)
+                        # a bouncer: back to the old x, z plus the normal << 5, rounded to units
+                        for k in (0, 2):
+                            m.w32(e + 0x20C + 4 * k, s32(pos0[k] + (((normal[k] << 5) + 0x8000) & 0xFFFF0000)))
+        res = floor_step(eng, e, res, ground0, vy16, hit is not None)
     for k in range(3):
         m.w32(e + 0x1F0 + 4 * k, 0)
         m.w32(e + 0x3BC + 4 * k, m.u32(e + 0x20C + 4 * k))
@@ -517,25 +573,75 @@ def write_contact(m, e, point, normal, face):
         m.w16(e + 0x320 + 2 * k, normal[k])
 
 
-def floor_step(eng, e, res, ground0, vy16):
-    """entity_move's floor part for the general case."""
+def floor_step(eng, e, res, ground0, vy16, walled=False):
+    """entity_move's floor part for the general case (0x8006C83C): with the floor under it
+    (floor_find, its normal): no floor: a moving object (flags A & 7) goes back (to its old y
+    on the floor if it was in the air), on the ground, 0x80008000 in +0x38. On the ground: within
+    32 above to 256 below it stays on the floor; further below it steps off (+0x38 | 1), or for
+    flags B 0x200000 more than 57 down stops dead. Falling (flags A 0x20): it reaches the floor
+    when not more than this tick's fall + 16 (64 at most) above it: the player lands moving down;
+    a bouncer (0x80) falling 8 or more a tick bounces (vy = -|vy|, the floor's normal as the
+    contact unless a wall was hit, not on the ground); anything else lands (+0x38 & ~1)."""
     m = eng.m
     if m.u32(e + 0x18) & 1 or m.u32(e + 0x10) & 0x10:
         return res
     fa = m.u32(e + 0xC)
     if not (m.s32(e + 0x284) or fa & 8):
         return res
-    f, zone = eng.world.floor([m.s32(e + 0x20C + 4 * k) for k in range(3)])
+    f, zone, nrm = eng.world.floor_normal([m.s32(e + 0x20C + 4 * k) for k in range(3)])
     m.w32(e + 0x390, zone)
-    if f is None or f == -0x7FFF:
-        m.w16(G_FLOOR_LAST, -0x7FFF)
-        if fa & 7 and not m.u32(e + 0x10) & 0x10000:
-            eng.note("generic entity_move: no floor under a moving object not implemented")
-        return res
     m.w16(G_FLOOR_LAST, f)
+    if f == -0x7FFF:
+        if fa & 7 and not m.u32(e + 0x10) & 0x10000:
+            for k in range(3):
+                m.w32(e + 0x20C + 4 * k, m.u32(e + 0x3BC + 4 * k))
+            if not ground0:
+                m.w32(e + 0x210, m.u32(e + 0x208))
+            res |= 2
+            m.w32(e + 0x284, 1)
+            m.w32(e + 0x38, m.u32(e + 0x38) | 0x80008000)
+        return res
     m.w32(e + 0x208, s32(f << 16))
-    if m.s32(e + 0x284) or fa & 0x20:
-        eng.note("generic entity_move: falling objects' floor not implemented")
+    d = m.s16(e + 0x212) - f
+    if m.s32(e + 0x284):
+        if 0 <= d + 0x20 < 0x121 or d >= 0:
+            m.w32(e + 0x210, s32(f << 16))
+        elif m.u32(e + 0x10) & 0x200000 and d < -0x39:
+            res |= 0x80
+            for k in (0x220, 0x21C, 0x218, 0x200):
+                m.w32(e + k, 0)
+            for k in range(3):
+                m.w32(e + 0x20C + 4 * k, m.u32(e + 0x3BC + 4 * k))
+            m.w32(e + 0x284, ground0)
+            m.w32(e + 0x38, m.u32(e + 0x38) | 0x80000000)
+        else:
+            m.w32(e + 0x284, 0)
+            m.w32(e + 0x38, m.u32(e + 0x38) | 1)
+        return res
+    if not fa & 0x20:
+        return res
+    if d < 0:
+        lim = vy16 + 0x10 if vy16 < 0x30 else 0x40
+        if lim < abs(d):
+            return res
+    if fa & 1:
+        if vy16 < 0:
+            return res
+    elif fa & 0x80 and abs(vy16) >= 8:
+        if not walled and nrm is not None:
+            for k in range(4):
+                m.w16(e + 0x364 + 2 * k, nrm[k])
+        res |= 1
+        m.w32(e + 0x284, 0)
+        m.w32(e + 0x210, s32(f << 16))
+        m.w32(e + 0x21C, s32(-abs(m.s32(e + 0x21C))))
+        return res
+    res |= 1
+    m.w32(e + 0x284, 1)
+    m.w32(e + 0x210, s32(f << 16))
+    m.w32(e + 0x1F4, 0)
+    m.w32(e + 0x21C, 0)
+    m.w32(e + 0x38, m.u32(e + 0x38) & ~1)
     return res
 
 
@@ -569,14 +675,23 @@ def projectile_world_contact(eng, e, res):
         f |= 2
         if f & 4 and res & 1:
             m.w32(e + 0xC, m.u32(e + 0xC) & ~0x80)
-        elif f & 0x208:
-            eng.note("bouncing projectile (0x208) not implemented")
-        if m.u16(o + 0x38) & 0x200:
-            eng.note("rolling projectile (0x200) not implemented")
+        elif f & 0x208 and not f & 0x400:
+            bounce(eng, e, o, res)
+        f = m.u16(o + 0x38)
+        if f & 0x10 and res & 1:
+            eng.note("projectile smoke trail (0x10) on the ground not implemented")
+        if f & 0x200:
+            bounce_turn(eng, e, o, res)
     f = m.u16(o + 0x38)
     if not f & 0x40:
         if f & 0x100:
-            eng.note("explosive round's explosion not implemented")
+            # an explosive round or a rocket hitting the world: the explosion (10, 12, 130)
+            from engine_explosion import explosion_spawn, explosion_sound
+            explosion_spawn(eng, e, 0xA, 0xC, 0x82, 0x10000, 0x1000, 0x40000, 5, 0)
+            n = ((eng.rand.draw(*FN["grenade"]) * 5) >> 15) + 0xF
+            particles_spawn(eng, [m.s32(e + 0x20C + 4 * k) for k in range(3)], 5, n, 0x28, 0x19, 0x50, 0x1E,
+                            0x3FF, 0x3F, 0x3E0, 0xFF, 1, 0x17FFF, 0, 0)
+            explosion_sound(eng, e)
         else:
             impact_sound(eng, e)
         y = s32(m.s32(e + 0x22C) + ((((eng.rand.draw(*FN["grenade"]) & 0x3FF) - 0x200) << 16) + 0x08000000))
@@ -585,6 +700,116 @@ def projectile_world_contact(eng, e, res):
         m.w32(e + 0x22C, y)
         eng.remove(e, "projectile hit the world")
     return 1
+
+
+def bounce(eng, e, o, res):
+    """projectile_world_contact, a bouncing projectile (0x208) not rolling: unless 0x800, the speed
+    less a third (C division) and, on a ground contact when the next tick would reach the floor
+    (floor < y + vy + extra gravity + push), it starts rolling (0x400 for 0x9: on the ground, vy
+    and pitch 0, flags A 0x28 instead of 0x80, no pitch spin, at least 30.0 forward); the bounce
+    sound; unless 0x800, the extra gravity 10.0 and a quarter of the vertical velocity kept."""
+    m = eng.m
+    f = m.u16(o + 0x38)
+    if not f & 0x800:
+        sp = m.s32(e + 0x200)
+        sp = s32(sp - int(sp / 3))
+        m.w32(e + 0x200, max(sp, 0))
+        if res & 1 and m.s32(e + 0x208) < s32(m.s32(e + 0x210) + m.s32(e + 0x21C) + m.s32(o + 0x34)
+                                                + m.s32(e + 0x1F4)):
+            m.w16(o + 0x38, (m.u16(o + 0x38) & 0xFFF6) | 0x400)
+            m.w32(e + 0x284, 1)
+            m.w32(e + 0x21C, 0)
+            m.w32(e + 0x228, 0)
+            m.w32(e + 0xC, (m.u32(e + 0xC) & ~0x80) | 0x28)
+            m.w32(o + 0x74, 0)
+            if m.s32(e + 0x200) <= 0x1DFFFF:
+                m.w32(o + 0x80, 0x1E0000)
+                m.w32(e + 0x200, 0x1E0000)
+    if m.s32(e + 8) != 0x13F3:
+        snd = (eng.rand.draw(*FN["grenade"]) * 7) >> 15
+        eng.audio.play(0, snd, e, 0x30000, 0, 0x10000, 0x7FFF, 0, 0, 3, 0)
+    else:
+        snd = ((eng.rand.draw(*FN["grenade"]) * 2) >> 15) + 7
+        eng.audio.play(1, snd, e, 0x40000, 0, 0x10000, 0x40AC, 0, 0, 0, 0)
+    if not m.u16(o + 0x38) & 0x800:
+        m.w32(o + 0x34, 0xA0000)
+        m.w32(e + 0x21C, m.s32(e + 0x21C) >> 2)
+
+
+def bounce_turn(eng, e, o, res):
+    """projectile_world_contact, 0x200: the speed back to last tick's unless flags A 0x80; unless
+    0x800: rolling, halved (and the first time, 0x4000, the soldiers warned), else on a wall a
+    third off; the spin halved. Then the heading reflected about the contact normal +0x364: d =
+    (forward x, 0, forward z), d += (-(d . n >> 17) . n) >> 12 (GTE), yaw = ratan2(dx, dz), pitch 0
+    (0x800431EC with dy 0), roll 0; the spin's signs follow the new angles; no spin: the drawn
+    angles take the new ones; a positive pitch makes vy positive."""
+    m = eng.m
+    import combat_sim as cs
+    if not m.u32(e + 0xC) & 0x80:
+        m.w32(e + 0x200, m.u32(o + 0x80))
+    f = m.u16(o + 0x38)
+    if not f & 0x800:
+        if f & 0x400:
+            sp = m.s32(e + 0x200)
+            sp = s32(sp - (sp >> 1))
+            m.w32(e + 0x200, max(sp, 0))
+            if f & 0x4000:
+                warn_soldiers(eng, e)
+                m.w16(o + 0x38, m.u16(o + 0x38) & 0xBFFF)
+        elif res & 2:
+            sp = m.s32(e + 0x200)
+            sp = s32(sp - int(sp / 3))
+            m.w32(e + 0x200, max(sp, 0))
+        m.w32(o + 0x74, m.s32(o + 0x74) >> 1)
+        m.w32(o + 0x78, m.s32(o + 0x78) >> 1)
+    d = [m.s16(e + 0x344), 0, m.s16(e + 0x350)]
+    n = [m.s16(e + 0x364 + 2 * k) for k in range(3)]
+    dot = s32(d[0] * n[0] + d[2] * n[2])
+    k0 = -(dot >> 17)
+    t = [gt.sat16((k0 * n[k]) >> 12) for k in range(3)]
+    d = [s16(d[0] + t[0]), 0, s16(d[2] + t[2])]
+    m.w32(e + 0x22C, s32(cs.ratan2(d[0], d[2]) << 16))
+    m.w32(e + 0x228, 0)
+    m.w32(e + 0x230, 0)
+    if (m.s32(e + 0x228) ^ m.s32(o + 0x68)) >= 0:
+        m.w32(o + 0x74, s32(-m.s32(o + 0x74)))
+    if (m.s32(e + 0x22C) ^ m.s32(o + 0x6C)) >= 0:
+        m.w32(o + 0x78, s32(-m.s32(o + 0x78)))
+    if m.s32(o + 0x74) == 0 and m.s32(o + 0x78) == 0:
+        for k in range(3):
+            m.w32(o + 0x68 + 4 * k, m.u32(e + 0x228 + 4 * k))
+    if m.s32(e + 0x228) > 0:
+        m.w32(e + 0x21C, abs(m.s32(e + 0x21C)))
+
+
+def warn_soldiers(eng, e):
+    """A rolling grenade's first contact: every living soldier and dog within 1200
+    (dist2d_approx) gets +0x3C 0x40; the nearest (the first of equals) 0x80 if a dog or within
+    1000, else 0x20 if three or more were within 1200; then the grenade's hit part kind 7
+    (0x8004C64C)."""
+    m = eng.m
+    from engine_objects import dist2d_approx
+    near, best, n = None, 0x7FFFFFFF, 0
+    for o in list(eng.entities()):
+        if m.s32(o + 8) not in (0x1402, 0x1405) or m.u32(o + 0xC) & 0x20080000:
+            continue
+        d = dist2d_approx(m, e, o) & 0xFFFFFFFF
+        if d < 0x4B0:
+            n += 1
+            m.w32(o + 0x3C, m.u32(o + 0x3C) | 0x40)
+            if near is None or d < best:
+                near, best = o, d
+    if near is None:
+        return
+    if m.s32(near + 8) == 0x1405 or ((n & 0xFF) < 3 and best < 0x3E8):
+        m.w32(near + 0x3C, m.u32(near + 0x3C) | 0x80)
+    elif (n & 0xFF) >= 3:
+        m.w32(near + 0x3C, m.u32(near + 0x3C) | 0x20)
+    else:
+        return
+    pp = m.u32(e + 0x304)
+    for i in range(m.u16(e + 0x36)):
+        m.w32(pp + 0x48 * i + 8, 7)
 
 
 def decal(eng, rec):

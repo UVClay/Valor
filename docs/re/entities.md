@@ -281,7 +281,8 @@ For each entity, in list order, parents first:
    `+0x3C`, `+0x40` are cleared: what was set during the think (and before it, in the last
    tick's collisions) is gone, what `entity_move`, the collisions and later thinks set this tick
    stays for the next think.
-4. Attached (`+0x30`): position = the target's bone `+0x34` (`0x8008DABC`).
+4. Attached (`+0x30`): a stale handle or a removed target (flag 0x80000) clears it; else
+   position = the target's bone `+0x34` (`0x8008DABC`, whole units << 16) and no `entity_move`.
 5. Otherwise, unless flag 0x20000: `entity_move` (`0x8006C83C`), then `world_contact(e, flags)`
    (`+0x378`) if anything was hit; player and walkers also `0x800845A8`.
 6. Brain (`+0x38C`, `brain_update`), `0x8006A76C(e)`, `player_weapon_update` for the player's soldier
@@ -301,7 +302,21 @@ For each entity, in list order, parents first:
    stays where the slide left it: levels.md Collision, enemies.md); everything else sweeps a line from the old position (`0x8003EF5C`: hit point,
    normal, surface at `+0x318`) and stops there.
 5. The floor (`0x80060474`, height in `0x800B7460`, -0x7FFF: none): landing, stepping (up to
-   0x120 units), falling (flag 0x200000 entities through holes).
+   0x120 units), falling (flag 0x200000 entities through holes). Exactly, for anything but a
+   walker (only on the ground or with flag A 8; not attached or flags B 0x10): no floor: an
+   object with flags A & 7 (unless flags B 0x10000) goes back to `+0x3BC` (and to `+0x208`'s y
+   if it was in the air), on the ground, `+0x38` |= 0x80008000. On the ground: y - floor in
+   -32..256 or above it keeps it on the floor; lower, flags B 0x200000 more than 57 below stops
+   it dead (velocities 0, back, `+0x38` | 0x80000000), anything else steps off (off the ground,
+   `+0x38` | 1). In the air with gravity (flag A 0x20): it reaches the floor if not above it by
+   more than this tick's fall (whole units) + 16, at most 64; then the player lands moving down
+   only; a bouncer (flag A 0x80) falling 8 or more a tick bounces (on the floor, vy = -|vy|, not
+   on the ground, the floor face's normal into `+0x364` unless the move hit a wall; contact
+   1); anything else lands (on the ground, y = floor, vy and `+0x1F4` 0, `+0x38` & ~1, contact
+   1). A swept wall hit (flags B 0x44): contact 2, `+0x218`/`+0x220` 0, the normal in `+0x364`,
+   `+0x38` | 0x8000; a non-bouncer stops at the hit point; a bouncer's x, z go back to the old
+   ones plus the normal × 32 / 65536 rounded to whole units; with an up-facing normal (y ≥
+   0x801), falling and moving down, vy 0 and y back.
 6. Returns contact flags: 0x1 ground, 0x2 wall, 0x80 fell.
 
 For every entity, `entity_move` first copies the forward speed `+0x200` into the local

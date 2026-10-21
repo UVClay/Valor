@@ -718,7 +718,9 @@ reimplementation); integer coordinates are the 16.16 position's whole parts.
   two loaded chunks overlap.
 - A floor whose normal's vertical part is less than 1.75 times its largest horizontal part
   (steeper than about 30°) is flagged steep (`0x80060138`); nothing reads the flag
-  (movement.md). No floor: -0x7FFF.
+  (movement.md). No floor: -0x7FFF. `floor_find`'s second argument receives the chosen face's
+  normal and that flag (4 halfwords: nx, ny, nz, steep = ny < 0 and -16·ny / max(|nx|, |nz|) <
+  28); a bouncing object's floor bounce copies it into `+0x364` (entities.md).
 
 **The floor nearest a point** (`func_8003EE30`, from falling attachments `0x80050E34`, the
 camera's placement `camera_place` and `0x800579F4`) is a second, simpler search over the same
