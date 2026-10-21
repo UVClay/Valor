@@ -50,7 +50,7 @@ soldier's position `+0x20C`, ground `+0x284`), 30 Hz ticks, y pointing down:
 | | Per tick | |
 |---|---|---|
 | Running forward | 34.8 units | ~1044 units/s (RECON.md: 17.4 per 60 Hz frame) |
-| Crouched, forward | 7.9 units | 23% of running |
+| Crouched, forward | 8.716 units | a quarter of running, once the 8-tick crouch ends (movement.md) |
 | Jump | 24 up at take-off, gravity 2 per tick | 156 units high, 23 ticks (0.77 s) in the air |
 
 On a ladder (levels.md, Triggers: `inv+0x70` the top) the forward input climbs at half its

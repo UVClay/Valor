@@ -436,8 +436,9 @@ player's model script and a level script:
   leave lists hold 0xD/0xE or 8/9. 2:3 has nine 0xD/0xE boxes and one 8/9 box; a mission 1
   level (the replay at vblank 30000) two 0xD/0xE boxes; 1:3 and 3:2 none.
 
-So **0x800 means "in a concealment zone"** (overlapping zones counted): sight checks against
-the player use half the sweep (query 0xB). **0x400 means "undetectable"**: soldiers' detection
+So **0x800 means "in a low zone"** (overlapping zones counted): the player can't stand up there
+(`player_stand`, movement.md) and sight checks against the player use half the sweep (query
+0xB), so these are crawl spaces under something low. **0x400 means "undetectable"**: soldiers' detection
 (44) skips sight and proximity (hearing still counts) and Panzerfaust soldiers fire straight
 ahead (fire 3) instead of aiming. Neither changed in a replay of the recorded session up to
 vblank 96,000 (it never entered such a zone); found by reading the scripts (`lvs.py`,

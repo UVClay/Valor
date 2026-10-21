@@ -49,7 +49,14 @@
 80045A78 bullet_spawn               # bullets are entities at 600-669 units/tick
 80045CA0 rocket_spawn
 80045F14 pellet_spawn
+800460F4 weapon_reload              # (soldier): clip from reserve; 0 if nothing to do
+80046C50 camera_shake               # (camera, amplitude, count): y += amp, amp = -amp/2 per tick
+80046C64 camera_ease                # camera_obj current points toward targets, >> obj+0x10
 80046DD4 camera_draw                # camera's +0x370: poses and skins its model
+800473DC camera_think               # the camera entity's think: ease, look points, place, shake
+800479D8 camera_look_points         # look point 200 ahead along inv+0x184; death mode: from bones
+800482A4 camera_place               # mode 0x80: eye = soldier x/z, y + camera_obj+0x94
+80048EEC view_lookat                # view matrix from eye to look point (y row x5/8)
 8004913C camera_setup               # builds the view matrix at obj+0xE4
 8004A634 level_read_parameters      # "PARAMETER DATA READ": ammo row -> weapon table, debug dump
 8004AC58 apply_damage               # (victim, damage, attacker, part): health -= damage, death
@@ -136,14 +143,27 @@
 8007540C paths_parse                # BSD header +0x5A0 -> g_paths
 8007570C action_held                # (port, action)
 80075778 action_pressed             # (port, action)
+800758B4 role_button_set_speed      # (port, role, n, mode): mode 4 max >> n, 2 restore
+800759EC role_button_max            # (port, role): digital config +0x1C
 80075A30 role_button
+80075D1C role_axis_set_speed        # (port, role, n, mode): analog speed, as role_button_set_speed
 80075E7C role_axis_curve
 80075FB4 role_axis                  # (port, role, ?)
+80076008 role_axis_alt              # (port, role_axis_of, role_cfg, ?): pitch from the forward stick
+800760AC look_mode                  # (port): 0x8009E3A0[port], 0 spring, 1 free, 2 free when aiming
 80078F60 walker_slide               # walkers vs the level; sorts nearby walls ahead/left/right for the brain
+80079718 player_stand               # crouch off: speeds, eye 240, sphere -100, eye target -240
+800798AC player_crouch_done         # crouch reached: speeds / 4, eye 80, sphere 0
+80079A50 player_think_dead          # soldier follows the death camera; fade, level lost
+80079D10 player_death_start         # contact 0x4000: death camera script 0xF, think swap
+8007A050 player_pad_config          # pad mode change: role config, option flags, debug combos
 8007A32C player_think_mounted       # while on a mounted gun
 8007A6B0 player_update
 8007B350 player_weapon_update
+8007B4B8 player_world_contact       # landing: velocity = 0
 8007B8F4 player_draw                # player soldier's +0x370
+8007BA20 player_stance              # inv+0x1C8 from aim mode and weapon (0..9)
+8007BADC view_pitch_target          # camera look point height = eye + 2 - 200 tan(pitch)
 8007BE04 player_soldier_init        # health 128, eye height 240, pitch limits
 8007C1D0 player_hit_part
 8007CF4C throw_weapon
@@ -157,6 +177,8 @@
 800824D0 model_render               # skeletal models -> 0x80082948 -> skinning
 80082E90 health_pickup_touch        # +13 / +32 / +64, capped at 128
 800830BC ammo_pickup_touch
+800845DC record_use_send            # send a record's +0x4C message list
+80084670 player_use                 # Use: zone records' use messages
 80084718 skeleton_pose              # skin a drawn model: root = inst+0x98, then skeleton_walk
 800847CC quat_decode                # (packed, out, count): 2 quaternions per 3 words, 12-bit components x2
 8008492C anim_frame_pose            # (inst, anim, frame, out): decode a key frame or slerp between keys
@@ -198,6 +220,9 @@
 8009D678 g_handles                  # handle (low 16 bits) -> entity
 8009E28C g_path_count
 8009E290 g_paths                    # 8 bytes each: {id, count, points (0x14 bytes each, s16 x y z first)}
+8009E398 g_aim_pitch_from_move      # per port: forward stick drives pitch when aiming
+8009E3A0 g_look_mode                # per port, see look_mode
+8009E3AC g_axis_curve               # 128-byte stick response curve
 8009E874 g_slot_count               # weapon slots this level
 8009E878 g_slot_weapon              # byte per slot: index into g_weapons
 8009EAAC g_quat_lerp_limit          # 0x8C: below this from 1.0 the slerp is linear
@@ -206,6 +231,8 @@
 8009EC54 g_model_count
 8009EC58 g_models                   # 0x100 bytes each: +0 hash, +0x94 script, +0xB8 scripts, +0xFC entity type
 800AD260 g_vm_stack                 # 8-byte {type, value}, top index 0x8009D5A8
+800B74B0 g_role_axes                # analog role config, port*0xA0 + role*0x28
+800B75F0 g_role_buttons             # digital role config, port*0xD0 + role*0x34
 
 # --- SHELL.BIN ---
 8003BA40 g_kill_required            # 4 words per campaign slot
