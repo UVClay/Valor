@@ -210,8 +210,8 @@ double output_aspect() {
     static double applied = -1;
     double a = config.aspect;
     if (a == 0) {
-        int ww, wh;
-        SDL_GetWindowSizeInPixels(window, &ww, &wh);
+        int ww = 0, wh = 0;
+        if (window) SDL_GetWindowSizeInPixels(window, &ww, &wh);
         a = wh > 0 ? double(ww) / wh : 4.0 / 3.0;
     }
     static double applied_fov = -1;
@@ -336,8 +336,16 @@ void display_apply_settings() {
     SDL_SetWindowFullscreen(window, config.fullscreen);
 }
 
+static void open_window();
+
 void display_init(bool want_window) {
-    if (!want_window) return;
+    if (want_window) open_window();
+    // The projection changes what the game culls and draws, and so its timing: set it before the
+    // game runs, window or not, or a replay without a display runs a different game.
+    output_aspect();
+}
+
+static void open_window() {
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         log("display: SDL init failed (%s), running headless", SDL_GetError());
         return;
