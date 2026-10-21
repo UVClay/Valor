@@ -13,6 +13,28 @@ document, now fixed there. They are test tools, written for clarity, not speed.
 | `level_vm.py` | Level logic: the level-script VM and built-ins, subscriptions and filters, the deferred queue, record state and activation, zones and triggers, objectives | Every frame exact (21,676) in records, variables, subscriptions, the queue, objectives and level end, but two single frames of zone bits |
 | `combat_sim.py` | Poses and hit spheres, the trigger, reloads, shots, spread, bullet flight, hits, damage | Poses exact; hit spheres 99.9 %; which entity and part each bullet hits 96 % exact, 4 % within a sphere's edge |
 
+## Checking a recording: `check.py`
+
+    python3 tools/sim/check.py RECORDING [--levels M:L,...] [--only move,sst,brain,combat,level] [--jobs N]
+
+replays the recording (in the dev container, `chk_*`), gathers everything below, runs all five
+per level and prints one table: system, level, compared, exact, within (a documented range or
+rounding), fail, verdict. The levels are the ones the replay plays (a new one wherever the tick
+counter starts again, named from RAM), so a replay that parted from its recording is still a
+valid check. The verdict compares with `baseline.json`: the recording's own results when it has
+an entry (`--save-baseline` writes one), else the recorded session's agreement for that system.
+It exits 1 on any FAIL. Everything is kept in `build/simcheck/NAME/` (reports in `out/`); a second
+run only runs the simulators (`--replay-again` replays too). Needs a runtime that takes
+`--dump-ram` more than once and `--stop-at` (`--bin`, default `build/cmake/valor`).
+
+The recorded session, to 2:3's start (version 1 recordings part from the recording headless in
+2:3): about 4 minutes the first time, 20 s after:
+
+    python3 tools/sim/check.py recordings/2026-10-19_22-22-43_m1l3 --levels 1:3,2:1,2:2
+
+Its results are the table above, but for the script VM: `check.py` picks its own 20 tick pairs
+per level (106 thinks), one of which (2:2) still differs: an animation instance's blend field.
+
 ## How they are fed
 
 The original's side comes from a replay of a recording (`tools/recon/run.sh NAME SECONDS LOG

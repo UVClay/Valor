@@ -40,7 +40,7 @@ static void usage(const char *argv0) {
             "       [--screenshots DIR] [--screenshot-every N] [--screenshot-from FRAME] [--screenshot-window] [--wav FILE]\n"
             "       [--press FRAME:BUTTON[:DURATION]]... [--monkey SEED:FROM_FRAME]\n"
             "       [--kbm FRAME:CONTROL[:DURATION]]... [--mouse FRAME:DX,DY]...\n"
-            "       [--stick FRAME:lx|ly|rx|ry=VALUE[:DURATION]]... [--dump-ram FRAME[:FILE]]\n"
+            "       [--stick FRAME:lx|ly|rx|ry=VALUE[:DURATION]]... [--dump-ram FRAME[:FILE]]... [--stop-at FRAME]\n"
             "       [--poke-on-call CALLHEX:ADDRHEX=VALUE]...\n"
             "       [--record DIR] [--replay DIR [--video FILE.y4m] [--video-range FROM:TO]]\n"
             "       [--trace-io] [--trace-calls] [--trace-cd] [--trace-audio] [--max-cycles N]\n", argv0);
@@ -126,8 +126,10 @@ int main(int argc, char **argv) {
             config.mouse_moves.push_back({frame, dx, dy, {false, false}});
         } else if (!strcmp(argv[i], "--dump-ram") && i + 1 < argc) {
             char *end;
-            config.dump_ram_frame = strtoull(argv[++i], &end, 0);
-            if (*end == ':') config.dump_ram_path = end + 1;
+            uint64_t frame = strtoull(argv[++i], &end, 0);
+            config.ram_dumps.push_back({frame, *end == ':' ? end + 1 : "build/ram.bin"});
+        } else if (!strcmp(argv[i], "--stop-at") && i + 1 < argc) {
+            config.stop_at = strtoull(argv[++i], nullptr, 0);
         } else if (!strcmp(argv[i], "--press") && i + 1 < argc) { if (!parse_press(argv[++i])) { usage(argv[0]); return 2; } }
         else if (!strcmp(argv[i], "--screenshots") && i + 1 < argc) config.screenshots = argv[++i];
         else if (!strcmp(argv[i], "--screenshot-every") && i + 1 < argc) config.screenshot_every = strtoull(argv[++i], nullptr, 0);

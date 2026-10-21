@@ -3,7 +3,9 @@
 animation.md "Root movement" / "Root turn", entities.md "Moving", levels.md Collision), stepped
 one tick at a time against the original.
 
-  brain_sim.py watch WATCH.log TRACE.jsonl DUMP[@VBLANK]... [--from V] [--to V] [-v N] [--ent SLOT]
+  brain_sim.py watch WATCH.log TRACE.jsonl DUMP[@VBLANK]... [--from V] [--to V] [--level M:L] [-v N]
+                    [--ent SLOT]
+  brain_sim.py watchlist [BRAIN_ADDR...]   the VALOR_WATCH list (no address: the brain finder)
   brain_sim.py pairs D_T.bin D_T1.bin ...  (or --dir build/vm: every dV.bin with a dV+1.bin)
 
 A dump's vblank is the number ending its name unless given after @. -v N prints the first N
@@ -31,6 +33,7 @@ distance it writes into a script variable, the contact pulses 0x400000/0x800000/
 
 The watch backend needs a log of
   VALOR_WATCH="k=80090DE8:A0;ws=8009817C:8;aI=E+0:40;vI=E+4C:A0;mI=E+1F0:1E0;nI=E+FBC+5C:48;hJ=BRAIN:124..."
+(`watchlist` writes it; tools/sim/check.py finds the brains and runs it all)
 (E the slot's entity, the instance at E+0xFBC, and the brains as fixed windows at the addresses
 the game allocated them: a pointer watch re-bases silently, losing the brain's constant words;
 the addresses are the "watch N bI at ADDR" lines of a first run with bI=[E+38C]+0:124; ws the
@@ -1072,6 +1075,11 @@ def target_view(memA, memB, list_b, ent):
     return out
 
 
+def mission_level(mem):
+    """"M:L" of the level being played (the campaign's 0-based mission and level, 0x80038660)."""
+    return f"{mem.s32(0x80038660) + 1}:{mem.s32(0x80038664) + 1}"
+
+
 def level_of(mem):
     p = mem.u32(0x800939F4)
     return mem.u8(p + 0x8) if p else 0
@@ -1111,7 +1119,7 @@ def pairs_cmd(args):
         if memB.u32(G_TICK) != memA.u32(G_TICK) + 1:
             continue
         v = int(re.search(r"(\d+)\.bin$", pa)[1])
-        lv = level or ("1:3" if v < 20495 else "2:1" if v < 40736 else "2:2")
+        lv = level or mission_level(memA)
         if lv not in worlds:
             worlds[lv] = ms.World(lv)
         world = worlds[lv]
@@ -1156,7 +1164,7 @@ def watch_cmd(args):
             dumps.append((int(v or re.search(r"(\d+)\.bin$", p)[1]), p))
     dumps.sort()
     lo = int(args[args.index("--from") + 1]) if "--from" in args else 0
-    hi = int(args[args.index("--to") + 1]) if "--to" in args else 61378
+    hi = int(args[args.index("--to") + 1]) if "--to" in args else 1 << 62
     verbose = int(args[args.index("-v") + 1]) if "-v" in args else 0
     only = int(args[args.index("--ent") + 1]) if "--ent" in args else None
     trace = read_trace(trace_path)
@@ -1183,7 +1191,13 @@ def watch_cmd(args):
     stats = Stats()
     worlds = {}
     shown = [0]
-    bounds = [(1714, "1:3"), (20495, "2:1"), (40736, "2:2"), (61378, None)]
+    # The levels: the replay's "mark mission M L at vblank V" lines (a recording's level starts).
+    bounds = [(int(m[3]), f"{m[1]}:{m[2]}") for m in
+              map(re.compile(r"^replay: mark mission (\d+) (\d+) at vblank (\d+)").match, open(log_path, errors="replace")) if m]
+    if "--level" in args:
+        # --level M:L: the one level played in [--from, --to] (a replay that parted from its
+        # recording plays other levels than its marks say)
+        bounds = [(lo, args[args.index("--level") + 1]), (hi + 1, None)]
 
     def level_at(v):
         lv = None
@@ -1275,11 +1289,32 @@ def seed(dump, cur, sizes, addrs, ctx):
     ctx.update(static=data, static_v=v, ratan=Ratan(mem), prev=None)
 
 
+def watch_list(brains=()):
+    """The VALOR_WATCH list: with no brains, the pointer watches whose "at" lines give their
+    addresses; else the slots and fixed windows over the brains (overlapping ones merged)."""
+    if not brains:
+        return ";".join(f"b{i}=[{E:X}+38C]+0:124" for i, E in enumerate(SLOTS))
+    items = ["k=80090DE8:A0", "ws=8009817C:8"]
+    for i, E in enumerate(SLOTS):
+        items += [f"a{i}={E:X}+0:40", f"v{i}={E:X}+4C:A0", f"m{i}={E:X}+1F0:1E0", f"n{i}={E + 0xFBC + 0x5C:X}:48"]
+    spans = []
+    for a in sorted(set(brains)):
+        if spans and a <= spans[-1][1]:
+            spans[-1][1] = max(spans[-1][1], a + 0x124)
+        else:
+            spans.append([a, a + 0x124])
+    items += [f"h{j}={a:X}:{b - a:X}" for j, (a, b) in enumerate(spans)]
+    return ";".join(items)
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return
     cmd, args = sys.argv[1], sys.argv[2:]
+    if cmd == "watchlist":
+        print(watch_list([int(a, 16) for a in args]))
+        return
     {"pairs": pairs_cmd, "watch": watch_cmd}[cmd](args)
 
 

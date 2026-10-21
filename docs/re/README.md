@@ -62,8 +62,11 @@ Run inside the container (`./dev ...`).
 - `tools/recon/run.sh NAME SECONDS LOG [args]` runs the game in the container without `./play`'s
   build step, headless (replays hold without a display), and stops its container after SECONDS
   (`timeout ./play` leaves the game running); it takes `--warp M:L` like `./play`.
-- `--dump-ram FRAME:PATH` and replays of recordings (`./play --replay DIR`) give RAM at known
-  moments of real play to compare against.
+- `--dump-ram FRAME:PATH` (as many as wanted in one run) and replays of recordings
+  (`./play --replay DIR`) give RAM at known moments of real play to compare against;
+  `--stop-at FRAME` ends a run there.
+- `tools/sim/check.py RECORDING` checks the reference reimplementations against any recording
+  (tools/sim/README.md).
 
 ## Method
 

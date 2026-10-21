@@ -2,12 +2,14 @@
 """A reference reimplementation of the player's movement (docs/re/movement.md, levels.md
 Collision), stepped tick by tick against the original's state trace.
 
-  move_sim.py check TRACE.jsonl WATCH.log M:L [--from VBLANK] [--to VBLANK] [--free] [-v]
+  move_sim.py watch                    the VALOR_WATCH list the check needs
+  move_sim.py check TRACE.jsonl WATCH.log M:L [--from VBLANK] [--to VBLANK] [--ram DUMP@VBLANK]
+                    [--free] [-v]
   move_sim.py floor M:L X Y Z          the floor under a point (all of the level's chunks)
 
 `check` reads the original's per-tick state (VALOR_TRACE_STATE: the soldier's position, the look
 yaw) and the soldier's fields from a VALOR_WATCH log of
-  VALOR_WATCH="s=[8009D654]+1F0:100;l=[[8009D654]+388]+0:1A0;k=80090DE8:A0;o=[8009D654]+3BC:C;e=[8009D654]+0:40"
+  VALOR_WATCH="$(python3 tools/sim/move_sim.py watch)"
 (s: the soldier from +0x1F0; l: the look/weapon block; k: the four chunk slots' rectangles;
 o: +0x3BC, where entity_move left him; e: his flags), seeded by --ram DUMP@VBLANK (one RAM dump
 per level, as a watch logs only changes), takes
@@ -33,6 +35,7 @@ import tspcol  # noqa: E402
 
 NONE = -0x7FFF
 FX = 1 << 16
+WATCH_LIST = "s=[8009D654]+1F0:100;l=[[8009D654]+388]+0:1A0;k=80090DE8:A0;o=[8009D654]+3BC:C;e=[8009D654]+0:40"
 
 
 def s16(v):
@@ -803,7 +806,7 @@ def main():
         print(__doc__)
         return
     cmd, args = sys.argv[1], sys.argv[2:]
-    {"check": check, "floor": floor_cmd}[cmd](args)
+    {"check": check, "floor": floor_cmd, "watch": lambda _: print(WATCH_LIST)}[cmd](args)
 
 
 if __name__ == "__main__":

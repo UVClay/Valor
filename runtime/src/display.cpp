@@ -420,10 +420,12 @@ void gpu_present() {
     memcard_flush();
     log_chain();
     gte_trace_frame();
-    if (config.dump_ram_frame && gpu.frames == config.dump_ram_frame) {
-        std::ofstream(config.dump_ram_path, std::ios::binary).write(reinterpret_cast<const char *>(psx_ram), PSX_RAM_SIZE);
-        log("dumped RAM to %s at frame %llu", config.dump_ram_path.c_str(), (unsigned long long)gpu.frames);
+    for (const auto &d : config.ram_dumps) {
+        if (gpu.frames != d.frame) continue;
+        std::ofstream(d.path, std::ios::binary).write(reinterpret_cast<const char *>(psx_ram), PSX_RAM_SIZE);
+        log("dumped RAM to %s at frame %llu", d.path.c_str(), (unsigned long long)gpu.frames);
     }
+    if (config.stop_at && gpu.frames >= config.stop_at) throw Halt("stopped at --stop-at");
     bool shot = !config.screenshots.empty() && gpu.frames >= config.screenshot_from &&
                 gpu.frames % config.screenshot_every == 0;
     if (shot && !config.screenshot_window) {

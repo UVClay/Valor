@@ -4,16 +4,16 @@ player.md "Weapons in play"), checked tick by tick against the original.
 
   combat_sim.py watch                        the VALOR_WATCH list the check needs
   combat_sim.py pose DUMP...                 poses, joints and hit spheres in RAM dumps
-  combat_sim.py check TRACE.jsonl LOG [--to VBLANK] [-v]
-                                             the recorded session (to 2:3's start by default)
+  combat_sim.py check TRACE.jsonl LOG --seed VBLANK:DUMP... [--from VBLANK] [--to VBLANK] [--level M:L] [-v]
 
-LOG and TRACE come from one replay of the recorded session:
+tools/sim/check.py runs it on any recording. LOG and TRACE come from one replay, e.g. of the
+recorded session:
   VALOR_WATCH="$(python3 tools/sim/combat_sim.py watch)" VALOR_TRACE_SHOTS=1 VALOR_TRACE_DAMAGE=1 \
   VALOR_TRACE_STATE=build/csim/full2.jsonl RP_BIN=build/valor-wave3 tools/recon/run.sh cs2 1500 \
       build/csim/full2.log --replay recordings/2026-10-19_22-22-43_m1l3 --hidden
-and RAM dumps of the same replay at vblanks 1720, 20500 and 40740 (one run each with
---dump-ram V:build/csim/dV.bin), which seed the watched memory (a watch logs changes only) and
-hold each level's models and animations. The watch covers the five character slots (entity
+and RAM dumps of the same replay a few vblanks into each level (1720, 20500 and 40740 there:
+--seed 1720:build/csim/d1720.bin ..., with --to 61377 to stop at 2:3), which seed the watched
+memory (a watch logs changes only) and hold each level's models and animations. The watch covers the five character slots (entity
 fields, the animation instance, the hit parts, the pose buffers), the pad, the player's weapon
 block and the hit counters.
 
@@ -481,7 +481,6 @@ SHOT = re.compile(r"^shot (\d+): yaw (\S+) pitch (\S+), view yaw (\S+) pitch (\S
 DMG = re.compile(r"^damage (\d+): victim ([0-9A-F]+) type ([0-9A-F]+) part (-?\d+), attacker ([0-9A-F]+) "
                  r"type ([0-9A-F]+) weapon (-?\d+), damage (-?[\d.]+), health (-?[\d.]+) -> (-?[\d.]+)( dead)?")
 MARK = re.compile(r"^replay: mark mission (\d) (\d) at vblank (\d+)")
-SEEDS = [(1720, "build/csim/d1720.bin"), (20500, "build/csim/d20500.bin"), (40740, "build/csim/d40740.bin")]
 STATS_PART = {0xCC0: 0, 0xCD0: 3, 0xCD4: 4, 0xCD8: 5, 0xCDC: 6, 0xCE0: 1, 0xCE4: 2, 0xCE8: 7, 0xCEC: 8}
 STATS_PART.update({0xCF0 + 4 * k: 9 + k for k in range(8)})
 
@@ -496,7 +495,7 @@ def watch_string():
     return ";".join(w + ["st=80039CA8:68"])
 
 
-def load_log(path, to):
+def load_log(path, to, frm=0):
     frames = defaultdict(list)
     base, shots, dmg, marks = {}, [], [], []
     for line in open(path, errors="replace"):
@@ -507,6 +506,8 @@ def load_log(path, to):
                 v = int(m[1])
                 if v > to:
                     break
+                if v < frm:
+                    continue
                 frames[v].append((base[m[2]] + int(m[3], 16), int(m[4], 16), int(m[5], 16), m[2]))
                 continue
             m = WATCH_AT.match(line)
@@ -514,14 +515,14 @@ def load_log(path, to):
                 base[m[2]] = int(m[3], 16)
         elif c == "sh":
             m = SHOT.match(line)
-            if m and int(m[1]) <= to:
+            if m and frm <= int(m[1]) <= to:
                 g = m.groups()
                 shots.append(dict(vb=int(g[0]), yaw=float(g[1]), pitch=float(g[2]), vyaw=float(g[3]),
                                   vpitch=float(g[4]), scoped=bool(g[5]), pos=tuple(map(float, g[6:9])),
                                   aim=tuple(map(float, g[9:12])), cam=tuple(map(float, g[12:15]))))
         elif c == "da":
             m = DMG.match(line)
-            if m and int(m[1]) <= to:
+            if m and frm <= int(m[1]) <= to:
                 g = m.groups()
                 dmg.append(dict(vb=int(g[0]), victim=int(g[1], 16), vtype=int(g[2], 16), att=int(g[4], 16),
                                 atype=int(g[5], 16), weapon=int(g[6]), dmg=float(g[7]), before=float(g[8]),
@@ -533,7 +534,7 @@ def load_log(path, to):
     return frames, shots, dmg, marks
 
 
-def load_trace(path, to):
+def load_trace(path, to, frm=0):
     out = []
     for line in open(path):
         try:
@@ -542,7 +543,8 @@ def load_trace(path, to):
             break
         if d["vblank"] > to:
             break
-        out.append(d)
+        if d["vblank"] >= frm:
+            out.append(d)
     return out
 
 
@@ -1287,10 +1289,13 @@ def check_damage(st, dmg, fstate, trace):
             st.add("damage: every counted head hit kills (second event), unless a helmet saves", "fail",
                    f"frame {fr}: head counter {h}, head kills {followed_head[fr]}, surviving hits {unfollowed[fr]}")
 
-def check(trace_path, log_path, to, verbose):
+def check(trace_path, log_path, seeds, to, frm, verbose, level=None):
     st = Stats()
-    frames, shots, dmg, marks = load_log(log_path, to)
-    trace = load_trace(trace_path, to)
+    frames, shots, dmg, marks = load_log(log_path, to, frm)
+    if level:
+        # one level played from --from on, whatever the recording's marks say
+        marks = [(frm, level)]
+    trace = load_trace(trace_path, to, frm)
     print(f"{len(trace)} ticks, {len(frames)} watched frames, {len(shots)} player bullets logged, "
           f"{len(dmg)} damage events")
     # A frame's ticks run before its drawing pass, where the watch logs; a tick's vblank (when its
@@ -1306,18 +1311,18 @@ def check(trace_path, log_path, to, verbose):
         for k, t in enumerate(ts):
             t["last"] = k == len(ts) - 1
             t["first"] = k == 0
-    seeds = list(SEEDS)
+    seeds = sorted(seeds)
     ram = Ram()
     seeded = False
     models = {}
     last_out = {}
-    ctx = dict(st=st, verbose=verbose, level="1:3")
+    ctx = dict(st=st, verbose=verbose, level="?")
     targets = {}            # tick index -> hit-test targets (characters and the player)
     fstate = {}             # vblank -> the watched player state after the frame
     level_of = {}
     for vb in sorted(set(frames) | set(ticks_at)):
         while seeds and vb > seeds[0][0]:
-            ram = Ram(os.path.join(ROOT, seeds[0][1]))
+            ram = Ram(seeds[0][1])
             models = models_by_root(ram)
             ctx["player_parts"] = player_templates(ram)
             seeded = True
@@ -1494,10 +1499,18 @@ def main():
     a = sys.argv[1:]
     v = "-v" in a
     a = [x for x in a if x != "-v"]
-    to = 61377
-    if "--to" in a:
-        i = a.index("--to")
-        to = int(a[i + 1])
+    to, frm, seeds, level = 1 << 62, 0, [], None
+    while "--to" in a or "--from" in a or "--seed" in a or "--level" in a:
+        i = next(k for k, x in enumerate(a) if x in ("--to", "--from", "--seed", "--level"))
+        if a[i] == "--level":
+            level = a[i + 1]
+        elif a[i] == "--to":
+            to = int(a[i + 1])
+        elif a[i] == "--from":
+            frm = int(a[i + 1])
+        else:
+            v, _, p = a[i + 1].partition(":")
+            seeds.append((int(v), p))
         del a[i:i + 2]
     if not a:
         print(__doc__)
@@ -1506,7 +1519,7 @@ def main():
     elif a[0] == "watch":
         print(watch_string())
     elif a[0] == "check":
-        check(a[1], a[2], to, v)
+        check(a[1], a[2], seeds, to, frm, v, level)
     else:
         print(__doc__)
 

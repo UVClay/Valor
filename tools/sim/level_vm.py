@@ -4,15 +4,16 @@ and scripts", "Spawning", "Triggers", "Objectives"; docs/re/messages.md), checke
 frame against the original.
 
   level_vm.py watch                          the VALOR_WATCH list the check needs
-  level_vm.py check LOG TRACE DUMP@VBLANK[,LATER@VBLANK]... [--level N] [--max N]
+  level_vm.py check LOG TRACE DUMP@VBLANK[,LATER@VBLANK]... [--level M:L] [--max N]
 
-LOG and TRACE come from one replay of the recorded session:
+tools/sim/check.py runs it on any recording. LOG and TRACE come from one replay, e.g. of the
+recorded session:
   VALOR_WATCH="$(python3 tools/sim/level_vm.py watch)" VALOR_TRACE_DAMAGE=1 \
   VALOR_TRACE_STATE=build/lsim/tr.jsonl RP_BIN=build/valor-wave3 tools/recon/run.sh lsfull 900 \
       build/lsim/W.log --replay recordings/2026-10-19_22-22-43_m1l3 --hidden
 and two RAM dumps per level, one before the level's first tick and one inside it (1:3: 1712
-and 2000, 2:1: 20480 and 20600, 2:2: 40720 and 40800; one run each, not at the same time, with
---dump-ram V:build/lsim/dV.bin):
+and 2000, 2:1: 20480 and 20600, 2:2: 40720 and 40800; --dump-ram V:build/lsim/dV.bin, as many
+as wanted in one run); the level is the one the first dump holds (0x80038660):
   level_vm.py check build/lsim/W.log build/lsim/tr.jsonl build/lsim/d1712.bin@1712,build/lsim/d2000.bin@2000 \
       build/lsim/d20480.bin@20480,build/lsim/d20600.bin@20600 build/lsim/d40720.bin@40720,build/lsim/d40800.bin@40800
 The first dump gives the level's
@@ -1354,7 +1355,6 @@ class Sim:
 
 # ---------------------------------------------------------------- the check
 
-LEVELS = [("1:3", 1, 3), ("2:1", 2, 1), ("2:2", 2, 2)]
 
 
 class Stats:
@@ -1891,9 +1891,11 @@ def main():
     log = WatchLog(log_path)
     starts = sorted({s["start"] for s in log.items["rec"]})
     total = Stats()
-    for (name, _, _), dump in zip(LEVELS, dumps):
+    for dump in dumps:
         dump, _, later = dump.partition(",")
         path, _, v = dump.partition("@")
+        # the level: the campaign's 0-based mission and level (0x80038660) in the first dump
+        name = "%d:%d" % tuple(x + 1 for x in struct.unpack_from("<ii", open(path, "rb").read(), 0x38660))
         later, _, later_v = later.partition("@")
         later = later or None
         later_v = int(later_v) if later_v else None
