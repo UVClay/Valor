@@ -157,6 +157,9 @@ Entities with flags A **0x8000** (every soldier, flags 0x1300903C; dogs; pickups
   `+0xC`, as a 32-bit GTE sum < 0): `+0x298` and `+0x290` set to 1 and the counter not kept, so
   it reaches 0 this frame. Pickups have flags B 0x40000 too (1:3, tick 5825: two pickups made
   at 5823 behind the camera while a soldier waited, gone before ever being drawn).
+- Objects drawn by `draw_in_view_counter` (`0x8005E760`: the generic objects and 0x1779) set
+  `+0x298` = 1 every frame, reset the counter when in view and otherwise run `0x8006A570`; they
+  never set `+0x29C` (2:1: three bottles counted out at tick 352).
 - `0x8006A570` runs for every entity out of view with flags A 0x01000000, drawn before or not
   (`entity_draw_model`): a never-drawn entity counts down too, harmlessly, as `entities_draw`
   needs `+0x298`.

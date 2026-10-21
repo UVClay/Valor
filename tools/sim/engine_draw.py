@@ -77,7 +77,16 @@ def draw_pass(eng):
                 if m.u32(B) & 0x27 == 1:
                     attachment_draw(eng, e, B, m.s32(B + 8))
         # the drawn flags and the out-of-sight counter (entities.md, Despawning)
-        if drawn_now:
+        if m.u32(e + 0x370) == 0x8005E760:
+            # draw_in_view_counter: drawn once always; in view (the recording's counter back at
+            # its start value: this handler never sets +0x29C) resets it, else cull_countdown
+            m.w32(e + 0x298, 1)
+            if d is not None and d[2] == m.s32(e + 0x294):
+                m.w32(e + 0x290, m.s32(e + 0x294))
+            elif not keep_near(eng, e):
+                m.w32(e + 0x29C, 0)
+                m.w32(e + 0x290, m.s32(e + 0x290) - 1)
+        elif drawn_now:
             m.w32(e + 0x298, 1)
             m.w32(e + 0x29C, 1)
             m.w32(e + 0x290, m.s32(e + 0x294))

@@ -9,8 +9,58 @@ LADDER_THINK = 0x800611D0
 G_LADDER_HELD = 0x8009A5B8
 
 
+SCRIPTED_THINK = 0x8005E61C
+
+
 def register(eng):
     eng.think[LADDER_THINK] = lambda e: ladder_think(eng, e)
+    eng.think[SCRIPTED_THINK] = lambda e: scripted_think(eng, e)
+
+
+def scripted_think(eng, e):
+    """scripted_think (0x8005E61C): the event matcher, then the channels (script_run_b, _a)."""
+    from engine_scripts import EVM
+    vm = EVM(eng, e)
+    vm.run_b()
+    vm.run_a()
+
+
+def door_spawn(eng, rec, model):
+    """door_spawn (0x8005E648), type 0x1776: entity_create(3: an instance and the model's
+    parts, no object, the model, instance flags 0x157, 10 script channels, 6 planes); mask
+    0x88214051, flags A 0x03008400, B 0x44030, the model's type; the record's cull counter
+    (+0x5E), group 0x80099ECB; scripted_think, entity_draw_model, destructor 0x8006A37C; health
+    from the record's +0x5C; the plane box of the model's +0x44 / +0x7C (0x8004A8F8); no hit
+    parts (+0x36 = 0) and no touch handler: solid for characters through its planes."""
+    m = eng.m
+    r = rec.addr
+    e = eng.entity_create(m.s32(model + 0xFC), channels=0xA, list_n=6, instance=True,
+                          parts=m.u16(model + 0xBE))
+    eng.model_swap(e, model, 0x157)
+    m.w32(e + 0x14, 0x88214051)
+    m.w32(e + 0xC, 0x03008400)
+    m.w32(e + 0x10, 0x44030)
+    m.w32(e + 8, m.s32(model + 0xFC))
+    cv = m.s16(r + 0x5E)
+    g = m.u8(0x80099ECB)
+    m.w32(e + 0x294, cv)
+    m.w32(e + 0x290, cv)
+    m.w8(0x80099ECB, (g + 1) & 0xFF)
+    m.w32(e + 0x36C, SCRIPTED_THINK)
+    m.w32(e + 0x370, 0x8006A5B4)
+    m.w32(e + 0x384, 0x8006A37C)
+    m.w16(e + 0x2EC, 0)
+    m.w8(e + 0x35, g)
+    m.w32(e + 0x374, 0)
+    m.w32(e + 0x378, 0)
+    hp = m.u8(r + 0x5C) << 16
+    m.w32(e + 0xF0, hp)
+    m.w32(e + 0xF4, hp)
+    mdl = m.u32(m.u32(e + 0x100) + 8)
+    from engine_planes import object_box
+    object_box(eng, e, [m.s16(mdl + 0x44 + 2 * k) for k in range(3)], [m.s16(mdl + 0x7C + 2 * k) for k in range(3)])
+    m.w16(e + 0x36, 0)
+    return e
 
 
 def ladder_spawn(eng, pair, r):
@@ -169,6 +219,8 @@ def spawn_by_type(eng, t, model, rec):
             object_box(eng, e, [m.s16(model + 0x44 + 2 * k) for k in range(3)],
                        [m.s16(model + 0x7C + 2 * k) for k in range(3)])
         return e
+    if t == 0x1776:
+        return door_spawn(eng, rec, model)
     if t in (0x1777, 0x1779, 0x177A) or t not in KNOWN_SPAWNERS:
         from engine_planes import object_spawn
         return object_spawn(eng, rec, model)

@@ -294,6 +294,15 @@ sweep (grenades) uses it too: a hit takes the side's normal into `+0x364`, and a
 (bit 0x100) explodes at once (6, 6, 75), its explosion marked flags B 0x100000 on objects with
 flags A 0x10000000.
 
+**`door_spawn`** (`0x8005E648`, type 0x1776), exactly: `entity_create(3, no object, the
+model, instance flags 0x157, the model's parts, 10 script channels, 6 planes)`; mask 0x88214051,
+flags A 0x03008400, B 0x44030, type from the model; the record's `+0x5E` as both cull counters;
+group `0x80099ECB` (+1); think `scripted_think` (`0x8005E61C`: `script_run_b`, then
+`script_run_a`), draw `entity_draw_model`, destructor `0x8006A37C`; no hit-part or contact
+handler; health from the record's `+0x5C`; the plane box from the model's `+0x44`/`+0x7C`
+(`0x8004A8F8`); then the part count set to 0. Its scripts open and close it; the record's
+placement and message 0 follow (`record_spawn_model`).
+
 ## Destructibles and scenery (0x1770, 0x1777, 0x1778, 0x1779)
 
 `0x8005D678` makes both 0x1770 and 0x1778; `0x8005E7B0` makes 0x1777, 0x1779, 0x177A.
