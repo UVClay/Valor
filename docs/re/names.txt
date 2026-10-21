@@ -44,6 +44,7 @@
 800408B4 brain_goto_point           # goal 0x1000: distance into a variable, arrive radius brain+0xA8
 80040A0C brain_follow_path          # goal 0x2
 80040DF4 brain_update               # entity+0x38C: goals set by script op 0x2F
+800418E4 vab_upload                 # (vab, bank 0..7): sample-only VAB to SPU RAM
 80043AD4 bullet_touch               # touch(bullet, other): exact hit test, effects, target's handler
 8004532C projectile_create          # +0xF8 damage
 80045A78 bullet_spawn               # bullets are entities at 600-669 units/tick
@@ -54,10 +55,13 @@
 80046C64 camera_ease                # camera_obj current points toward targets, >> obj+0x10
 80046DD4 camera_draw                # camera's +0x370: poses and skins its model
 800473DC camera_think               # the camera entity's think: ease, look points, place, shake
+8004770C camera_entity_init         # camera far plane from g_level+0x590 (0: 4500)
 800479D8 camera_look_points         # look point 200 ahead along inv+0x184; death mode: from bones
 800482A4 camera_place               # mode 0x80: eye = soldier x/z, y + camera_obj+0x94
 80048EEC view_lookat                # view matrix from eye to look point (y row x5/8)
 8004913C camera_setup               # builds the view matrix at obj+0xE4
+8004A300 bsd_alloc                  # tries the BSD size table from the largest entry down; returns the entry
+8004A374 bsd_read                   # (path, &entry): sector 0 = size table, then the body
 8004A634 level_read_parameters      # "PARAMETER DATA READ": ammo row -> weapon table, debug dump
 8004AC58 apply_damage               # (victim, damage, attacker, part): health -= damage, death
 8004C1B4 damage_from_hit            # (victim, part, attacker, attacker_part): part-kind multiplier
@@ -83,7 +87,17 @@
 800538B0 objective_complete
 8005394C objective_is_complete
 800539C8 entity_set_home            # level built-in 11: +0x3A4 from an entity or a record
+80053AC0 lights_update              # animated lights: g_level+0xD8 count, +0xDC entries of 0x14
 80053C20 draw_level
+80053DB0 tsp_load_initial           # loads the first g_chunk_count chunks into the slots
+80053E68 world_create               # the world entity; TSP count/slots/first chunk from the header
+80054100 chunk_stream_needed        # streaming record +0x30..+0x36 chunks not loaded
+80054238 chunk_not_in_record        # slot's chunk absent from the streaming record's four
+80054298 chunk_stream_evictable     # slots whose chunk the record doesn't list
+80054378 chunk_stream_trigger       # (record): kind-0 0x4D078F23 entered
+80054498 tsp_dyn_apply              # writes a dynamic block's current frame into the faces
+80054554 tsp_dyn_clear
+800545D8 tsp_dyn_parse              # TSP dynamic blocks -> slot table (0x288 per slot)
 80054740 world_anim_step            # level built-in 18: animated world texture groups by id
 80054990 world_anim_set             # level built-in 21
 80055628 enemy_think                # type 0x1402
@@ -110,6 +124,7 @@
 80061350 spawn_by_type              # (record, spawner): by spawner+0xFC
 800616E4 game_frame                 # input, then per tick: entities_update, entities_collide, texts_update; then draw
 8006210C level_end_carry            # inventory -> weapon table ammo -> g_level_end
+80062358 clear_colour_set           # g_level+0xCE..+0xD0 -> draw environments (unless +0xA0)
 800625BC start_handler              # pause
 80064374 level_entry                # LEVEL.BIN entry point
 80065F34 push_property              # level VM: a property of an entity's record, by the record's kind
@@ -117,6 +132,7 @@
 8006602C script_of                  # (entity, object): the script id from the record (+0x64, or +0x78 for kind 3)
 800662CC send_event
 800664A0 script_run_message         # (entity, object, message): runs that handler
+80066EA8 msg_filter_dispatch        # message subscriptions by filter type (1: has_tag, 5: tags_match)
 800672E0 level_vm                   # level scripts: byte ops over a typed stack
 8006949C align_up
 8006A5B4 entity_draw_model          # pose (unless off screen and seen before) and draw
@@ -174,6 +190,8 @@
 80080304 stat_wounded
 80080328 stat_hit
 8008034C stat_melee
+8008080C model_draw_static          # model +0x2C faces, 10-bit packed vertex indices
+80080DD4 model_draw_skinned         # face tables / bones (inferred from the fields it reads)
 800824D0 model_render               # skeletal models -> 0x80082948 -> skinning
 80082E90 health_pickup_touch        # +13 / +32 / +64, capped at 128
 800830BC ammo_pickup_touch
@@ -184,10 +202,29 @@
 8008492C anim_frame_pose            # (inst, anim, frame, out): decode a key frame or slerp between keys
 80085648 pose_build                 # current frame or 4-tick cross-fade into inst+0x88/+0x90
 80086634 pose_update                # pose_build once per displayed frame (entity +0x3A0 vs g_frame_count)
+80086798 model_bounds_setup         # model +0x4 block (no model on the disc has one)
+800869E0 taf_load_tims              # uploads consecutive TIMs, returns the end
+80086A94 taf_load_vabs              # {count, offsets} -> vab_upload
+80086B20 level_unload               # frees the previous level (entities, chunks, sounds)
+80086C9C bsd_reloc_anims            # +0x544 entries -> +0x54C
+80086D18 bsd_reloc_frames           # +0x54C entries -> +0x554
+80086D8C bsd_reloc_bones            # +0x55C children
+80086E34 bsd_reloc_face_tables      # +0x564 -> +0x56C
+80086EB0 bsd_reloc_vtx_index        # +0x574 -> +0x57C
+80086F24 bsd_reloc_vtx_tables       # +0x57C -> +0x584
+80086F98 zones_parse                # BSD +0x598 -> g_zone_records
 80087080 model_relocate
 80087308 level_load                 # reads the TAF and BSD, relocates, builds spawners
+80088744 stars_init                 # 255 stars, height from g_level+0x58F
+800888C4 sky_init                   # moon from g_level+0x594/+0x596
+80088980 sky_gradient_init          # 16 POLY_G4 strips, colour g_level+0x58C..+0x58E
+8008A838 music_start                # streams a .VB into a 2 x 0x5000 SPU ring
 8008B3E8 tsp_walk
 8008BF00 tsp_draw
+8008C718 tsp_load_async             # streaming: slot -> 0x800AA184 until read
+8008C8F4 tsp_unload
+8008C9F0 pvs_leaf_find              # camera leaf by bbox; returns mask B, ORs mask A
+8008CBE4 pvs_masks                  # over all chunks -> 0x800AA178 / 0x800AA17C
 8008D0CC frustum_build
 8008DABC model_bone_point
 8008E354 entity_bone_point          # (entity, bone, out, offset): a point on a bone in the world
@@ -202,12 +239,14 @@
 80097FF0 g_enemy_weapons            # 48-byte entries: type, burst timing, sound
 80098620 g_objective_count
 80098624 g_bPrimaryObjectivesComplete
+80099AB8 g_dyn_frames               # per dynamic group (< 99): current frame, 0xFF unset
 80099B38 g_script_ops               # 74 x {handler, opcode, size}
 8009A5D0 g_ticks_dropped
 8009A5D4 g_catchup_ticks
 8009A5D8 g_frame_count              # +1 per game_frame (displayed frame)
 8009A5DC g_tick
 8009A5E0 g_paused
+8009A618 g_taf_variant              # TAF digit (cheat bit 0x2)
 8009CC64 g_level                    # the BSD level header
 8009D5AC g_level_scripts
 8009D5C0 g_level_builtins           # 22 level script built-ins (levels.md)
@@ -230,6 +269,9 @@
 8009EABC g_skin_cursor              # next free skinned vertex (from 0x800AB148)
 8009EC54 g_model_count
 8009EC58 g_models                   # 0x100 bytes each: +0 hash, +0x94 script, +0xB8 scripts, +0xFC entity type
+800AA178 g_pvs_b                    # camera leaf's mask B; nodes need +0x10 & this
+800AA17C g_pvs_a                    # camera leaf's mask A; nodes need +0x14 & this
+800AA184 g_chunk_loading            # slot being streamed (-1: none), skipped by draw/collision
 800AD260 g_vm_stack                 # 8-byte {type, value}, top index 0x8009D5A8
 800B74B0 g_role_axes                # analog role config, port*0xA0 + role*0x28
 800B75F0 g_role_buttons             # digital role config, port*0xD0 + role*0x34

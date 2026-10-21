@@ -420,6 +420,18 @@ numbers). The stubs are filled and ~100 scripts are inserted: 1:3's 195/196/197 
 Health is 4.0 in 2:1 (6.0 in 1:3) and some soldiers have range 2250; the behaviour scripts
 otherwise match.
 
+## Hit parts and hit effects
+
+- **Op 0x29** (`0x800523E4`, from `enemy_think`) edits the soldier's hit parts (the list at
+  `[+0x388]+0x18`, a count then entries) for each part whose bit is set in its operand: bit
+  0x10000000 sets the part's value (`+8`), 0x08000000 clears part flag 1 and sets 0x20,
+  0x04000000 the reverse (parts flagged 6 are skipped), and 0x20000000 on part 2, while its flag 1
+  is set, spawns a model of class 0x61282777 at it (inferred: the helmet knocked off, combat.md).
+- **`hit_react`** (`0x80052084`, variable 0x1C) is presentation only: it spawns particles at the
+  part hit (`0x800727B4` with counts and speeds from `rand`, or `0x80072244`), the kind (1, 2, 4,
+  8) remapped by the byte at `0x80093A05` (inferred: the blood option; 0 turns 1/4/8 into 2).
+  It changes nothing in the fight.
+
 ## The player's concealment flags
 
 Two of the player's flags B bits that the soldiers test come from **level volumes**, through the
@@ -456,8 +468,7 @@ showed 0, 7, 13, 8, 10, 9, 16, 12, 1, 15 and 14.
 - Bits 1, 2, 3, 7 of `+0xEC`: who sets them (the level?), and v22 > 200 paths.
 - `s3C` 0x1 (reload?), 0x2 (abort; explosions' landing), 0x8000, 0x10000; `s40` bits from level
   messages; `send_event` 0x1B, 0x4, 0x1E, 0x33, 0x75.
-- v1A/v1B and op 0x29 (the hit hook `0x800523E4`), hit_react's effect (`0x80052084`), ops
-  0x1C/0x41 on corpses, `fall`/`accel`'s operands, the behaviour goal bit 0x2000.
+- v1A/v1B's values in detail, ops 0x1C/0x41 on corpses, `fall`/`accel`'s operands, the behaviour goal bit 0x2000.
 - `route` (0x37/0x3A) results in v2/v3 and v23 (165:8).
 - 1:3's alarm event goes to an empty script: does the soldier then loop 195 → 202 while the
   bit stays set?
