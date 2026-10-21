@@ -719,7 +719,7 @@ U VM::step(U pc, I chn, U c) {
         a[0] = operand(1, mask, imm & 0xFF);
         for (int k = 0; k < 5; k++) a[k + 1] = operand(k + 2, mask, m.s32(pc + 4 * (k + 1)));
         a[6] = (imm >> 8) & 0xFF;
-        ch = chn, ctx = c;
+        ch = chn, ctx = c, yielded = 0;  // op_sound does not yield
         effect("sound", a, 7);
         return pc + 0x18;
     }

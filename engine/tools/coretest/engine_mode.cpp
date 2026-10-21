@@ -144,7 +144,24 @@ std::vector<std::pair<I, std::vector<I>>> frames_of(const std::string& path, con
             out.push_back({vb, ticks});
         }
     }
-    if (!out.empty() && total == want.size()) return out;
+    if (!out.empty() && total == want.size()) {
+        // frames with no tick between the level's first and last (paused): the frame counter
+        // (fc+0) moved, the tick counter did not
+        std::set<I> ticked;
+        for (auto& [vb, t] : out) ticked.insert(vb);
+        I first = out.front().first, last = out.back().first;
+        std::ifstream g(path);
+        while (std::getline(g, line)) {
+            long long vb;
+            if (std::sscanf(line.c_str(), "watch %lld fc+0: ", &vb) != 1 || line.find(" fc+0: ") == std::string::npos) continue;
+            if (first < vb && vb < last && !ticked.count(vb)) {
+                out.push_back({vb, {}});
+                ticked.insert(vb);
+            }
+        }
+        std::stable_sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.first < b.first; });
+        return out;
+    }
     // ticks the watch missed (a level built from the disc starts before it): by their lines' vblanks
     std::set<I> have;
     for (auto& [vb, ticks] : out) have.insert(ticks.begin(), ticks.end());
@@ -157,7 +174,7 @@ std::vector<std::pair<I, std::vector<I>>> frames_of(const std::string& path, con
             extra.push_back({d.vblank, {d.tick}});
     }
     out.insert(out.end(), extra.begin(), extra.end());
-    std::stable_sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.second.front() < b.second.front(); });
+    std::stable_sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.first < b.first; });
     return out;
 }
 
@@ -262,7 +279,7 @@ int run_engine(int argc, char** argv) {
     }
     if (std::getenv("VALOR_FRAMES"))
         for (auto& [vb, ticks] : eng.frames)
-            if (ticks.front() < 120) {
+            if (!ticks.empty() && ticks.front() < 120) {
                 std::fprintf(stderr, "frame %lld:", (long long)vb);
                 for (I t : ticks) std::fprintf(stderr, " %lld", (long long)t);
                 std::fprintf(stderr, "\n");

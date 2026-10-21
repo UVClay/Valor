@@ -527,12 +527,13 @@ void Engine::timer_message() {
 void Engine::end_frame() {
     draw_pass(*this);
     auto it = feed.idle.find({level, tick_no});
-    if (it == feed.idle.end()) {
+    size_t& used = idle_used_[tick_no];
+    if (it == feed.idle.end() || used >= it->second.size()) {
         note("idle work: no record of the frame (all messages, spawns, handles)");
         logic->run_queue();
         handles_free_removed();
     } else {
-        for (I j : it->second) {
+        for (I j : it->second[used++]) {
             if (j < 0)
                 idle_loop();
             else
@@ -570,12 +571,15 @@ static void write_dump(const Mem& m, const std::string& path) {
 
 void Engine::run(I to, const std::function<void(const StateLine&)>& line) {
     for (auto& [vb, ticks] : frames) {
-        if (to && ticks[0] > to) break;
+        if (to && !ticks.empty() && ticks[0] > to) break;
         if (vblank_prev) m.w32(G_VBL_TIMER, m.s32(G_VBL_TIMER) + (vb - *vblank_prev));
         vblank_prev = vb;
         vblank = vb;
         world.at(vb);
         char_pool_update(*this);
+        // a paused frame (no tick due): the timer reset, then the draw and the idle work all
+        // the same (game_frame, objects.md)
+        if (ticks.empty()) m.w32(G_VBL_TIMER, 0);
         for (size_t i = 0; i < ticks.size(); i++) {
             if (ticks[i] != tick_no + 1) note("tick numbering", std::to_string(ticks[i]) + " after " + std::to_string(tick_no));
             tick(i == 0);

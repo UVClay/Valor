@@ -35,9 +35,10 @@ public:
     std::map<std::pair<std::string, I>, std::vector<Draw>> rand;
     std::map<std::pair<std::string, I>, std::array<U, 4>> pad;
     std::map<std::pair<std::string, I>, std::map<std::array<int, 3>, I>> roles;  // (port, role, src)
-    // the vblank wait's idle work after each frame, in order: the job state of each
-    // frame_idle_job call, -1 for each frame_idle_loop call; by (level, the frame's last tick)
-    std::map<std::pair<std::string, I>, std::vector<I>> idle;
+    // the vblank wait's idle work, per frame in order: the job state of each frame_idle_job call,
+    // -1 for each frame_idle_loop call; by (level, the frame's last tick), one list per frame
+    // ("idlef": paused frames share the tick)
+    std::map<std::pair<std::string, I>, std::vector<std::vector<I>>> idle;
 
     I role_alt(const std::string& level, I tick, int port, int role) const;
     I role(const std::string& level, I tick, int port, int role) const;

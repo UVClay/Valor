@@ -104,6 +104,7 @@ public:
     // While the level is built from the disc (load.cpp), the original's heap: model_swap releases
     // the old pose buffer and allocates the new one exactly (model_instance_init).
     std::function<void(U e, U model, I flags)> swap_hook;
+    std::map<I, size_t> idle_used_;  // the idle records consumed, by tick
     void remove(U e, const std::string& why = "");
 
     // -- input

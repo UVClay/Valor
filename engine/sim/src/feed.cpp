@@ -95,12 +95,20 @@ bool Feed::load(const std::string& root, const std::string& log_path) {
             }
         } else if (c == 'i' && starts(line, "input: game set pad 1 to analog mode")) {
             if (!level.empty()) analog.insert(level);
+        } else if (c == 'i' && starts(line, "idlef ")) {
+            // frame_wait_vblank: a frame's idle work starts
+            idle[{level, std::atoll(line.c_str() + 6)}].emplace_back();
         } else if (c == 'i' && starts(line, "idle2 ")) {
-            idle[{level, std::atoll(line.c_str() + 6)}].push_back(-1);
+            auto& fr = idle[{level, std::atoll(line.c_str() + 6)}];
+            if (fr.empty()) fr.emplace_back();
+            fr.back().push_back(-1);
         } else if (c == 'i' && starts(line, "idle ")) {
             long long t, st;
-            if (std::sscanf(line.c_str(), "idle %lld: %lld", &t, &st) == 2 || std::sscanf(line.c_str(), "idle %lld %lld", &t, &st) == 2)
-                idle[{level, t}].push_back(st);
+            if (std::sscanf(line.c_str(), "idle %lld: %lld", &t, &st) == 2 || std::sscanf(line.c_str(), "idle %lld %lld", &t, &st) == 2) {
+                auto& fr = idle[{level, t}];
+                if (fr.empty()) fr.emplace_back();
+                fr.back().push_back(st);
+            }
         } else if (c == 'i' && starts(line, "input ")) {
             long long v, t;
             unsigned a, b, cc, d;
