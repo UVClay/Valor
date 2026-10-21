@@ -106,6 +106,14 @@ and movement, combat and the level logic, written from these documents and check
 tick (tools/sim/README.md): the shortest exact statement of each system, and proof the
 documents suffice.
 
+`tools/sim/engine.py` (with its `engine_*.py` modules) composes them into one free-running loop
+— entities_update, the collision pass, the end of the frame — in the original's RAM layout,
+seeded once at a level's start, taking from the original only the pad, the controls, the random
+draws (attributed to the function that drew them), the CD's chunk timing and which entities
+were drawn (the renderer's widened frustum is not reimplemented). Its trace is compared field by
+field with the original's (`engine.py cmp LEVEL`); every divergence found has been a gap in
+these documents, now filled. The C++ core in `engine/` ports from those modules.
+
 The recompilation is the reference. A recording (`./play --record`) replays exactly
 (`./play --replay`, with or without a display), and `VALOR_WATCH`, `VALOR_TRACE_DAMAGE`,
 `VALOR_TRACE_SHOTS` and `--dump-ram` show any value at any tick (README.md, Tools). Feeding the
