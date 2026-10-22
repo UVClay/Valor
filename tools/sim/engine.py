@@ -889,9 +889,15 @@ def main():
             # the seed frame's own wait (its idle work as recorded)
             eng.tick_no = t0
             eng.idle_work()
-            # its sound_update is in the seed already: its record of the SPU is passed over
-            if feed.keys.get((level, t0)):
-                feed.keys[(level, t0)].pop(0)
+            # its sound_update: in the seed already when the seed's voice states are the SPU
+            # record's (its record is passed over); otherwise (a dump that landed in the frame's
+            # wait, as after a restart's long first frame) it runs now
+            rec = feed.keys.get((level, t0))
+            if rec:
+                if all(eng.m.u8(0x800910D0 + v) == rec[0][v] for v in range(1, 24)):
+                    rec.pop(0)
+                else:
+                    eng.audio.update()
             eng.run(to=to, out=out, compare=cmpr.line if cmpr else None, append=append)
             stats.update(eng.stats)
             for k, v in eng.notes.items():
