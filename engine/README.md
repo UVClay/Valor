@@ -52,6 +52,33 @@ The toolchain is pinned to exact versions:
 The extension lands in `engine/godot/project/bin/`. The dev container has no static libstdc++, so
 the library links the system one (`GODOTCPP_USE_STATIC_CPP=OFF`).
 
+### Packages (`engine/godot/tools/package.sh`)
+
+`engine/godot/tools/package.sh` makes runnable packages in `build/dist/`, `valor-linux-x86_64/` and
+`valor-windows-x86_64/`, with no disc data in them. The player gives their own image on the first
+run (each package's README.txt says how).
+- **Templates:** the official Godot 4.7.2 export templates, downloaded into `build/godot/` and
+  checked against the release's `SHA512-SUMS.txt` (the `.tpz`'s SHA-512 matches; the saved sums
+  file equals the release's).
+- **Libraries:** both GDExtensions as `template_release`. Linux is built in the dev container and
+  links the system libstdc++. Windows is cross-built with MinGW-w64 (`Containerfile.win`,
+  `mingw64.cmake`; static libstdc++); both DLLs import only `KERNEL32.dll` and `msvcrt.dll`.
+- **Export:** the two presets of `export_presets.cfg`. Each pack is exported again as a `.zip`
+  and listed to check that only the project's own files went in.
+
+Numbers:
+- Each pack is 40 files (102,178 bytes): scripts, shaders, the scene and Godot's own caches. Linux:
+  `valor.x86_64` (the official template, 73.5 MB), two `.so` (2.2 MB, 1.1 MB), `valor.pck`
+  (105 KB). Windows: `valor.exe` (109 MB), two `.dll` (3.2 MB, 1.2 MB), `valor.pck`.
+- Tested headless from `build/dist/valor-linux-x86_64/` with a fresh user folder and `extracted/`
+  hidden: `--disc-image=... --shell-auto=3` plays 1:1, 1:2 and 1:3 through the front end, saves,
+  and quits, with no error.
+- The Windows package runs under Wine, headless, with the image given as a Windows path
+  (`Z:\...\Medal of Honor (USA).cue`): the same three levels, results and save. Every level ends
+  at the same place with the same shots as the Linux package's (1:1: 40 shots, 3 hits, a kill).
+
+An exported package doesn't fall back to the source tree's `extracted/` (feature `template`).
+
 ## Running
 
 ```sh

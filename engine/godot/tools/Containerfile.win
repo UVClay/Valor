@@ -1,0 +1,10 @@
+# Cross-compiling the two GDExtensions for Windows x86_64 (MinGW-w64), for the Windows export
+# (engine/godot/tools/package.sh). Used by package.sh as valor-mingw:<hash of this file>.
+FROM registry.fedoraproject.org/fedora:44
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+        mingw64-gcc-c++ mingw64-winpthreads-static \
+        cmake ninja-build python3 \
+    && dnf clean all
+
+WORKDIR /work

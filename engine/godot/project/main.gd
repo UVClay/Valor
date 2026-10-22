@@ -127,7 +127,9 @@ func find_data() -> String:
 			return game.get_disc_data_dir()
 		push_warning("Valor: " + game.get_error())
 	var dev := ProjectSettings.globalize_path("res://").path_join("../../../extracted/moh/DATA").simplify_path()
-	if DirAccess.dir_exists_absolute(dev) and not args.has("no-extracted"):  # (a test: as a package)
+	# the source tree's extraction: not for an exported package (feature "template"), nor with
+	# --no-extracted (a test)
+	if DirAccess.dir_exists_absolute(dev) and not OS.has_feature("template") and not args.has("no-extracted"):
 		return dev
 	return ""
 
