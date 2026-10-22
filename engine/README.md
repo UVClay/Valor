@@ -502,14 +502,20 @@ original's every tick, as `engine.py cmp` does.
 
 | Level | Ticks | Identical to the original | Identical to the Python engine |
 |---|---|---|---|
-| 1:3 | 7,296 | 7,073 (the other 223: impact-spark positions, one hit face at 1658 and 3454) | all |
-| 2:1 | 8,368 | 8,308 (all but one shot's type 31, 60 ticks from 769) | all |
-| 2:2 | 7,036 | 7,036 (all of it) | to tick 6,114 (Python's earlier trace) |
-| 3:1 (coverage tape) | 4,525 | 3,016 (everything to 1,454) | |
-| 5:4 (coverage tape) | 10,339 | 679 (everything to 680) | |
-| 9:4 (coverage tape) | 9,901 | 650 (everything to 651) | |
+| 1:3 | 7,296 | 7,296 (all of it) | |
+| 2:1 | 8,368 | 8,368 (all of it) | |
+| 2:2 | 7,036 | 7,036 (all of it) | |
+| 3:1 (coverage tape) | 4,525 | 4,525 (all of it) | |
+| 5:4 (coverage tape) | 10,339 | 6,377 (to 6,295, through three restarts) | |
+| 9:4 (coverage tape) | 9,901 | 650 (to 651: the mounted gun) | |
 
-Synced to the Python engine at 874c759; the left column is the Python engine's own at that commit.
+Synced to the Python engine at 54f82e6. The three sessions are now whole, as the Python engine's
+are. The tapes' counts differ from the Python engine's in what they cover: the Python engine
+reseeds after a death from the dump after it (`seed/r*.bin`; 5:4 5,153 of 7,467 to the third
+restart, 9:4 653 of 4,925). The engine here restarts the level in place (`level_restart`:
+`level_start` built as from the disc, the removed entities' handles kept until the idle work
+frees them, as the original), so it compares every tick: 5:4 is identical through its first
+restart at tick 822 to 6,295.
 The right column compares with the Python engine's latest traces (`build/engine/eng_*.jsonl`).
 Each run parts from it only after both have parted from the original. The trace now also
 carries the on-screen text list and the hit wedges' timers (`texts`, `hud`), which agree
@@ -535,6 +541,11 @@ wherever the entities do. Since eb3c158:
 - scoped shots from the camera toward its look point: 2:2 is identical throughout;
 - the muzzle flashes' countdown and the player's held-model brightness (enemy_draw, player_draw),
   the scorch flag cleared each drawn frame;
+- crouched sight queries read the view object's first word; the recording's own projection
+  scales the GTE (the tapes ran at 4:3 and the original FOV); soldiers throw, lob and drop their
+  grenades (0x800523E4); a bullet hole fitted to its face moves the impact point (the decal's
+  fitters; the face record carries the face's vertices and d). That closes the last session gaps
+  (1:3 tick 1658, 2:1 tick 769);
 - other recordings: `ENG_INPUTS=DIR coretest --engine M:L` reads DIR's orig.log, orig.jsonl and
   seed/ (the dump at the level's first tick's vblank + 1), and its frames, timing and drawn logs
   when they're kept apart. A level's trace lines start 4 vblanks before its mark (the mark can
@@ -601,13 +612,13 @@ recording, as it takes the rest of its inputs:
 - the vblanks the load took: the vblank timer's 20-vblank message counts them;
 - `rand`'s seed at entry: the dump's seed, stepped back over the build's own draws.
 
-From the disc it matches the seed-dump run exactly: **7,073 of 7,296 ticks identical** (at
-d337b74: 5,632, as the seed run then). RAM differs from the seed run by a constant 35,996 words at ticks
+From the disc: **7,296 of 7,297 ticks identical** (the extra one is the disc run's first frame).
+The one difference is tick 6951, where a pickup (type 0x65) exists one tick early, then the runs
+agree again (at d337b74: 5,632, as the seed run then). RAM differs from the seed run by a constant 35,996 words at ticks
 1000..1003: the unbuilt library and HUD state above, which nothing in the logic reads.
 
-2:1 from the disc matches its seed run: 8,308 of 8,368. Before the seed runs used the game's heap,
-only the disc run agreed at the impact of tick 6280; now both do. 2:2 has no dump from before its tick 1, so
-the timer and `rand`'s seed come a tick late from the seed: 0 identical (6,113 from the seed dump),
+2:1 from the disc is whole: 8,369 of 8,369. 2:2 has no dump from before its tick 1, so
+the timer and `rand`'s seed come a tick late from the seed: 0 identical (7,036 from the seed dump),
 first difference at tick 2 for both.
 
 ### The view test

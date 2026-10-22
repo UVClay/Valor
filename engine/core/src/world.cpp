@@ -298,6 +298,7 @@ struct SweepHit {
     int64_t t = 0x7FFF;
     int32_t p[3]{};
     int16_t n[3]{};
+    SweepFace face;
 };
 
 // leaf_sweep (0x8003DC10): faces crossed from their front (d0 >= 0) to their back, the crossing at
@@ -336,6 +337,8 @@ bool leaf_sweep(const CollChunk& ch, size_t start, size_t count, const int32_t a
         best.t = t;
         std::copy(p, p + 3, best.p);
         best.n[0] = n.x, best.n[1] = n.y, best.n[2] = n.z;
+        for (int j = 0; j < 3; j++) best.face.v[j][0] = V[j]->x, best.face.v[j][1] = V[j]->y, best.face.v[j][2] = V[j]->z;
+        best.face.d = f.d;
         hit = true;
     }
     return hit;
@@ -418,7 +421,7 @@ bool chunk_sweep(const CollChunk& ch, const int32_t start[3], const int32_t end[
 
 }  // namespace
 
-bool World::sweep(const int32_t from[3], const int32_t to[3], int32_t hit[3], int16_t normal[3]) const {
+bool World::sweep(const int32_t from[3], const int32_t to[3], int32_t hit[3], int16_t normal[3], SweepFace* face) const {
     int64_t best = 0x7FFF;
     bool any = false;
     for (const CollChunk* ch : slots) {
@@ -430,6 +433,7 @@ bool World::sweep(const int32_t from[3], const int32_t to[3], int32_t hit[3], in
             best = h.t, any = true;
             std::copy(h.p, h.p + 3, hit);
             std::copy(h.n, h.n + 3, normal);
+            if (face) *face = h.face;
         }
     }
     return any;

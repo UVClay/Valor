@@ -284,11 +284,17 @@ U pellet_spawn(Engine& eng, U owner, I bone_a, I bone_b, const V3* a3, U a4, U o
     return p;
 }
 
-void write_contact(Mem& m, U e, const I point[3], const I normal[3]) {
+// world_sweep's face record into +0x318 (0x28 bytes): the point, the normal (+6: the face's d),
+// the three vertices (+0x10, +0x18, +0x20); the halfwords after the point and each vertex are left
+// (the original's are scratch and vertex padding nothing reads).
+void write_contact(Mem& m, U e, const I point[3], const I normal[3], const SweepFace& face) {
     for (int k = 0; k < 3; k++) {
         m.w16(e + 0x318 + 2 * k, point[k]);
         m.w16(e + 0x320 + 2 * k, normal[k]);
     }
+    m.w16(e + 0x326, face.d);
+    for (U j = 0; j < 3; j++)
+        for (U k = 0; k < 3; k++) m.w16(e + 0x328 + 8 * j + 2 * k, face.v[j][k]);
 }
 
 // entity_move's floor part for the general case (0x8006C83C): see engine_projectile.py floor_step.
@@ -354,6 +360,44 @@ I floor_step(Engine& eng, U e, I res, I ground0, I vy16, bool walled = false) {
     return res;
 }
 
+// 0x8004E354's fitting (0x8004DE80 / 0x8004E01C / 0x8004E1B8 by the normal's largest axis: y, x,
+// else z): the hole, a square of half size 5..8, is kept inside the face's bounding box on the two
+// other axes, moving the record's point (which the impact's sparks then use): where it sticks out
+// past one side it moves in by the overhang; past both, to the low side + the half size (shrunk to
+// half the narrower extent).
+static void decal_fit(Mem& m, U rec, I half) {
+    I n[3];
+    for (U k = 0; k < 3; k++) n[k] = iabs(m.s16(rec + 8 + 2 * k));
+    int axes[2];
+    if (imax(n[0], n[2]) < n[1])
+        axes[0] = 0, axes[1] = 2;
+    else if (n[2] < n[0])
+        axes[0] = 1, axes[1] = 2;
+    else
+        axes[0] = 0, axes[1] = 1;
+    I lo[2], hi[2];
+    for (int i = 0; i < 2; i++) {
+        lo[i] = 0x7FFFFFFF, hi[i] = -0x7FFFFFFF;
+        for (U j = 0; j < 3; j++) {
+            I v = m.s16(rec + 0x10 + 8 * j + 2 * U(axes[i]));
+            lo[i] = imin(lo[i], v), hi[i] = imax(hi[i], v);
+        }
+    }
+    I a = half;
+    for (int i = 0; i < 2; i++)
+        if (iabs(hi[i] - lo[i]) < half * 2) a = imin(a, iabs(hi[i] - lo[i]) >> 1);
+    for (int i = 0; i < 2; i++) {
+        U at = rec + 2 * U(axes[i]);
+        I p = m.s16(at);
+        bool under = p - half < lo[i];
+        if (hi[i] < p + half)
+            p = under ? lo[i] + a : p - (p + half - hi[i]);
+        else if (under)
+            p = p - (p - half - lo[i]);
+        m.w16(at, p);
+    }
+}
+
 I decal(Engine& eng, U rec) {
     Mem& m = eng.m;
     bool near = true;
@@ -365,7 +409,7 @@ I decal(Engine& eng, U rec) {
     if (!(m.s16(rec + 8) || m.s16(rec + 0xA) || m.s16(rec + 0xC))) return 0;
     I i = m.s32(G_DECAL_INDEX) + 1;
     if (i >= 0x64) i = 0;
-    eng.rand.draw({0x8004E354});
+    decal_fit(m, rec, ((eng.rand.draw({0x8004E354}) * 4) >> 15) + 5);
     U a = U(0x80093C5C + (i << 7));
     m.w16(a + 0x26, 0xC0);
     m.w16(a + 0x28, 7);
@@ -801,10 +845,11 @@ I generic_move(Engine& eng, U e) {
                 eng.note("generic entity_move: walker_slide for a non-walker not implemented");
             else {
                 I nw[3], old[3], point[3], normal[3];
+                SweepFace face;
                 for (int k = 0; k < 3; k++) nw[k] = m.s32(e + 0x20C + 4 * k) >> 16, old[k] = pos0[k] >> 16;
-                if (eng.world.sweep(nw, old, point, normal)) {
+                if (eng.world.sweep(nw, old, point, normal, &face)) {
                     walled = true;
-                    write_contact(m, e, point, normal);
+                    write_contact(m, e, point, normal, face);
                     if (normal[1] >= 0x801 && vy16 < 0 && m.s32(e + 0x21C) > 0) {
                         m.w32(e + 0x21C, 0);
                         m.w32(e + 0x210, m.u32(e + 0x3C0));

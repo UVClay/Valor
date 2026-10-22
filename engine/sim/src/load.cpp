@@ -2107,7 +2107,7 @@ bool Engine::load_disc(const std::vector<uint8_t>& game, LevelBuild& out, std::s
     if (game.size() >= 0x780) std::copy(game.begin(), game.begin() + 0x780, m.d.begin() + (G_GAME & Mem::kMask));
     std::string data_dir = game_root(root) + "/DATA";
     if (!gte.load(data_dir, err)) return false;
-    gte.set_projection(21.0 / 9.0, 110.0);
+    set_recording_projection();
     audio = std::make_unique<Audio>(*this);
     Loader ld{*this, m, Heap{m}, out, mission_n, level_n, {}};
     if (!ld.load_manifest()) {

@@ -192,6 +192,7 @@ uint32_t gte_divide(uint32_t h, uint32_t sz3) {
 void Gte::set_projection(double aspect, double hfov_deg) {
     double squeeze = (4.0 / 3.0) / aspect, k = 1.0;
     if (hfov_deg > 0) k = (120.0 / 400.0) / (std::tan(hfov_deg * 3.14159265358979323846 / 360.0) / aspect);
+    if (std::fabs(k - 1.0) < 0.001) k = 1.0;  // the original FOV (fov 0), as the runtime prints it rounded
     proj_kx = k * squeeze, proj_ky = k;
 }
 

@@ -267,6 +267,8 @@ I probe(Engine& eng, U e, I how, I r) {
 // within |rng|) that is not `exclude`, free (its holder's handle dead; with exclude -1 any), of a
 // kind in mask (mask -1: any), with the soldier nearer to it than the player and the player within
 // 10000 of it, and the player in front of it ((player - node) . direction, y left out, >> 12, at
+V3 normal_ss(const V3& v) { return vector_normal_ss(v); }
+
 // least 101); mask 8 waives the last two tests but the 10000. -1 if none.
 I compute_node(Engine& eng, U e, I rng, I exclude, I mask) {
     Mem& m = eng.m;
@@ -389,7 +391,7 @@ I world_value(VM& vm, I op, I) {
         I fact = op & 0xFF;
         U tgt = vm.query_target;
         U b = U(m.u32(e + 0x38C));
-        bool crouch = m.u32(m.u32(G_SOLDIER) + 0x388) & 2;
+        bool crouch = m.u32(U(m.u32(U(m.u32(G_SOLDIER)) + 0x388))) & 2;  // the view object's first word
         if (fact == 0xB || fact == 0x10 || fact == 0x12) {
             if (!tgt) return 0;
             if (!b) {

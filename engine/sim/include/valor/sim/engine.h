@@ -36,7 +36,7 @@ public:
     void skip_to(I vb);  // past the changes logged up to vb
     Floor floor(const I pos[3]) const;
     // world_sweep(from, to) with integer points: hit point, normal; false if nothing is hit.
-    bool sweep(const I frm[3], const I to[3], I hit[3], I normal[3]) const;
+    bool sweep(const I frm[3], const I to[3], I hit[3], I normal[3], SweepFace* face = nullptr) const;
     World w;
 
 private:
@@ -67,6 +67,9 @@ public:
     // orig.log). input_log(name): that file, else orig.log.
     std::string inputs() const;
     std::string input_log(const std::string& name) const;
+    // The GTE's projection: a recording's own (its "gte: projection aspect A, world FOV F deg"
+    // line; the session's 21:9 at 110), live play the session's.
+    void set_recording_projection();
     int mission_n = 0, level_n = 0;
     const Feed& feed;
     std::vector<std::pair<I, std::vector<I>>> frames;  // (vblank, [tick, ...])

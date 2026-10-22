@@ -6,6 +6,7 @@
 #include "valor/sim/engine.h"
 #include "valor/sim/load.h"
 #include "valor/sim/objects.h"
+#include "valor/sim/scripts.h"
 #include "valor/sim/simgte.h"
 
 namespace valor::sim {
@@ -314,17 +315,55 @@ void attachments_op(Engine& eng, U e, I ops, I arg) {
             m.w32(B, (f | 1) & ~I(0x20));
             continue;
         }
+        // the grenade actions (0x800523E4): the grenade made by grenade_spawn, fuse 90
         if ((ops & 0x20000000) && k == 2) {
             if (f & 1) {
-                eng.note("grenade drop (grenade_spawn) not implemented");
-                m.w32(B, (f | 0x20) & ~I(1));
+                // dropped: falls from the hand
+                I bone = m.s32(B + 8);
+                U g = grenade_spawn(eng, e, 0x61282777, bone, bone, 0x5A, 0, nullptr, 0, 0);
+                if (g) {
+                    m.w32(g + 0x21C, S32(0xFFFF0000));
+                    m.w32(g + 0x14, 0x08000451);
+                }
+                m.w32(B, (m.u32(B) | 0x20) & ~I(1));
             }
             continue;
         }
-        if (ops & 0x03000000) {
+        if (ops & 0x02000000) {
             if ((f & 1) && m_hash(eng, B) == 0x61282777) {
-                eng.note("grenade throw/lob (grenade_spawn) not implemented");
-                m.w32(B, (f | 0x20) & ~I(1));
+                // thrown at the player's middle: speed 30 + (2D distance - 700) / 16 (to 100), +5
+                // from 1301 on; upward 30 (35 from 2001)
+                U sol = U(m.u32(G_SOLDIER));
+                V3 tgt = {m.s16(sol + 0x20E), S16(S32(m.s32(sol + 0x210) - (m.s32(sol + 0x2D4) >> 1)) >> 16), m.s16(sol + 0x216)};
+                I d = imax(dist2d_approx(m, e, sol) - 0x2BC, 0);
+                I sp = imin((d >> 4) + 0x1E, 0x64);
+                if (d >= 0x515) sp += 5;
+                I bone = m.s32(B + 8);
+                U g = grenade_spawn(eng, e, 0x61282777, bone, bone, 0x5A, sp, &tgt, 0, 0);
+                if (g) {
+                    m.w32(g + 0x14, 0x08000451);
+                    m.w32(g + 0x21C, S32(d >= 0x7D1 ? 0xFFDD0000 : 0xFFE20000));
+                }
+                m.w32(B, (m.u32(B) | 0x20) & ~I(1));
+            }
+            continue;
+        }
+        if (ops & 0x01000000) {
+            if ((f & 1) && m_hash(eng, B) == 0x61282777) {
+                // lobbed toward the player: speed 50 + (2D distance - 700) / 16 (to 150), the yaw of
+                // the normalised horizontal offset
+                U sol = U(m.u32(G_SOLDIER));
+                V3 v = normal_ss({S16(m.s16(sol + 0x20E) - m.s16(e + 0x20E)), 0, S16(m.s16(sol + 0x216) - m.s16(e + 0x216))});
+                I yaw = eng.gte.ratan2(int32_t(v[0]), int32_t(v[2]));
+                I d = imax(dist2d_approx(m, e, sol) - 0x2BC, 0);
+                I sp = imin((d >> 4) + 0x32, 0x96);
+                I bone = m.s32(B + 8);
+                U g = grenade_spawn(eng, e, 0x61282777, bone, bone, 0x5A, sp, nullptr, 0, 0);
+                if (g) {
+                    m.w32(g + 0x22C, S32(yaw << 16));
+                    m.w32(g + 0x14, 0x08000451);
+                }
+                m.w32(B, (m.u32(B) | 0x20) & ~I(1));
             }
             continue;
         }

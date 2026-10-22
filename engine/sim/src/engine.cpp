@@ -81,11 +81,11 @@ Floor Collision::floor(const I pos[3]) const {
     return w.floor_find(p);
 }
 
-bool Collision::sweep(const I frm[3], const I to[3], I hit[3], I normal[3]) const {
+bool Collision::sweep(const I frm[3], const I to[3], I hit[3], I normal[3], SweepFace* face) const {
     int32_t a[3] = {int32_t(frm[0]), int32_t(frm[1]), int32_t(frm[2])}, b[3] = {int32_t(to[0]), int32_t(to[1]), int32_t(to[2])};
     int32_t h[3];
     int16_t n[3];
-    if (!w.sweep(a, b, h, n)) return false;
+    if (!w.sweep(a, b, h, n, face)) return false;
     for (int k = 0; k < 3; k++) hit[k] = h[k], normal[k] = n[k];
     return true;
 }
@@ -109,6 +109,25 @@ std::string Engine::input_log(const std::string& name) const {
     return std::ifstream(p).good() ? p : inputs() + "/orig.log";
 }
 
+void Engine::set_recording_projection() {
+    double aspect = 21.0 / 9.0, fov = 110.0;
+    if (!feed.live) {
+        std::ifstream f(inputs() + "/orig.log");
+        std::string line;
+        for (int i = 0; i < 200 && std::getline(f, line); i++) {
+            double a, v;
+            if (std::sscanf(line.c_str(), "gte: projection aspect %lf, world FOV %lf deg", &a, &v) == 2) {
+                // the log rounds: the settings' ratios exactly
+                for (double r : {4.0 / 3.0, 16.0 / 9.0, 21.0 / 9.0})
+                    if (std::fabs(a - r) < 0.001) a = r;
+                aspect = a, fov = v;
+                break;
+            }
+        }
+    }
+    gte.set_projection(aspect, fov);
+}
+
 bool Engine::load(const std::string& seed_path, std::string* err) {
     std::ifstream f(seed_path, std::ios::binary);
     if (!f) {
@@ -119,8 +138,9 @@ bool Engine::load(const std::string& seed_path, std::string* err) {
     std::copy(data.begin(), data.begin() + std::min(data.size(), m.d.size()), m.d.begin());
     std::string data_dir = game_root(root) + "/DATA";
     if (!gte.load(data_dir, err)) return false;
-    // the recording's projection (its settings.ini: 21:9, FOV 110), which aim_update's RTPS reads
-    gte.set_projection(21.0 / 9.0, 110.0);
+    // the recording's projection (the session's settings.ini: 21:9, FOV 110), which aim_update's
+    // RTPS reads
+    set_recording_projection();
     L.load(m, level);
     if (!world.load(*this, data_dir, input_log("timing.log"), mission_n, level_n)) {
         *err = "the level's collision";
@@ -815,7 +835,8 @@ void Engine::level_restart() {
         I t = m.s32(e + 8);
         if (t == 0 || (t >= 4 && t != 8)) remove(e, "level restart");
     }
-    handles_free_removed();
+    // the removed entities' handles stay taken until the idle work frees them: level_start's
+    // entities get new slots (5:4's restart at tick 822: slots 0xA..0x11, as the original's)
     gheap->level_start();
     stream_slot = -1;
     stream_done = 0;
@@ -923,6 +944,9 @@ void Engine::run(I to, const std::function<void(const StateLine&)>& line) {
         end_frame();
         d = dumps.find(std::to_string(tick_no) + "a");
         if (d != dumps.end()) write_dump(m, d->second);
+        // level_main: a frame that lost the level (flags 2) ends the frame loop, and the level
+        // restarts in place (level_restart: level_start again, built as from the disc)
+        if ((m.u32(0x8009C840) & 2) && gheap) level_restart();
     }
 }
 

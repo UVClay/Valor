@@ -179,7 +179,7 @@ void alarm_destroy(Engine& eng, U e);
 
 // Grenades and explosions (grenade.cpp; engine_grenade.py, engine_explosion.py).
 I dist2d_approx(Mem& m, U a, U b);
-U grenade_spawn(Engine& eng, U owner, U model_hash, I bone_a, I bone_b, I fuse, I speed, U off_a, U off_b);
+U grenade_spawn(Engine& eng, U owner, U model_hash, I bone_a, I bone_b, I fuse, I speed, const V3* target, U off_a, U off_b);
 void throw_weapon(Engine& eng, U e, I bone_a, I bone_b, I fire, I charge);
 void grenade_soldier_bits(Engine& eng, U e);
 I grenade_hit_part(Engine& eng, U e, I part, U other, I opart);

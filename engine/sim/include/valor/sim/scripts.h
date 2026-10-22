@@ -65,6 +65,7 @@ I brain_node_target(Mem& m, U e, NodeTarget& w, I node);
 I probe(Engine& eng, U e, I how, I r);
 I compute_node(Engine& eng, U e, I rng, I exclude, I mask);
 I node_eval(Engine& eng, U e, U n, I fact);  // op 34 (0x8005B32C)
+V3 normal_ss(const V3& v);                   // VectorNormalSS
 I world_value(VM& vm, I op, I var);
 I sense_sensor(VM& vm, I vid);
 

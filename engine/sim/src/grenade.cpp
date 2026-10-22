@@ -236,10 +236,10 @@ I dist2d_approx(Mem& m, U a, U b) {
 }
 
 // grenade_spawn (0x80045808): engine_grenade.py grenade_spawn.
-U grenade_spawn(Engine& eng, U owner, U model_hash, I bone_a, I bone_b, I fuse, I speed, U off_a, U off_b) {
+U grenade_spawn(Engine& eng, U owner, U model_hash, I bone_a, I bone_b, I fuse, I speed, const V3* target, U off_a, U off_b) {
     Mem& m = eng.m;
     U model = model_by_hash(eng, model_hash);
-    U p = projectile_create(eng, owner, 0x13F3, model ? I(model) : -1, S32(speed << 16), bone_a, bone_b, nullptr, 0x20, 0xA0000, 0x96,
+    U p = projectile_create(eng, owner, 0x13F3, model ? I(model) : -1, S32(speed << 16), bone_a, bone_b, target, 0x20, 0xA0000, 0x96,
                             0, 0, off_a, off_b, 0, 0, 0, 0);
     if (!p) return 0;
     m.w16(p + 0x2EC, 0x28);
@@ -306,7 +306,7 @@ void throw_weapon(Engine& eng, U e, I bone_a, I bone_b, I fire, I charge) {
         bone_a = m.s16(mdl + 0xD4), bone_b = m.s16(mdl + 0xD6);
     }
     m.w32(G_STAT_SHOTS, m.u32(G_STAT_SHOTS) + 1);
-    U g = grenade_spawn(eng, e, model, bone_a, bone_b, 0x5A, charge * 2 + 0x37, off_a, off_b);
+    U g = grenade_spawn(eng, e, model, bone_a, bone_b, 0x5A, charge * 2 + 0x37, nullptr, off_a, off_b);
     if (g) start_within_reach(eng, e, g, inv);
     if (!(m.u32(G_CHEAT_FLAGS) & 0x40)) {
         U a = inv + 0x66 + 2 * slot;
