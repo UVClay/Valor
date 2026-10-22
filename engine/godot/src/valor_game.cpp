@@ -54,6 +54,7 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("start_engine", "ammo"), &ValorGame::start_engine);
     ClassDB::bind_method(D_METHOD("is_engine_running"), &ValorGame::is_engine_running);
     ClassDB::bind_method(D_METHOD("engine_tick", "buttons", "forward", "strafe", "turn", "pitch"), &ValorGame::engine_tick);
+    ClassDB::bind_method(D_METHOD("engine_pause_frame"), &ValorGame::engine_pause_frame);
     ClassDB::bind_method(D_METHOD("get_engine_actors"), &ValorGame::get_engine_actors);
     ClassDB::bind_method(D_METHOD("take_level_change"), &ValorGame::take_level_change);
     ClassDB::bind_method(D_METHOD("start_engine_game", "game"), &ValorGame::start_engine_game);
@@ -576,6 +577,12 @@ void ValorGame::engine_tick(int64_t buttons, int64_t forward, int64_t strafe, in
     sync_engine_level();
     session_.vblanks(2);  // the world's animated lights
     session_.end_frame();
+}
+
+void ValorGame::engine_pause_frame() {
+    if (!engine_) return;
+    engine_->live_paused_frame();
+    sync_engine_level();
 }
 
 // The engine went on to another level: its files for drawing (the engine itself is built).

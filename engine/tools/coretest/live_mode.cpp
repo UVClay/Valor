@@ -23,9 +23,34 @@
 
 using namespace valor::sim;
 
+namespace {
+
+// The exe's heap as its allocator keeps it in RAM (InitHeap's globals at gp+0x4xxx, load.cpp):
+// the free and used 16-byte units, and the free list's fragments and largest block (walked from
+// its head through +4, circular).
+struct HeapStats {
+    I free = 0, used = 0, fragments = 0, largest = 0;
+};
+
+HeapStats heap_stats(const Mem& m) {
+    constexpr U GP = 0x80035D1C;
+    HeapStats h;
+    h.free = m.s32(GP + 0x406C) * 16, h.used = m.s32(GP + 0x405C) * 16;
+    U head = U(m.u32(GP + 0x3F24)), b = U(m.u32(head + 4));
+    for (int n = 0; n < 100000; n++) {
+        I units = m.s32(b);
+        if (units > 0) h.fragments++, h.largest = std::max(h.largest, units * 16);
+        if (b == head) break;
+        b = U(m.u32(b + 4));
+    }
+    return h;
+}
+
+}  // namespace
+
 int run_live(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: coretest --live M:L [--ticks N] [--ammo N] [--hold MASK[@FROM:TO]]... [--turn V] [--forward V] [--view DIST] [--replay] [--aimbot] [--cheats MASK] [--end-every TICKS]\n");
+        std::fprintf(stderr, "usage: coretest --live M:L [--ticks N] [--ammo N] [--hold MASK[@FROM:TO]]... [--turn V] [--forward V] [--view DIST] [--replay] [--aimbot] [--cheats MASK] [--end-every TICKS] [--heap-every TICKS] [--pause TICK:FRAMES]\n");
         return 2;
     }
     std::string level = argv[2];
@@ -36,7 +61,7 @@ int run_live(int argc, char** argv) {
     };
     std::vector<Hold> holds;
     bool replay = false, aimbot = false;
-    I cheats = 0, warp_end = 0;
+    I cheats = 0, warp_end = 0, heap_every = 0, pause_at = -1, pause_n = 0;
     for (int i = 3; i < argc; i++) {
         if (!std::strcmp(argv[i], "--ticks") && i + 1 < argc) ticks = std::strtoll(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--ammo") && i + 1 < argc) ammo = std::strtoll(argv[++i], nullptr, 0);
@@ -44,6 +69,8 @@ int run_live(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--replay")) replay = true;
         else if (!std::strcmp(argv[i], "--aimbot")) aimbot = true;
         else if (!std::strcmp(argv[i], "--end-every") && i + 1 < argc) warp_end = std::strtoll(argv[++i], nullptr, 0);
+        else if (!std::strcmp(argv[i], "--heap-every") && i + 1 < argc) heap_every = std::strtoll(argv[++i], nullptr, 0);
+        else if (!std::strcmp(argv[i], "--pause") && i + 1 < argc) std::sscanf(argv[++i], "%lld:%lld", (long long*)&pause_at, (long long*)&pause_n);
         else if (!std::strcmp(argv[i], "--cheats") && i + 1 < argc) cheats = std::strtoll(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--forward") && i + 1 < argc) forward = std::strtoll(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--view") && i + 1 < argc) view_dist = std::strtoll(argv[++i], nullptr, 0);
@@ -140,6 +167,13 @@ int run_live(int argc, char** argv) {
         U cam0 = U(m.u32(G_PLAYER));
         I mode0 = cam0 ? m.u32(m.u32(cam0 + 0x388) + 0x9C) : 0, hp0 = view::soldier(m).a ? view::soldier(m).health() : 0;
         eng.live_frame();
+        if (eng.tick_no == pause_at) {
+            // --pause T:N: the pause menu after tick T for N frames
+            I n0 = I(m.entities().size());
+            for (I k = 0; k < pause_n; k++) eng.live_paused_frame();
+            std::printf("tick %5lld: paused %lld frames: entities %lld -> %lld, timer %lld\n", (long long)eng.tick_no, (long long)pause_n,
+                        (long long)n0, (long long)m.entities().size(), (long long)m.s32(0x8009A5C0));
+        }
         {
             U cam = U(m.u32(G_PLAYER));
             I mode = cam ? m.u32(m.u32(cam + 0x388) + 0x9C) : 0, hp = view::soldier(m).a ? view::soldier(m).health() : 0;
@@ -161,6 +195,16 @@ int run_live(int argc, char** argv) {
                 break;
             }
             if (eng.restarts != rs0) std::printf("tick %5lld: the level restarts (%lld)\n", (long long)eng.tick_no, (long long)eng.restarts);
+            // --heap-every N: the heap every N ticks and at each restart and level change (a leak
+            // shows as free space that a restart doesn't give back)
+            if (heap_every && (t % heap_every == 0 || eng.restarts != rs0 || eng.level_changes != lc0)) {
+                HeapStats h = heap_stats(m);
+                I live = 0;
+                for (U e : m.entities()) live += e != 0;
+                std::printf("heap %lld: free %lld used %lld largest %lld fragments %lld | handles %lld entities %lld\n", (long long)eng.tick_no,
+                            (long long)h.free, (long long)h.used, (long long)h.largest, (long long)h.fragments, (long long)m.s32(0x8009D674),
+                            (long long)live);
+            }
         }
         if (std::getenv("VALOR_LIVE_CAM")) {
             view::Entity cam = view::camera(m), sol = view::soldier(m);

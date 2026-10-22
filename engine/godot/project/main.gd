@@ -315,6 +315,22 @@ func pause() -> void:
 	pause_menu = preload("res://shell/pause.gd").new()
 	layer.add_child(pause_menu)
 	pause_menu.setup(self)
+	# the original's paused frames: no tick, but each 30 Hz frame drawn, its out-of-sight
+	# counters run and the idle work done (Engine::live_paused_frame)
+	if engine_mode:
+		var frames := Timer.new()
+		frames.wait_time = 1.0 / 30.0
+		frames.process_callback = Timer.TIMER_PROCESS_PHYSICS
+		var paused_frames := [0]
+		frames.timeout.connect(func():
+			game.engine_pause_frame()
+			paused_frames[0] += 1
+			# a test: --resume-after=N resumes after N paused frames
+			if args.has("resume-after") and paused_frames[0] == int(args["resume-after"]):
+				print("Valor: resumed after %d paused frames at tick %d" % [paused_frames[0], int(game.get_state().tick)])
+				resume.call_deferred())
+		layer.add_child(frames)
+		frames.start()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	get_tree().paused = true
 

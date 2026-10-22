@@ -92,6 +92,8 @@ public:
     // One 30 Hz tick, the input as tick() takes it (the buttons in the game's layout 1: Cross
     // 0x40 fires, Circle 0x20 switches weapons, Square 0x80 reloads / uses).
     void engine_tick(int64_t buttons, int64_t forward, int64_t strafe, int64_t turn, int64_t pitch);
+    // A frame of the pause menu: no tick, but drawn and waited for (Engine::live_paused_frame).
+    void engine_pause_frame();
     // The entities to draw, by handle: { handle: { model, skinned, type, dead, transform } }
     // (through the accessor layer, sim/views.h).
     Dictionary get_engine_actors() const;

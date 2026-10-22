@@ -149,7 +149,13 @@ configuration, exactly as the game does. They are the defaults of Godot input ac
 - then CONTINUE, OPTIONS (the port's addition; the game has none there) and QUIT, which asks
   ARE YOU SURE? with NO resuming the game;
 - the scene tree pauses, so the ticks and the sound stop. Start resumes after 10 frames, as the
-  game's does.
+  game's does;
+- the game frame still runs paused, as the original's does (`g_paused`, objects.md): every 30 Hz
+  frame `Engine::live_paused_frame` draws (the out-of-sight counters run down and can remove
+  what they count out), does the idle work (messages, spawn retries, handles freed) and holds the
+  1/3-second timer at 0, with no tick. The music's refill clock stands still, as the paused
+  music voice does. `--pause-at=TICK --resume-after=N` resumes after N paused frames (headless:
+  90 paused frames at 1:1's tick 200, then on); `coretest --live M:L --pause TICK:N` the same.
 
 QUIT returns to the front end ("RETURNING TO BASE": exit code 1, no carry), or ends the program
 when there's no front end. `--pause-at=TICK [--options[=video|controls|audio]]` opens them for
@@ -228,6 +234,23 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
   bytes differ only where the world's animated faces and lights write into them, which the
   engine doesn't model.
 
+### Live play over a long session
+
+What the recordings can't show, checked live:
+- **The heap over a long session.** `coretest --live M:L --heap-every N` prints the exe heap's
+  free and used bytes, its largest free block and fragments, and the handle slots. Over 40,000
+  ticks (22 minutes) of 7:1 with 17 deaths, every restart gives the heap back to the same
+  129,344 free bytes; the handle slots' high-water mark climbs about 7 a restart (the removed
+  entities' handles stay taken until the idle work frees them), reaches 256, and the handle
+  allocator (`Engine::handle_alloc`) then takes free slots from 0. 1:1, 2:2, 3:3, 5:4 and 9:4
+  stay flat over the same run.
+- **Saving and loading between levels.** `coretest --campaign` saves after every level of a
+  perfect and a poor campaign, loads the file into a fresh campaign (a power cycle) and checks that
+  CONTINUE starts the same level on the same save data as playing straight on: the same at every
+  level. (The game saves only between levels; the level is then built from the disc on that save
+  data. The rand seed and the timer, carried when playing on, start afresh, as after a boot.)
+- **Pausing**: above (the pause menu).
+
 ### Live play's approximations
 
 Two timings in live play depend on things the engine doesn't run: the CD drive and the CPU's
@@ -261,7 +284,7 @@ recording bears this out:
 
 **Live play uses it** (`Engine::refill_after`): the music's start (`music_start`, at the end of
 `level_start`) sets the clock. A read starts at the first refill after its request and ends at
-the next one. The live engine's vblanks don't run while Godot is paused, so the pause is covered.
+the next one. Paused frames hold the clock (and a read waiting on it), so the pause is covered.
 A level with no music would have no refills, and the original's reads would never run; the
 engine then counts from vblank 0. On 2:1 (`coretest --live 2:1 --aimbot --forward -0x22DD00`) the
 first read runs from tick 48 to tick 195: 294 vblanks, the first refill at 194.5, the second at 389.

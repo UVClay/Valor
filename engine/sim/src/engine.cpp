@@ -941,6 +941,27 @@ void Engine::live_frame(I vblanks) {
     if ((m.u32(0x8009C840) & 0xEC) && gheap && !level_over) level_transition();
 }
 
+void Engine::live_paused_frame(I vblanks) {
+    if (level_over) return;
+    vblank += vblanks;
+    vblank_prev = vblank;
+    // the music stops (the pause zeroes its voice's pitch, so the ring doesn't drain): the
+    // refills' clock and a chunk read waiting on it stand still
+    if (music_vblank >= 0) music_vblank += vblanks;
+    if (stream_slot >= 0) stream_done += double(vblanks);
+    stream_end();
+    if (gheap) gheap->frame();
+    char_pool_update(*this);
+    m.w32(G_VBL_TIMER, 0);
+    frame_ticks = 0;
+    draw_pass(*this);
+    for (int k = 0; k < 1 + 189; k++) idle_job(m.s32(0x800AB8E8));
+    audio->update();
+    // a frame the idle work lost the level on (a despawn's message): as live_frame
+    if ((m.u32(0x8009C840) & 2) && gheap) level_restart();
+    if ((m.u32(0x8009C840) & 0xEC) && gheap && !level_over) level_transition();
+}
+
 void Engine::run(I to, const std::function<void(const StateLine&)>& line) {
     for (auto& [vb, ticks] : frames) {
         if (to && !ticks.empty() && ticks[0] > to) break;

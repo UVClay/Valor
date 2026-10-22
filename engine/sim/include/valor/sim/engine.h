@@ -125,6 +125,10 @@ public:
     std::function<bool(U e)> live_view;
     void start_live(std::function<bool(U e)> in_view);
     void live_frame(I vblanks = 2);
+    // A frame of the pause menu (g_paused, objects.md: The frame): no tick, the 1/3-second timer
+    // held at 0, but the frame drawn and waited for: the out-of-sight counters run and the idle
+    // work goes on (messages, spawn retries, handles freed).
+    void live_paused_frame(I vblanks = 2);
     // Live play's chunk streaming (levels.md, Streaming): chunk_stream (0x8005439C) on the
     // record last entered, the read's end at a frame's start (0x8008C798), the collision slots
     // following the slot table.
