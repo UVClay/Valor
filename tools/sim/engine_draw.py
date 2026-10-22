@@ -100,6 +100,15 @@ def draw_pass(eng):
                 if not keep_near(eng, e):
                     m.w32(e + 0x29C, 0)
                     m.w32(e + 0x290, m.s32(e + 0x290) - 1)
+        # enemy_draw (0x8005608C): in view this frame, or dead, its muzzle flash drawn: the
+        # counter (object +0xB68+2) down by one while positive (flash_draw 0x8006DD54)
+        if m.u32(e + 0x370) == 0x8005608C and (m.u32(e + 0x29C) or m.s32(e + 0x4C + 4 * 0xD) == -1):
+            flash_countdown(m, m.u32(e + 0x388) + 0xB68)
+        # player_draw (0x8007B8F4): with the view object's +0xA4 at 400 and no 0xC000 in its +0,
+        # the held model's brightness (+0x6C) toward 0x40 with flags B 0x400, else back to 0x80,
+        # and its muzzle flash (inv +0x1D4)
+        if m.u32(e + 0x370) == 0x8007B8F4:
+            player_draw(m, e)
         if d is not None and d[2] != m.s32(e + 0x290) and fa & 0x8000:
             eng.note("out-of-sight counter differs from the original's", f"{h:X} {m.s32(e + 0x290)} / {d[2]}")
         # entities_draw (0x8006C714): counted out -> message 2 to its record, removed
@@ -108,6 +117,29 @@ def draw_pass(eng):
             if ent is not None and ent.rec is not None:
                 eng.logic.run_message(None, ent.rec.pair, 2, "despawn")
             eng.remove(e, "out of sight")
+    # draw_level: the explosion's scorch flag lasts one drawn frame (objects.md, the light)
+    m.w32(0x800AA160, 0)
+
+
+def flash_countdown(m, f):
+    """flash_draw (0x8006DD54)'s state: a positive counter (+2) is drawn and goes down by one,
+    otherwise it is set to 0."""
+    c = m.s16(f + 2)
+    m.w16(f + 2, c - 1 if c > 0 else 0)
+
+
+def player_draw(m, e):
+    o = m.u32(e + 0x388)
+    if m.s32(o + 0xA4) != 0x190 or m.u32(o) & 0xC000:
+        return
+    inst = m.u32(e + 0x100)
+    b = m.u32(inst + 0x6C)
+    if m.u32(e + 0x10) & 0x400:
+        if b >= 0x41:
+            m.w32(inst + 0x6C, b - 2)
+    else:
+        m.w32(inst + 0x6C, b + 2 if b < 0x80 else 0x80)
+    flash_countdown(m, o + 0x1D4)
 
 
 def keep_near(eng, e):

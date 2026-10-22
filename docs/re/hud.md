@@ -320,6 +320,16 @@ Flag 4 of a fade also ramps a value at `+0x6C` from 0x300000 to 0 (no caller pas
   second taken ×1.6, `0x88888889` arithmetic), so a square of half 2 × half × scale in world
   units round the point, then projected with the rest (`RTPT`). Used by the muzzle flash and
   the explosions' fireballs and puffs (objects.md).
+- **Muzzle flashes** (`flash_draw`, `0x8006DD54(flash, ctx)`; a flash is `{u16 vertex, s16
+  counter, ...}`): set to 1 by a shot (`0x8006DCA0`: the player's `inv+0x1D4`, a soldier's object
+  `+0xB68`, the mounted gun's), drawn while the counter is positive, which then goes down by one
+  per drawing (a counter at 0 or below is set to 0): one drawn frame per shot. Colour
+  0x80 − counter × 32 (grey), scale 0x800, angle `(g_update_stamp & 7) << 9` + counter << 7, at the
+  model's vertex (the attachment's, or the bone point; for the player through the view's matrix
+  at the eye height). Who draws it: `player_draw` every pass (under the condition below);
+  `enemy_draw` (`0x8005608C`) only when the soldier was drawn in view this frame (`+0x29C`) or is
+  dead (variable 0x0D = −1), so an unseen soldier's flash stays set until it is next in view;
+  the mounted gun's draw (`0x8005D8B0`).
 - **Weapon model brightness**: `player_draw` (`0x8007B8F4`, each drawing pass), when the view
   object's `+0xA4` is 400 and its `+0` has neither 0x4000 nor 0x8000: with the soldier's flags B
   0x400 set, the soldier's animation instance (`+0x100`) `+0x6C` falls by 2 while above 0x40;

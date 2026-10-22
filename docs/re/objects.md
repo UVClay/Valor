@@ -687,7 +687,8 @@ bounding box overlaps the cube centre ± radius (`func_80011AB0`) get, at each v
 radius (d² = the squared distance in whole units, `sqr`), its colour + light × (1 − d²/r²)
 (`0x10000 − (d² << 8) / (r² >> 8)`, then `× light >> 16`), each component clamped at 255, for that
 drawn frame only. **Scorches**: while `0x800AA160` is set (by `explosion_spawn`; `draw_level`
-clears it after the frame), the same faces' colours are darkened in the colour table itself, for
+clears it after drawing the chunks, every drawn frame, and the 9:4 object's think `0x8008FDF8`
+clears it too, so a scorch is applied in the one frame drawn after the spawn), the same faces' colours are darkened in the colour table itself, for
 good: colour − colour × ((1 − d²/r²) / 8), at least 1, with the spawn's radius 150: a lasting dark
 patch round every explosion. (Models aren't lit by it: only the TSP faces' drawer reads it.) Drawn
 natively by the world shader (`engine/godot/project/world.gdshaderinc`) from
