@@ -19,11 +19,13 @@ uniform vec4 scorches[32];               // xyz Godot metres, w radius squared (
 instance uniform float dyn_lit = 0.0;
 // The PVS (formats.md, The render tree; set by present/world_pvs.gd): one texel per world leaf,
 // 1 if tsp_walk would draw it from the camera's leaf; the leaf's id in CUSTOM0.x of the world mesh.
-// A face whose leaf isn't drawn is clipped away.
+// A face whose leaf isn't drawn is discarded (in the fragment: a vertex shader that writes
+// POSITION anywhere has Godot take POSITION for every vertex, which left the world undrawn).
 uniform sampler2D pvs_vis : filter_nearest;
 uniform int pvs_width = 0;  // 0: no PVS
 
 varying flat float layer;
+varying flat float pvs_hidden;
 varying vec3 light_colour;
 varying float lit;
 varying float depth_units;
@@ -38,10 +40,11 @@ void vertex() {
     depth_units = -(MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).z * units_per_metre;
     dyn_add = vec3(0.0);
     dyn_dark = 1.0;
+    pvs_hidden = 0.0;
     if (dyn_lit > 0.5 && pvs_width > 0) {
         int leaf = int(CUSTOM0.x + 0.5);
         if (texelFetch(pvs_vis, ivec2(leaf % pvs_width, leaf / pvs_width), 0).r < 0.5) {
-            POSITION = vec4(2.0, 2.0, 2.0, 1.0);
+            pvs_hidden = 1.0;
         }
     }
     if (dyn_lit > 0.5) {
@@ -66,6 +69,9 @@ void vertex() {
 }
 
 vec4 world_texel(vec2 uv, vec3 colour) {
+    if (pvs_hidden > 0.5) {
+        discard;
+    }
     vec4 t = texture(pages, vec3(uv, layer));
     if (t.a < 0.01) {
         discard;
