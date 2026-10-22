@@ -11,8 +11,7 @@ extends Control
 ## The sniper scope: the game's scope model, as scope_draw draws it (draw_scope).
 ## From the engine when it keeps them (get_state's texts and hit_wedges): the text list (level
 ## messages, pickups, the ammo digits) and the hit wedges; else the pickup messages and the
-## digits from the state's changes. Stubbed: the crosshair's movement (drawn at its rest point
-## 256, 131).
+## digits from the state's changes.
 ## --crosshair=SIZE adds an always-on crosshair on the aim line, hidden in aim mode.
 
 const FONT_TPAGE := 0xF
@@ -213,7 +212,8 @@ func _draw() -> void:
 	elif aiming:
 		draw_reticle(w)
 	elif crosshair > 0:
-		var c := at_middle(256, 131)
+		var aim: Vector2 = s.get("crosshair", Vector2(256, 131))
+		var c := at_middle(aim.x, aim.y)
 		var k := crosshair * scale_y() * 0.5
 		var col := Color(1, 1, 1, 0.7)
 		draw_line(c - Vector2(k * 2, 0), c - Vector2(k * 0.6, 0), col, maxf(1.0, scale_y() * 0.4))
@@ -278,13 +278,19 @@ func draw_compass() -> void:
 ## The aim reticle (hud.md, Aim reticle): four red lines round the crosshair, the bazooka's shape
 ## for weapon 2; none for grenades and the papers.
 func draw_reticle(w: int) -> void:
-	if w == 3 or w == 10 or w == 7:
-		return
+	var st: Dictionary = p.state
+	var stance := int(st.get("stance", -1))
+	if stance == 6 or (stance < 0 and (w == 3 or w == 10 or w == 7)):
+		return  # grenades, papers
 	var col := Color8(128, 32, 32)
 	var width := maxf(1.0, scale_y() * 0.5)
-	var c := Vector2(256, 131)
+	# crosshair_draw: at the crosshair (inv+0x190/+0x192); in stance 0 at the aim point's projection,
+	# the crosshair plus the difference kept in inv+0x194/+0x196
+	var c: Vector2 = st.get("crosshair", Vector2(256, 131))
+	if stance == 0:
+		c += st.get("reticle_offset", Vector2.ZERO)
 	var lines := []
-	if w == 2:
+	if stance == 5 or (stance < 0 and w == 2):
 		lines = [[0, -8, 0, 6], [-24, -18, 24, -18], [-32, -12, -8, 16], [32, -12, 8, 16]]
 	else:
 		lines = [[0, -12, 0, -5], [0, 5, 0, 12], [-18, 0, -8, 0], [8, 0, 18, 0]]

@@ -177,6 +177,15 @@ func pad_input() -> Dictionary:
 	var out := {"buttons": 0, "roles": PackedInt32Array([0, 0, 0, 0])}
 	if assets == null:
 		return out
+	if args.has("test-turn"):
+		# --test-turn=UNITS@TICK:TICKS: the turn role (16.16 game units a tick), for screenshots
+		var tt: PackedStringArray = String(args["test-turn"]).split("@")
+		var when: PackedStringArray = tt[1].split(":")
+		var now := int(state.get("tick", 0))
+		if now >= int(when[0]) and now < int(when[0]) + (int(when[1]) if when.size() > 1 else 1):
+			var r: PackedInt32Array = out.roles
+			r[3] = int(float(tt[0]) * 65536.0)
+			out.roles = r
 	if args.has("test-press"):
 		for press in String(args["test-press"]).split(","):
 			var tp: PackedStringArray = press.split("@")
