@@ -202,6 +202,12 @@ class LevelLogic(lv.Sim):
     def send(self, msg, sender, sender_obj, actor, target=0, src=""):
         lv.Sim.send(self, msg, sender, sender_obj, actor, target, src)
 
+    def alarm_level(self, node_id):
+        """level_set(4, id): alarm_from_level (engine_alarm.py)."""
+        from engine_alarm import alarm_from_level
+        self.stats["alarm from level"] += 1
+        alarm_from_level(self.eng, s32(node_id))
+
     def run_one(self):
         """msg_run_one: one queued context (none queued: nothing)."""
         if not self.queue:
@@ -258,11 +264,6 @@ class LevelLogic(lv.Sim):
             from engine_objects import set_home
             set_home(eng, tgt, src)
             return
-        if n == 13:
-            v = st[-1][1] if st else 0
-            what = st[-2][1] if len(st) > 1 else 0
-            if what == 4:
-                eng.note("level_set(4): alarm from level not implemented")
         if n == 8:
             # bi_show_text (0x80069FC4) -> show_text (0x80053464)
             from engine_texts import show_text

@@ -284,7 +284,7 @@ through the script op, below).
 | Paused | every voice (music too) frozen: volume and pitch saved, set to 0, restored on resume | `start_handler` |
 | An alarm starts | 0:0x13 once, then the alarm loop (below) | `alarm_spawn` `0x8005EA54` |
 
-**The alarm** is an entity (type 0x2C, think `alarm_think` `0x8005EDF8`) that re-triggers one
+**The alarm** is an entity (type 0x20, a 0x2C-byte object, not positional, think `alarm_think` `0x8005EDF8`) that re-triggers one
 sound: when its voice has finished it waits `delay + rand() % random` vblanks (`VSync(-1)`) and
 plays it again. Raised by the soldiers' op 0x49 (`op_alarm`, `0x8005C710`: alarm id, sound,
 pitch, pitch spread, volume, volume spread, bank −1 = the model's) or by `level_set(4, id)`
@@ -292,7 +292,11 @@ pitch, pitch spread, volume, volume spread, bank −1 = the model's) or by `leve
 whatever the caller gave: 1.0 in missions 3 (but 0.5 in 3:1), 4, 8 and 9, 0.5 in 2 and 5, the
 caller's otherwise). Removed after 1801 thinks, when the record tied to its alarm node is in
 state 2 (inferred: the alarm box destroyed or switched off), or by a second `level_set(4, ...)`
-while it sounds (that sets its counter to 1801). (Cheat 4 replaces the bell by one of 25 random sounds.)
+while it sounds (that sets its counter to 1801). On raising: `g_alarm` (`0x80097FE0`) = the node, the
+entity moves to the front of the list, every living soldier but the raiser gets `+0x3C` bit 0x100, and
+every entity of the node's record is sent message 0x2B. Its voice is free again when its SPU status is
+not 1 (key on); the next play is then due at once (first sound) or after the delay. Destroying it stops
+its voice and clears `g_alarm`. (Cheat 4 replaces the bell by one of 25 random sounds.)
 
 ### Scripts
 

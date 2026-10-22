@@ -192,6 +192,8 @@ class Engine:
         engine_grenade.register(self)
         import engine_explosion
         engine_explosion.register(self)
+        import engine_alarm
+        engine_alarm.register(self)
         self.logic.adopt()
 
     # -- notes: what the engine left out, kept to report

@@ -210,11 +210,42 @@ class Audio:
                 continue
             if m.u8(a + 0xE):
                 m.w8(a + 0xE, 0)
-                eng.note("looping sounds (restart) not implemented")
+                h = m.u32(a + 4)
+                self.restart(m.s16(a + 0xC), m.s32(a + 8), eng.resolve(h) if h else 0, m.s32(a + 0x18),
+                             m.s32(a + 0x1C), m.s32(a + 0x20), m.s32(a + 0x24), 1, v, 0)
             else:
                 m.w32(a + 4, 0)
                 m.w8(a + 0x12, 0)
                 m.w16(a + 0x28, 0)
+
+    def restart(self, bank, sound, ent, volume, vspread, pitch, pspread, loop, v, cls):
+        """sound_restart (0x80042250): a looping voice that ended is started again in place: the
+        volume (with its spread, a draw by sound_restart), loop, age 0, class, the position
+        from the entity (none or not positional: 0 and flag 1), voice_start."""
+        eng, m = self.eng, self.eng.m
+        if (bank & 0xFFFF) >= 8 or sound < 0 or not m.u32(G_BANK_SPU + 4 * s16(bank) + 0x40):
+            return -1
+        a = G_VOICES + 0x34 * v
+        vol = min(s32(volume << 7), 0xFF0000) if s32(volume << 7) <= 0xFF0000 else 0xFF0000
+        m.w32(a + 0x14, vol)
+        m.w8(a + 0xE, loop)
+        m.w16(a + 0x28, 0)
+        m.w8(a + 0x13, cls)
+        if vspread:
+            lo = s32(vol * vspread)
+            r = eng.rand.draw(0x80042250)
+            m.w32(a + 0x14, s32(vol + (lo - (r % s32(lo * 2) if lo else 0))))
+        m.w8(a + 0x12, 0)
+        m.w8(a + 0x10, 0)
+        if ent and not m.u32(ent + 0xC) & 0x40000000:
+            for k in range(3):
+                m.w16(a + 0x2C + 2 * k, m.s16(ent + 0x20E + 4 * k))
+        else:
+            for k in range(3):
+                m.w16(a + 0x2C + 2 * k, 0)
+            m.w32(a, m.u32(a) | 1)
+        self.start(bank & 0xFFFF, sound, v, pitch, pspread)
+        return v
 
     def release(self, v):
         st = self.spu.get(v)

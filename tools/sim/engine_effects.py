@@ -308,6 +308,7 @@ EFFECTS = {
     "anim": anim,
     "pose_blend": save_pose,
     "behaviour": behaviour,
+    "alarm": lambda vm, *a: __import__("engine_alarm").op_alarm(vm, *a),
 }
 
 
