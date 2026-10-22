@@ -34,6 +34,8 @@ U record_spawn_entity(Engine& eng, Record& rec);  // 0 when refused (queued)
 constexpr U G_LADDER_HELD = 0x8009A5B8;
 constexpr U LADDER_THINK = 0x800611D0;
 constexpr U SCRIPTED_THINK = 0x8005E61C;
+constexpr U SMOKE_THINK = 0x80074A38;  // the smoke emitter's: drawing only
+constexpr U FLASH_THINK = 0x8004FC14;
 void scripted_think(Engine& eng, U e);
 U door_spawn(Engine& eng, Record& rec, U model);
 U ladder_spawn(Engine& eng, U pair, U r);
@@ -196,6 +198,7 @@ U explosion_spawn(Engine& eng, U src, I fireballs, I puffs, I spread, I scale, I
 void explosion_think(Engine& eng, U e);
 void burst_think(Engine& eng, U e);
 void explosion_sound(Engine& eng, U e);
+void flash_think(Engine& eng, U p);
 
 // engine_sense.py
 // model_bone_point (0x8008DABC): a bone's joint (+ its rotation times off) into the world.

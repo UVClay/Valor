@@ -491,29 +491,6 @@ void sound(VM& vm, I snd, I pitch, I pspread, I vol, I vspread, I bank, I flags)
     m.w32(e + 0xFC, eng.audio->play(bank, snd, e, vol, vspread, pitch, pspread, 0, loop, 0, 0));
 }
 
-void hit_parts_set(Mem& m, U e, I mask, I kind, I radius, I damage) {
-    U pp = U(m.u32(e + 0x304));
-    for (I i = 0; i < m.u16(e + 0x36); i++) {
-        U q = U(pp + 0x48 * i);
-        if (!(m.u32(q + 4) & mask)) continue;
-        if (kind > 0)
-            m.w32(q + 8, kind);
-        else if (kind < 0)
-            m.w32(q + 8, m.u32(q + 0xC));
-        if (damage > 0)
-            m.w32(q + 0x10, damage);
-        else if (damage < 0)
-            m.w32(q + 0x10, m.u32(q + 0x14));
-        if (radius > 0) {
-            m.w32(q + 0x34, radius);
-            m.w32(q + 0x38, S32(radius * radius));
-        } else if (radius < 0) {
-            I r = m.s32(q + 0x30);
-            m.w32(q + 0x34, r);
-            m.w32(q + 0x38, S32(r * r));
-        }
-    }
-}
 
 void prop(VM& vm, I sel, I value, I typ, I grp, I tgt) {
     Mem& m = vm.m;
@@ -548,14 +525,43 @@ void prop(VM& vm, I sel, I value, I typ, I grp, I tgt) {
 
 }  // namespace
 
+void hit_parts_set(Mem& m, U e, I mask, I kind, I radius, I damage) {
+    U pp = U(m.u32(e + 0x304));
+    for (I i = 0; i < m.u16(e + 0x36); i++) {
+        U q = U(pp + 0x48 * i);
+        if (!(m.u32(q + 4) & mask)) continue;
+        if (kind > 0)
+            m.w32(q + 8, kind);
+        else if (kind < 0)
+            m.w32(q + 8, m.u32(q + 0xC));
+        if (damage > 0)
+            m.w32(q + 0x10, damage);
+        else if (damage < 0)
+            m.w32(q + 0x10, m.u32(q + 0x14));
+        if (radius > 0) {
+            m.w32(q + 0x34, radius);
+            m.w32(q + 0x38, S32(radius * radius));
+        } else if (radius < 0) {
+            I r = m.s32(q + 0x30);
+            m.w32(q + 0x34, r);
+            m.w32(q + 0x38, S32(r * r));
+        }
+    }
+}
+
 void VM::effect(const char* name, const I* a, int) {
     std::string n = name;
     if (n == "hit_part") {
         hit_parts_set(m, e, a[0] & 0xFFFFFFFF, S32(a[1]), S32(a[2]), S32(a[3] << 16));
         if (m.s32(e + 8) == 1) {
-            if (a[1] == 9 || a[1] == 5 || a[1] == 6)
-                eng.note("stat_melee not implemented");
-            else
+            if (a[1] == 9 || a[1] == 5 || a[1] == 6) {
+                // stat_melee (0x8008034C): flags A | 0x10000000, the melee statistic (0x80039CB4)
+                // and the view object's count (+0x14C)
+                m.w32(e + 0xC, m.u32(e + 0xC) | 0x10000000);
+                m.w32(0x80039CB4, m.u32(0x80039CB4) + 1);
+                U inv = U(m.u32(e + 0x388));
+                m.w32(inv + 0x14C, m.u32(inv + 0x14C) + 1);
+            } else
                 m.w32(e + 0xC, m.u32(e + 0xC) & 0xEFFFFFFF);
         }
     } else if (n == "hit_part_reset")

@@ -1,5 +1,7 @@
 // Spawning from records and the world objects (docs/re/levels.md Spawning, objects.md):
 // tools/sim/engine_objects.py.
+#include <array>
+
 #include "valor/sim/objects.h"
 #include "valor/sim/scripts.h"
 
@@ -332,6 +334,75 @@ U pickup_spawn_record(Engine& eng, Record& rec) {
     return e;
 }
 
+// 0x80074A60 -> 0x80074898: entity_create(0, object 0xB64, no model, 2 hit parts), type 0x1644,
+// flags B | 0x200, its emitter set up (0x8006E8D8, 0x80070704: drawing), its think the emitter's
+// update (0x80074A38: endless, drawing only); variables 0, 2, 3 = 0.
+U smoke_emitter(Engine& eng) {
+    Mem& m = eng.m;
+    U p = eng.entity_create(0x1644, 0xB64, 0, 0, 2);
+    if (!p) return 0;
+    m.w32(p + 8, 0x1644);
+    m.w32(p + 0x36C, SMOKE_THINK);
+    m.w32(p + 0x370, 0x800747CC);
+    m.w32(p + 0x384, 0x8006A318);
+    m.w32(p + 0x374, 0);
+    m.w32(p + 0x378, 0);
+    m.w32(U(m.u32(p + 0x388)) + 0xB48, 0);
+    m.w32(p + 0x10, m.u32(p + 0x10) | 0x200);
+    for (U v : {0u, 2u, 3u}) m.w32(p + 0x4C + 4 * v, 0);
+    return p;
+}
+
+// 0x8004FE84: an entity of type 0 (object 0x64; flags A 0x20000, B 0x203) that waits the delay,
+// steps its colour over the length (mode 1), holds, then goes (think 0x8004FC14); its quads are
+// drawing; linked at the front.
+U screen_flash(Engine& eng, I mode, I delay, I length, I hold, std::array<I, 3> c0, std::array<I, 3> c1) {
+    Mem& m = eng.m;
+    U p = eng.entity_create(0, 0x64);
+    if (!p) return 0;
+    m.w32(p + 8, 0);
+    m.w32(p + 0x14, 0);
+    m.w32(p + 0x374, 0);
+    m.w32(p + 0x378, 0);
+    m.w32(p + 0xC, 0x20000);
+    m.w32(p + 0x10, 0x203);
+    m.w32(p + 0x36C, FLASH_THINK);
+    m.w32(p + 0x370, 0x8004FDA8);
+    m.w32(p + 0x384, 0x8006A318);
+    U o = U(m.u32(p + 0x388));
+    m.w32(o, mode);
+    m.w32(o + 4, delay);
+    m.w32(o + 8, length);
+    m.w32(o + 0xC, hold);
+    for (int k = 0; k < 3; k++) {
+        m.w8(o + 0x18 + k, c0[k]);
+        m.w16(o + 0x10 + 2 * k, (c1[k] - c0[k]) / S16(length));
+    }
+    eng.link_front(p);
+    return p;
+}
+
+// 0x8004FC14: the delay, then the ramp (mode 1: the colour stepped), then the hold; then removed.
+void flash_think(Engine& eng, U p) {
+    Mem& m = eng.m;
+    U o = U(m.u32(p + 0x388));
+    if (m.s32(o + 4) > 0) {
+        m.w32(o + 4, m.s32(o + 4) - 1);
+        return;
+    }
+    if (m.s32(o + 8) > 0) {
+        if (m.u32(o) & 1)
+            for (int k = 0; k < 3; k++) m.w8(o + 0x18 + k, (m.u8(o + 0x18 + k) + m.u8(o + 0x10 + 2 * k)) & 0xFF);
+        m.w32(o + 8, m.s32(o + 8) - 1);
+        return;
+    }
+    if (m.s32(o + 0xC) <= 0) {
+        eng.remove(p, "flash done");
+        return;
+    }
+    m.w32(o + 0xC, m.s32(o + 0xC) - 1);
+}
+
 void level_explosion(Engine& eng, Ent* sub, I sub_obj, I kind) {
     Mem& m = eng.m;
     U e = sub && sub->addr ? sub->addr : 0;
@@ -359,6 +430,18 @@ void level_explosion(Engine& eng, Ent* sub, I sub_obj, I kind) {
         I smoke = ((rd() * 4) >> 15) + 6;
         particles_spawn(eng, pos, 1, n, 0x1E, 0x19, 0xF, 0x64, 0x3F4, 0xE0, 0x3E0, 0xFE, 0xF, 0x10000, 1, smoke);
         if (kind == 7) explosion_sound(eng, e);
+    } else if (kind == 2) {
+        // a smoke emitter (0x80074A60): its particles are drawing; it stays
+        U p = smoke_emitter(eng);
+        if (p) {
+            for (int k = 0; k < 3; k++) m.w32(p + 0x20C + 4 * k, pos[k]);
+            eng.link_front(p);
+        }
+    } else if (kind == 4) {
+        U g = explosion_spawn(eng, e, 0x12, 0x1E, 0x320, 0x40000, 0x5000, 0x140000, 3, rec);
+        if (g) m.w32(g + 0x14, 0x88004450);
+        explosion_sound(eng, e);
+        screen_flash(eng, 1, 1, 2, 2, {0xC0, 0xC0, 0xC0}, {0x80, 0x80, 0x80});
     } else if (kind == 3) {
         I n = ((rd() * 5) >> 15) + 0xF;
         particles_spawn(eng, pos, 5, n, 0x28, 0x19, 0xF, 0x64, 0x3F4, 0xE0, 0x3E0, 0xFE, 0xF, 0x17FFF, 0, 0);

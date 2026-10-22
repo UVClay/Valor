@@ -182,6 +182,7 @@ U Engine::alloc(I n) {
         if (!a) note("heap full", std::to_string(n) + " bytes");
         return a;
     }
+    if (load_heap) return load_heap->calloc(n, 1);
     n = (n + 15) & ~I(15);
     U a;
     auto& fb = free_blocks_[n];
@@ -204,6 +205,10 @@ U Engine::alloc(I n) {
 void Engine::free(U a) {
     if (gheap) {
         gheap->free(a);
+        return;
+    }
+    if (load_heap) {
+        load_heap->free(a);
         return;
     }
     auto it = block_size_.find(a);

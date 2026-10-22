@@ -260,13 +260,20 @@ I destructible_touch(Engine& eng, U e, U o) {
     I t = m.s32(o + 8);
     if (!((fa & 0x101) || t == 0x31)) return 0;
     if ((fa & 4) && t != 0x31) return impact_material(eng, e);
+    I dmg = m.s32(o + 0xF8);
     if (fa & 1) {
+        // the player's melee part (kind 5): facing it (its forward column . (player - object) < 0)
+        // and the part's radius + the object's within the horizontal distance: the part's damage
         U pp = U(m.u32(o + 0x304));
         if (m.s32(pp + 8) != 5) return 0;
-        eng.note("destructible hit by the player's melee not implemented");
-        return 0;
+        I dx = S16(m.s16(o + 0x20E) - m.s16(e + 0x20E));
+        I dz = S16(m.s16(o + 0x216) - m.s16(e + 0x216));
+        if (S32(m.s16(o + 0x344) * dx + m.s16(o + 0x350) * dz) >= 0) return 0;
+        I r = S32(m.s32(pp + 0x34) + m.u16(e + 0x2E8));
+        if (S32(r * r) - S32(dx * dx + dz * dz) <= 0) return 0;
+        dmg = m.s32(pp + 0x10);
     }
-    apply_damage(eng, e, m.s32(o + 0xF8), o);
+    apply_damage(eng, e, dmg, o);
     auto it = eng.ents.find(e);
     eng.logic->run_message(it == eng.ents.end() ? nullptr : it->second, 0, 1, "destructible hit");
     I fe = m.u32(e + 0xC);

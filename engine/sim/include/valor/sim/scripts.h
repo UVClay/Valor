@@ -68,6 +68,7 @@ I node_eval(Engine& eng, U e, U n, I fact);  // op 34 (0x8005B32C)
 V3 normal_ss(const V3& v);                   // VectorNormalSS
 I world_value(VM& vm, I op, I var);
 I sense_sensor(VM& vm, I vid);
+void hit_parts_set(Mem& m, U e, I mask, I kind, I radius, I damage);
 
 // brain_sim.py
 I path_nearest_point(Mem& m, U e, I path);

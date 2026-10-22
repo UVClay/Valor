@@ -155,6 +155,35 @@ struct Compare {
 };
 
 // engine.py frames_of: the frames of the level's ticks from the frame-counter watch.
+// The ticks that end a frame (the tick counter's value at each drawing pass).
+std::set<I> frame_ends(const std::string& path) {
+    std::set<I> out;
+    std::ifstream f(path);
+    std::string line;
+    while (std::getline(f, line)) {
+        long long vb;
+        unsigned a, b;
+        if (std::sscanf(line.c_str(), "watch %lld fc+4: %X -> %X", &vb, &a, &b) == 3) out.insert(I(b));
+    }
+    return out;
+}
+
+// A dump of the recording near a start: seed/d{V}.bin with V from vb + 1 on, the first holding a
+// whole frame (its tick the last of a frame, or the start's own tick when that ran alone); vb + 1
+// if there is none (engine.py's pick_seed).
+I pick_seed(const std::string& inputs, I vb, I first_tick, const std::set<I>& ends) {
+    for (I v = vb + 1; v <= vb + 60; v++) {
+        std::ifstream f(inputs + "/seed/d" + std::to_string(v) + ".bin", std::ios::binary);
+        if (!f) continue;
+        uint8_t w[4];
+        f.seekg(G_TICK & 0x1FFFFF);
+        if (!f.read(reinterpret_cast<char*>(w), 4)) continue;
+        I t = I(w[0] | w[1] << 8 | w[2] << 16 | uint32_t(w[3]) << 24);
+        if (t >= first_tick && (ends.count(t) || (t == first_tick && v == vb + 1))) return v;
+    }
+    return vb + 1;
+}
+
 std::vector<std::pair<I, std::vector<I>>> frames_of(const std::string& path, const std::vector<StateLine>& lines) {
     std::vector<std::pair<I, std::vector<I>>> out;
     if (lines.empty()) return out;
@@ -170,7 +199,8 @@ std::vector<std::pair<I, std::vector<I>>> frames_of(const std::string& path, con
         if (std::sscanf(line.c_str(), "watch %lld fc+4: %X -> %X", &vb, &a, &b) != 3) continue;
         if (!(lo <= vb && vb <= hi)) continue;
         std::vector<I> ticks;
-        for (I t = I(a) + 1; t <= I(b); t++)
+        // (a level's first frame: the counter starts again from 0)
+        for (I t = I(b) < I(a) ? 1 : I(a) + 1; t <= I(b); t++)
             if (want.count(t)) ticks.push_back(t);
         if (!ticks.empty()) {
             total += ticks.size();
@@ -280,25 +310,40 @@ int run_engine(int argc, char** argv) {
         std::fprintf(stderr, "coretest --engine: no seed for %s\n", level.c_str());
         return 2;
     }
-    I seed_v = seed_arg ? seed_arg : seeds.count(level) ? seeds.at(level) : lines[0].vblank + 1;
+    std::string frames_log = std::ifstream(inputs + "/frames.log").good() ? inputs + "/frames.log" : inputs + "/orig.log";
+    I seed_v = seed_arg ? seed_arg
+               : seeds.count(level) ? seeds.at(level)
+               // a disc-built start wants the dump right after the first tick (its save data,
+               // rand's seed and the timer)
+               : disc ? lines[0].vblank + 1
+                      : pick_seed(inputs, lines[0].vblank, lines[0].tick, frame_ends(frames_log));
     std::string seed = inputs + "/seed/d" + std::to_string(seed_v) + ".bin";
     if (const char* sf = std::getenv("VALOR_SEED_FILE")) seed = sf;
     Engine eng(root, level, feed);
     std::string err;
     bool ok;
+    I pre_v = 0;  // a disc-built start: the dump its save data, seed and timer come from
     if (disc) {
-        // the level built from the disc files (load.cpp); the save data and rand's seed from the
-        // dump taken during level_start (the vblank before the seed's)
+        // the level built from the disc files (load.cpp); the save data, rand's seed and the
+        // timer from the last dump before the first tick (level_start done, the tick counter
+        // still before it: d1713 for 1:3, d20494 for 2:1, d40734 for 2:2, whose first tick ran
+        // two vblanks)
         Mem pre;
-        // (or, when there's none, the seed itself: the save data is the same; the timer and the
-        // seed then a tick late)
-        std::ifstream f(inputs + "/seed/d" + std::to_string(seed_v - 1) + ".bin", std::ios::binary);
-        if (!f) f.open(seed, std::ios::binary);
-        f.read(reinterpret_cast<char*>(pre.d.data()), 0x200000);
+        for (I v = seed_v - 1; v >= seed_v - 8 && !pre_v; v--) {
+            std::ifstream f(inputs + "/seed/d" + std::to_string(v) + ".bin", std::ios::binary);
+            if (f && f.read(reinterpret_cast<char*>(pre.d.data()), 0x200000) && pre.s32(G_TICK) < lines[0].tick) pre_v = v;
+        }
+        if (!pre_v) {
+            // (or, when there's none, the seed itself: the save data is the same; the timer and
+            // the seed then a tick late)
+            std::ifstream f(seed, std::ios::binary);
+            f.read(reinterpret_cast<char*>(pre.d.data()), 0x200000);
+            pre_v = seed_v - 1;
+        }
         std::vector<uint8_t> game(pre.ptr(0x800385CC), pre.ptr(0x800385CC) + 0x780);
         LevelBuild lb;
-        // the level's load began the load's vblanks (0x8009A5C0) before the seed
-        lb.rand_from_vblank = seed_v - I(pre.u32(0x8009A5C0));
+        // the level's load began the load's vblanks (0x8009A5C0) before the dump
+        lb.rand_from_vblank = pre_v + 1 - I(pre.u32(0x8009A5C0));
         {
             Engine probe(root, level, feed);
             probe.load_disc(game, lb, &err);
@@ -335,7 +380,8 @@ int run_engine(int argc, char** argv) {
                 for (I t : ticks) std::fprintf(stderr, " %lld", (long long)t);
                 std::fprintf(stderr, "\n");
             }
-    I vb0 = before.empty() ? seed_v - 1 : before.back().vblank;
+    // (a disc-built start counts the timer on from its dump's vblank)
+    I vb0 = pre_v ? pre_v : before.empty() ? seed_v - 1 : before.back().vblank;
     eng.vblank_prev = vb0;
     eng.world.skip_to(vb0);
     eng.audio->adopt(vb0);

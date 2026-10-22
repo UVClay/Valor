@@ -906,14 +906,20 @@ void player_update(Engine& eng, U e) {
         if (!(weapon_flags(m, m.u8(G_SLOT_WEAPON + slot)) & 1)) {
             if (m.s16(inv + 0x66 + 2 * slot) == 0 && m.s32(inv + 0x48) <= 0 && m.s16(inv + 0x56 + 2 * slot) != 0) weapon_reload(eng, e, inv);
         }
+        // inv+0x38 counts 4 ticks of the hit parts at kind 8 (radius and damage 0), then back to
+        // their defaults; started by a channel-0 script of class bit 8 at its animation's frame 0
         I cc = m.s32(inv + 0x38);
         if (cc) {
-            m.w32(inv + 0x38, cc - 1);
-            eng.note("player melee part (inv+0x38) not implemented");
+            cc--;
+            m.w32(inv + 0x38, cc);
+            if (cc == 0)
+                hit_parts_set(m, e, 0xFFFF, -1, -1, -1);
+            else
+                hit_parts_set(m, e, 0xFFFF, 8, 0, 0);
         } else if (m.u32(e + 0x114) ? (m.u32(m.u32(e + 0x114)) & 8) : false) {
             if (m.s16(m.u32(e + 0x100) + 0x5E) == 0) {
                 m.w32(inv + 0x38, 4);
-                eng.note("player melee part (0x8004C64C) not implemented");
+                hit_parts_set(m, e, 0xFFFF, 8, 0, 0);
             }
         }
         if (m.u16(inv + 0x154)) {

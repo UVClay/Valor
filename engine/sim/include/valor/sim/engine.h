@@ -117,6 +117,7 @@ public:
     std::function<void(U e, U model, I flags)> swap_hook;
     // The game's heap at run time, once the state was built from the disc (load.h).
     std::unique_ptr<class GameHeap> gheap;
+    struct Heap* load_heap = nullptr;  // load_disc's exact heap while it builds (the level start's spawns)
     std::map<I, size_t> idle_used_;  // the idle records consumed, by tick
     std::map<I, size_t> keys_used_;  // the SPU key records consumed, by tick
     // Live play (no recording): see start_live and live_frame; in_view answers the draw pass's
