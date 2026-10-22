@@ -101,7 +101,7 @@ def fire_gun(eng, e, inv, fire):
         m.w32(inv + 0x50, min(r, 0x10000))
         rumble = 3
     elif w == 2:
-        eng.note("rocket_spawn not implemented")
+        shot = rocket_spawn(eng, e, bone_a, bone_b, 0, off_a, off_b, aimed, 0x13F1, 0x2000, 0, mask)
         rumble = 7
     elif w == 4:
         for i in range(6):
@@ -282,6 +282,40 @@ def projectile_create(eng, owner, etype, model, speed, bone_a, bone_b, a6, a7, d
     eng.link_end(p)
     for k in range(3):
         m.w32(o + 0x84 + 4 * k, m.u32(p + 0x20C + 4 * k))
+    return p
+
+
+def rocket_spawn(eng, owner, bone_a, bone_b, target, off_a, off_b, aimed, etype, fa, fb, mask):
+    """rocket_spawn (0x80045CA0): projectile_create(type, the model 0x9EED43D5, speed 200, the two
+    points, the target, damage 30.0, life 30, object extra 0xB64: its smoke trail); object +0 =
+    the trail (object +0x90, drawing: 0x8006E8D8 / 0x80070704 set it up), bullet_touch, flags A
+    | 0x04000000, B | 4, behaviour 0x130 (big bullets cheat on the player's: | 0xA40); its model
+    scripts (script_start 0, channel 1); the light (180, 160, 16), radius 500, and it is the
+    latest explosion (0x8009D650), lighting the world while it flies (objects.md)."""
+    m = eng.m
+    from engine_objects import model_by_hash
+    model = model_by_hash(eng, 0x9EED43D5)
+    p = projectile_create(eng, owner, etype, model or -1, 0xC80000, bone_a, bone_b, target, 0x20, 0x1E0000, 0x1E,
+                          0xB64, 0, off_a, off_b, aimed, fa, fb, mask)
+    if p is None:
+        return None
+    o = m.u32(p + 0x388)
+    m.w32(o, o + 0x90)
+    m.w32(p + 0x37C, BULLET_TOUCH)
+    m.w32(p + 0xC, m.u32(p + 0xC) | 0x04000000)
+    m.w32(p + 0x10, m.u32(p + 0x10) | 4)
+    m.w16(o + 0x38, 0x130)
+    if m.u32(owner + 0xC) & 1 and m.u32(G_CHEAT_FLAGS) & 0x20:
+        m.w16(o + 0x38, m.u16(o + 0x38) | 0xA40)
+    from engine_scripts import EVM
+    EVM(eng, p).script_start(0, 1, 0)
+    from engine_explosion import G_LIGHT
+    m.w8(G_LIGHT, 0xB4)
+    m.w8(G_LIGHT + 1, 0xA0)
+    m.w8(G_LIGHT + 2, 0x10)
+    m.w16(G_LIGHT + 4, 0x1F4)
+    m.w32(G_LIGHT + 8, 0x3D090)
+    m.w32(0x8009D650, p)
     return p
 
 

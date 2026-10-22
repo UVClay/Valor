@@ -262,6 +262,17 @@ the end of its life it is removed **without exploding** (`projectile_think`: the
 before any fuse; the rocket has no fuse bit). Then the 15-tick countdown and the 29-tick reload:
 44 ticks before the next press can fire.
 
+Exactly (reimplemented in `tools/sim/engine_projectile.py`): `projectile_create(type, the
+model, speed 0xC80000, the two gun points, the target, 0x20, damage 0x1E0000, life 0x1E, object
+extra 0xB64, ...)`; object `+0` = object + 0x90 (the trail's emitter, set up by `0x8006E8D8`
+and `0x80070704`: drawing), touch `bullet_touch`, flags A | 0x04000000, B | 4, behaviour 0x130
+(| 0xA40 with the big-bullets cheat on the player's), then its model's script 0 forced on
+channel 0 (`script_start(rocket, 0, 1, 0)`), the light (180, 160, 16, radius 500) and
+`g_last_explosion` = the rocket. The player's: type 0x13F1, flags A 0x2000, mask 0x08000450;
+a soldier's Panzerfaust (enemies.md, weapon kind 3): type 0x13F1, flags A 0x800, B 0x10000,
+mask 0x08000451, from the weapon template's two bones, no pull-back (bullets are pulled back),
+then the same spread as bullets.
+
 ## Items and the papers (pickup kinds 15..19)
 
 `item_pickup_touch` (`0x800832C0`) handles pickup table entries 15..19 (`0x8009E8E8`): touching

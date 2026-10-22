@@ -700,8 +700,9 @@ def enemy_weapon(eng, e):
 
     def shoot(target):
         if m.s32(w + 4) == 0x1773:
-            eng.note("enemy rocket (rocket_spawn) not implemented")
-            return None
+            from engine_projectile import rocket_spawn
+            return rocket_spawn(eng, e, m.s32(w + 8), m.s32(w + 0xC), target, 0, 0, 0, 0x13F1, 0x800, 0x10000,
+                                0x08000451)
         from engine_projectile import bullet_spawn
         p = bullet_spawn(eng, e, m.s32(w + 8), m.s32(w + 0xC), target, obj + 0x1C, 0, 0, m.u8(tmpl + 0x64) << 16,
                          0, 0, 0x13F4, 0x800, 0, 0x08000401)
