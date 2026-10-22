@@ -17,6 +17,7 @@ def register(eng):
     eng.think[SCRIPTED_THINK] = lambda e: scripted_think(eng, e)
     eng.think[SMOKE_THINK] = lambda e: None          # the emitter's particles: drawing only
     eng.think[FLASH_THINK] = lambda e: flash_think(eng, e)
+    eng.think[PROP1771_THINK] = lambda e: prop1771_think(eng, e)
 
 
 def scripted_think(eng, e):
@@ -223,6 +224,8 @@ def spawn_by_type(eng, t, model, rec):
         return e
     if t == 0x1776:
         return door_spawn(eng, rec, model)
+    if t == 0x1771:
+        return prop1771_spawn(eng, rec, model)
     if t == 0x1772:
         from engine_mounted import mounted_gun_spawn
         e = mounted_gun_spawn(eng, rec, model)
@@ -331,6 +334,56 @@ def level_explosion(eng, sub, sub_obj, kind):
             eng.audio.play(0, rd() % 4, e, 0xCCCC, 0, 0x8000, 0x2000, 0, 0, 0, 0)
     else:
         eng.note(f"level explosion({kind}) not implemented")
+
+
+PROP1771_THINK = 0x80046A88
+
+
+def prop1771_spawn(eng, rec, model):
+    """prop1771_spawn (0x80046B2C): entity_create(3, no object, the model, instance flags 0x15);
+    flags A 0x03008004, mask 0, B 0x211, the model's type; the record's cull counter (+0x5E),
+    group 0x800939D8, health (+0x5C); no collision (radius 0), drawn as a model, destructor
+    0x8006A37C; variable 1 = the record's +0x34."""
+    m = eng.m
+    r = rec.addr
+    e = eng.entity_create(m.s32(model + 0xFC), model=model, parts=0, iflags=0x15)
+    if not e:
+        return None
+    m.w32(e + 0xC, 0x03008004)
+    m.w32(e + 0x14, 0)
+    m.w32(e + 0x10, 0x211)
+    m.w32(e + 8, m.s32(model + 0xFC))
+    cv = m.s16(r + 0x5E)
+    m.w32(e + 0x294, cv)
+    m.w32(e + 0x290, cv)
+    g = m.u8(0x800939D8)
+    m.w8(0x800939D8, g + 1)
+    m.w32(e + 0x36C, PROP1771_THINK)
+    m.w32(e + 0x370, 0x8006A5B4)
+    m.w16(e + 0x2EC, 0)
+    m.w16(e + 0x2E8, 0)
+    m.w8(e + 0x35, g)
+    m.w32(e + 0x374, 0)
+    m.w32(e + 0x378, 0)
+    m.w32(e + 0x384, 0x8006A37C)
+    hp = m.u8(r + 0x5C) << 16
+    m.w32(e + 0xF0, hp)
+    m.w32(e + 0xF4, hp)
+    m.w32(e + 0x4C + 4, m.s16(r + 0x34))
+    return e
+
+
+def prop1771_think(eng, e):
+    """prop1771_think (0x80046A88): removed once variable 6 is below variable 2; otherwise its
+    scripts (channels only) and the spin from variables 3..5 (angular velocity, whole units)."""
+    m = eng.m
+    if m.s32(e + 0x4C + 4 * 6) < m.s32(e + 0x4C + 4 * 2):
+        eng.remove(e, "prop done")
+        return
+    from engine_scripts import EVM
+    EVM(eng, e).run_a()
+    for k in range(3):
+        m.w32(e + 0x234 + 4 * k, s32(m.s32(e + 0x4C + 4 * (3 + k)) << 16))
 
 
 SMOKE_THINK = 0x80074A38

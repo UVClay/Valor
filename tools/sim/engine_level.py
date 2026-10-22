@@ -14,7 +14,12 @@ class Ent(lv.Ent):
     def __init__(self, eng, addr, rec):
         m = eng.m
         self._eng, self.addr = eng, addr
+        # the base class starts its zone words and +0x40 for a new entity; these live in the
+        # entity's memory, which already holds them (entity_create's, or the seed's)
+        keep = [(o, m.u32(addr + o)) for o in (0x40, 0x390, 0x394, 0x398, 0x39C)]
         lv.Ent.__init__(self, m.u32(addr), m.s32(addr + 8), rec, addr)
+        for o, v in keep:
+            m.w32(addr + o, v)
         self.vars = memoryview(m.d)[(addr + 0x20) & 0x7FFFFF:(addr + 0x28) & 0x7FFFFF]
 
     m = property(lambda self: self._eng.m)

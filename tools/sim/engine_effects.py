@@ -301,7 +301,13 @@ def send_event(vm, msg):
     eng.logic.send(msg & 0xFFFF, eng.ents.get(vm.e), 0, None, src="send_event")
 
 
+def leave_ground(vm):
+    """Op 12 (0x8005908C): entity_leave_ground (0x80075118), +0x284 = 0."""
+    vm.m.w32(vm.e + 0x284, 0)
+
+
 EFFECTS = {
+    "leave_ground": leave_ground,
     "hit_part": hit_part,
     "hit_part_reset": hit_part_reset,
     "remove_self": remove_self,

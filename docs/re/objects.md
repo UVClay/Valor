@@ -418,7 +418,10 @@ from record `+0x5C`, collision radius 100, home angles from the record (`+0x18..
   `enemy_weapon`. The player's touch handler pushes soldiers and dogs apart (overlap of the
   `+0x2EC` radii, at most 65 per tick, `0x8007C030`). A grenade near it always makes it go for
   the grenade (Grenades).
-- **0x1771** (`0x80046B2C`, 1:1 only): no collision (mask 0, radius 0), runs its scripts; each
+- **0x1771** (`0x80046B2C`, 1:1 only; `entity_create(3, no object, the model, instance flags
+  0x15)`, flags A 0x03008004, B 0x211, the record's cull counter, health and group
+  `0x800939D8`, variable 1 = the record's `+0x34`, destructor `0x8006A37C`; its think
+  `0x80046A88` runs only the channels, not the event matcher): no collision (mask 0, radius 0), runs its scripts; each
   tick its angular velocity is variables 3, 4, 5, and it removes itself when variable 6 drops
   below variable 2 (a scripted spinning prop with a lifetime). Watched in a 1:1 run: spawned
   after the level start, it travelled in a straight line (about 10 units x, 17 z per tick) until it

@@ -168,6 +168,8 @@ class Engine:
         self.audio = Audio(self)
         self.logic = LevelLogic(self, bsd)
         self.tick_no = self.m.u32(G_TICK)
+        # the pad as the seed holds it, for ticks the recording has no pad line for
+        self.pad_now, self.pad_prev = self.m.u32(PAD_NOW) & 0xFFFF, self.m.u32(PAD_PREV) & 0xFFFF
         self.frame_ticks = 0
         self.vblank = 0
         self.vblank_prev = None
@@ -803,20 +805,21 @@ FRAME_WATCH = re.compile(r"^watch (\d+) fc\+4: ([0-9A-F]+) -> ([0-9A-F]+)")
 
 
 def frame_ends():
-    """The ticks that end a frame (the tick counter's value at each drawing pass)."""
-    out = set()
+    """The ticks that end a frame (the tick counter's value at each drawing pass) -> the
+    vblanks of those drawing passes."""
+    out = defaultdict(set)
     if os.path.exists(FRAMES_LOG):
         for line in open(FRAMES_LOG, errors="replace"):
             mm = FRAME_WATCH.match(line)
             if mm:
-                out.add(int(mm[3], 16))
+                out[int(mm[3], 16)].add(int(mm[1]))
     return out
 
 
 def pick_seed(prefix, vb, first_tick, ends):
     """A dump of the recording near a (re)start: seed/{prefix}{V}.bin with V from vb + 1 on, the
-    first holding a whole frame (its tick the last of a frame, or the start's own tick when
-    that ran alone); the vb + 1 name if there is none."""
+    first holding a whole frame: the vblank after the drawing pass of the frame its tick ended
+    (or the start's own tick, vb + 1, when that ran alone); the vb + 1 name if there is none."""
     d = os.path.join(INPUTS, "seed")
     best = os.path.join(d, f"{prefix}{vb + 1}.bin")
     if not os.path.isdir(d):
@@ -828,7 +831,7 @@ def pick_seed(prefix, vb, first_tick, ends):
             cands.append(int(mm[1]))
     for v in sorted(cands):
         t = Mem(open(os.path.join(d, f"{prefix}{v}.bin"), "rb").read()).u32(G_TICK)
-        if t >= first_tick and (t in ends or (t == first_tick and v == vb + 1)):
+        if t >= first_tick and (v - 1 in ends.get(t, ()) or (t == first_tick and v == vb + 1)):
             return os.path.join(d, f"{prefix}{v}.bin"), v
     return best, vb + 1
 
