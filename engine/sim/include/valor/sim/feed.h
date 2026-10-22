@@ -61,7 +61,9 @@ public:
     Rand(const Feed& f, std::string level) : feed_(f), level_(std::move(level)) {}
     // Live play: PsyQ's rand (0x8001552C) on the seed at 0x800CA2A4 in this memory.
     Mem* live_mem = nullptr;
-    void start_tick(I tick);
+    // The tick's recorded draws; from_vblank drops those made before (a level start's tick 0
+    // also holds the shell's draws, whose code sits at the same addresses as LEVEL's).
+    void start_tick(I tick, I from_vblank = 0);
     I draw(std::initializer_list<U> functions);
     I draw(const std::vector<U>& functions);
     std::vector<Draw> left;

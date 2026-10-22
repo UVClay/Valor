@@ -2129,6 +2129,8 @@ bool Engine::load_disc(const std::vector<uint8_t>& game, LevelBuild& out, std::s
     for (U o : {0x28u, 0xE0u, 0x26u, 0xDEu, 0x84u, 0x13Cu, 0x82u, 0x13Au}) m.w8(0x8009A620 + o, 1);
     m.w32(0x8009C840, m.u32(0x8009C840) & ~I(4) & ~I(0x100));
     ld.note("clear_colour_set (the draw environments' clear colour): drawing only");
+    // the spawns' scripts in level_start draw rand as the recording's level start did (its tick 0)
+    if (!feed.live) rand.start_tick(0, out.rand_from_vblank);
     ld.level_start();
     out.rand_calls = ld.rand_calls;
     gheap = std::make_unique<GameHeap>(*this);

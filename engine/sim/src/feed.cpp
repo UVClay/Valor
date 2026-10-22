@@ -148,10 +148,13 @@ I Feed::role(const std::string& level, I tick, int port, int role) const {
     return b == it->second.end() ? 0 : b->second;
 }
 
-void Rand::start_tick(I tick) {
+void Rand::start_tick(I tick, I from_vblank) {
     tick_ = tick;
     auto it = feed_.rand.find({level_, tick});
-    left = it == feed_.rand.end() ? std::vector<Draw>{} : it->second;
+    left.clear();
+    if (it != feed_.rand.end())
+        for (const Draw& d : it->second)
+            if (d.vblank >= from_vblank) left.push_back(d);
 }
 
 I Rand::draw(const std::vector<U>& functions) {

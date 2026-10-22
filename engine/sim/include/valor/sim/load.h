@@ -64,6 +64,8 @@ struct LevelBuild {
     std::vector<std::string> notes;  // what was not built, by step
     U rand_seed = 0;                 // in: rand's seed at the level's entry (the shell's srand + its draws)
     I rand_calls = 0;                // out: the draws the build made
+    I rand_from_vblank = 0;          // in (a recorded run): the level's load began here; the
+                                     // recording's earlier tick-0 draws are the shell's
 };
 
 // The save data a fresh campaign hands over (shell.md, game_defaults and new_game), set to start

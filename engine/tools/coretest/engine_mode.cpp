@@ -297,6 +297,8 @@ int run_engine(int argc, char** argv) {
         f.read(reinterpret_cast<char*>(pre.d.data()), 0x200000);
         std::vector<uint8_t> game(pre.ptr(0x800385CC), pre.ptr(0x800385CC) + 0x780);
         LevelBuild lb;
+        // the level's load began the load's vblanks (0x8009A5C0) before the seed
+        lb.rand_from_vblank = seed_v - I(pre.u32(0x8009A5C0));
         {
             Engine probe(root, level, feed);
             probe.load_disc(game, lb, &err);

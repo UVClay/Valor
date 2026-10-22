@@ -199,8 +199,9 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
   animation ends there is a 50-tick delay and a 15-tick fade, then flag 2. The level then
   restarts in place (`level_restart`): every entity but the soldier, the camera, the world and
   type 8 is removed, and `level_start` runs again on the running state, without reloading files.
-  `coretest --live 1:3 --replay`: the player dies at tick 2096 (2613 before the soldiers threw
-  grenades), the crouched death animation plays (var 2 = 30), and the level restarts at 2184 at
+  `coretest --live 1:3 --replay`: the player dies at tick 2121 (2613 before the soldiers threw
+  grenades and got auto aim's larger hit parts), the crouched death animation plays (var 2 =
+  30), and the level restarts at 2209 at
   full health with its statistics zeroed.
   (The doc's "the camera runs script 0xF" is the soldier: `a0` is still the soldier at the
   call.) Godot draws the death camera's own eye and look point;
@@ -518,22 +519,35 @@ and role values, the random draws by function, the frame structure, the CD's chu
 models the renderer drew, the idle work). `coretest --engine` compares its state trace with the
 original's every tick, as `engine.py cmp` does.
 
-| Level | Ticks | Identical to the original | Identical to the Python engine |
-|---|---|---|---|
-| 1:3 | 7,296 | 7,296 (all of it) | |
-| 2:1 | 8,368 | 8,368 (all of it) | |
-| 2:2 | 7,036 | 7,036 (all of it) | |
-| 3:1 (coverage tape) | 4,525 | 4,525 (all of it) | |
-| 5:4 (coverage tape) | 10,339 | 6,377 (to 6,295, through three restarts) | |
-| 9:4 (coverage tape) | 9,901 | 650 (to 651: the mounted gun) | |
+| Recording | Ticks | Restarts | From its seed dump | From the disc files |
+|---|---|---|---|---|
+| 1:3 (session) | 7,296 | 0 | 7,296 (all of it) | 7,296 of 7,297 (a pickup a tick early at 6951) |
+| 2:1 (session) | 8,368 | 0 | 8,368 (all of it) | 8,369 of 8,369 (all of it) |
+| 2:2 (session) | 7,036 | 0 | 7,036 (all of it) | 0 (no dump before tick 1: the timer and seed a tick late) |
+| 3:1 (coverage tape) | 4,525 | 0 | 4,525 (all of it) | 4,526 of 4,526 (all of it) |
+| 5:4 (coverage tape) | 10,339 | 10 | 10,339 (all of it) | 10,318 of 10,340 (a soldier's start animation, to the first restart) |
+| 9:4 (coverage tape) | 9,901 | 5 | 9,901 (all of it) | 362 of 9,902 (the same at its start) |
 
-Synced to the Python engine at 54f82e6. The three sessions are now whole, as the Python engine's
-are. The tapes' counts differ from the Python engine's in what they cover: the Python engine
-reseeds after a death from the dump after it (`seed/r*.bin`; 5:4 5,153 of 7,467 to the third
-restart, 9:4 653 of 4,925). The engine here restarts the level in place (`level_restart`:
-`level_start` built as from the disc, the removed entities' handles kept until the idle work
-frees them, as the original), so it compares every tick: 5:4 is identical through its first
-restart at tick 822 to 6,295.
+Synced to the Python engine at 14e3a34; the Python engine is whole on all six too. The restarts
+are the engine's own: after a death the level restarts in place (`level_restart`: every entity
+but the soldier, the camera, the world and type 8 removed, their handles kept until the idle
+work frees them, and `level_start` built as from the disc), where the Python engine reseeds
+from the dump after each restart (`seed/r*.bin`). Every respawned entity is checked this way:
+- soldiers and dogs with `model_instance_init`'s flags and hit parts (0x85 / 0x5, 0x285 / 0x205
+  with auto aim, which doubles the parts' radii);
+- the mounted gun (`mounted.cpp`) and 9:4's V2 (`obj1774_spawn`, `0x800905C0`: its object of two
+  particle systems, the 0x3CC-byte block it takes from the heap).
+
+The disc-built starts of 5:4 and 9:4 part at tick 1, on one soldier's first animation (0 against
+209 and 1). Its scripts pick it with rand at the level's start, and the engine's script draws there
+don't line up with the recording's yet:
+- the recording keys the shell's own draws to the level's tick 0. Their code sits at the same
+  addresses as LEVEL's, so the build now takes only the draws from the level's load on: the seed
+  less the load's vblanks, `0x8009A5C0`;
+- what still differs is one draw around a script call (op 0x38) in the soldier's first channel.
+
+5:4 rejoins at its first restart and stays identical; 9:4 doesn't, as its first restart comes
+much later.
 The right column compares with the Python engine's latest traces (`build/engine/eng_*.jsonl`).
 Each run parts from it only after both have parted from the original. The trace now also
 carries the on-screen text list and the hit wedges' timers (`texts`, `hud`), which agree
@@ -564,6 +578,9 @@ wherever the entities do. Since eb3c158:
   grenades (0x800523E4); a bullet hole fitted to its face moves the impact point (the decal's
   fitters; the face record carries the face's vertices and d). That closes the last session gaps
   (1:3 tick 1658, 2:1 tick 769);
+- the mounted gun worked by its gunner, rockets (the bazooka's and the Panzerfaust's), the
+  queued key-ons kept in RAM (`0x80090FC8`), queries with no target reading address 0's
+  fields, a seed's sound update run when its dump came before it;
 - other recordings: `ENG_INPUTS=DIR coretest --engine M:L` reads DIR's orig.log, orig.jsonl and
   seed/ (the dump at the level's first tick's vblank + 1), and its frames, timing and drawn logs
   when they're kept apart. A level's trace lines start 4 vblanks before its mark (the mark can

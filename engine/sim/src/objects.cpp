@@ -89,9 +89,108 @@ U door_spawn(Engine& eng, Record& rec, U model) {
     return e;
 }
 
+// obj1774_spawn (0x800905C0), the V2 of 9:4 (objects.md, 0x1774): entity_create(3, object
+// 0x1344, the model, instance flags 0x15, no parts, 5 channels, a list of 6); a 0x3CC-byte block
+// from the heap kept at 0x800AB8D8; placed at its record, its matrix; mask 0x88214051, flags A
+// 0x408, B 0x4200; the record's cull counter and health, group 0x800AB8DC; think 0x8008FDF8,
+// draw 0x8009053C, destructor 0x80090578; the model's box (0x8004A8F8). Its object: the point
+// between the model's vertices 16 and 32 (+0x2C) and that point in the world (+0x34, +0x3C),
+// and two particle systems of 40, smoke at +0x44 and fire at +0x9C4 (their records' state 6).
+U obj1774_spawn(Engine& eng, Record& rec, U model) {
+    Mem& m = eng.m;
+    U r = rec.addr;
+    U e = eng.entity_create(m.s32(model + 0xFC), 0x1344, model, 0, 0, 5, 6, false, 0x15);
+    if (!e) return 0;
+    m.w32(0x800AB8D8, eng.alloc(0x3CC));
+    place(eng, e, rec);
+    {  // 0x8006A76C: the matrix +0x340 (RotMatrixYXZ, the integer position, the scale >> 4)
+        int16_t rot[3][3];
+        rot_yxz(int32_t(m.s16(e + 0x22A)), int32_t(m.s16(e + 0x22E)), int32_t(m.s16(e + 0x232)), rot);
+        I sc[3] = {m.s32(e + 0x270) >> 4, m.s32(e + 0x274) >> 4, m.s32(e + 0x278) >> 4};
+        for (U i = 0; i < 3; i++)
+            for (U j = 0; j < 3; j++) m.w16(e + 0x340 + 6 * i + 2 * j, S16((rot[i][j] * sc[j]) >> 12));
+        for (U k = 0; k < 3; k++) m.w32(e + 0x354 + 4 * k, m.s16(e + 0x20E + 4 * k));
+    }
+    m.w32(e + 0x14, 0x88214051);
+    m.w32(e + 0xC, 0x408);
+    m.w32(e + 0x10, 0x4200);
+    m.w32(e + 8, m.s32(model + 0xFC));
+    I cv = m.s16(r + 0x5E);
+    I g = m.u8(0x800AB8DC);
+    m.w32(e + 0x294, cv);
+    m.w32(e + 0x290, cv);
+    m.w8(0x800AB8DC, g + 1);
+    m.w32(e + 0x36C, 0x8008FDF8);
+    m.w32(e + 0x370, 0x8009053C);
+    m.w32(e + 0x384, 0x80090578);
+    m.w16(e + 0x2EC, 0);
+    m.w8(e + 0x35, g);
+    m.w32(e + 0x374, 0);
+    m.w32(e + 0x378, 0);
+    I hp = m.u8(r + 0x5C) << 16;
+    m.w32(e + 0xF0, hp);
+    m.w32(e + 0xF4, hp);
+    U mdl = U(m.u32(U(m.u32(e + 0x100)) + 8));
+    I mn[3], mx[3];
+    for (U k = 0; k < 3; k++) mn[k] = m.s16(mdl + 0x44 + 2 * k), mx[k] = m.s16(mdl + 0x7C + 2 * k);
+    object_box(eng, e, mn, mx);
+    m.w32(e + 0x54, 0);
+    U vt = U(m.u32(mdl + 0x88)), o = U(m.u32(e + 0x388));
+    for (U k = 0; k < 3; k++) m.w16(o + 0x2C + 2 * k, (m.s16(vt + 0x80 + 2 * k) + m.s16(vt + 0x100 + 2 * k)) >> 1);
+    // the point in the world: MVMVA (sf 1) of the entity's matrix and translation
+    M3 M;
+    for (U i = 0; i < 3; i++)
+        for (U j = 0; j < 3; j++) M[i][j] = m.s16(e + 0x340 + 6 * i + 2 * j);
+    V3 mac = gmul_mac(M, {m.s16(o + 0x2C), m.s16(o + 0x2E), m.s16(o + 0x30)}, {m.s32(e + 0x354), m.s32(e + 0x358), m.s32(e + 0x35C)}, 12);
+    for (U k = 0; k < 3; k++) m.w16(o + 0x34 + 2 * k, mac[k]);
+    // the fire (system +0x9C4, records +0x9E4)
+    U s1 = o + 0x9C4;
+    m.w16(o + 2, 1);
+    m.w8(s1 + 1, 0x28);
+    m.w8(s1, 2);
+    m.w32(s1 + 8, 0xF0000);
+    m.w32(s1 + 0xC, -0x2000);
+    m.w16(s1 + 0x10, 0x3E8);
+    m.w16(s1 + 0x14, 0x3E0);
+    m.w16(s1 + 0x16, 0xFA);
+    m.w16(s1 + 0x18, 0x1F);
+    m.w16(s1 + 0x1A, 0x1F);
+    m.w16(s1 + 0x1C, 8);
+    m.w32(s1 + 4, 0x27FFF);
+    m.w16(s1 + 0x12, 0);
+    m.w16(s1 + 0x1E, 2);
+    for (U i = 0; i < 40; i++) m.w8(o + 0x9E4 + 0x3C * i, 6);
+    // the smoke (system +0x44, records +0x64); the world point kept again at +0x3C
+    for (U k = 0; k < 8; k++) m.w8(o + 0x3C + k, m.u8(o + 0x34 + k));
+    U s2 = o + 0x44;
+    m.w16(o, 1);
+    m.w16(o + 0x1C, 5);
+    m.w8(s2 + 1, 0x28);
+    m.w8(s2, 2);
+    m.w32(s2 + 4, 0x10000);
+    m.w32(s2 + 8, 0xF0000);
+    m.w32(s2 + 0xC, -0x200);
+    m.w16(s2 + 0x12, 0x20);
+    m.w16(s2 + 0x16, 0xFF);
+    m.w16(s2 + 0x18, 0x3F);
+    m.w16(s2 + 0x1A, 0x3F);
+    m.w16(s2 + 0x1C, 0x10);
+    m.w16(s2 + 0x10, 0x3E0);
+    m.w16(s2 + 0x14, 0x3E0);
+    m.w16(s2 + 0x1E, 2);
+    for (U i = 0; i < 40; i++) m.w8(o + 0x64 + 0x3C * i, 6);
+    m.w16(o + 0x26, 0x64);
+    m.w16(o + 0x28, 0x190);
+    m.w16(o + 0x24, 0x190);
+    m.w16(o + 0x20, 0);
+    m.w16(o + 0x22, 0x19);
+    return e;
+}
+
 U spawn_by_type(Engine& eng, I t, U model, Record& rec) {
     Mem& m = eng.m;
     if (t == 0x1772) return mounted_gun_spawn(eng, rec, model);
+    if (t == 0x1774) return obj1774_spawn(eng, rec, model);
     if (t == 0x1770 || t == 0x1778) {
         U e = eng.entity_create(t, 0, model, 0, -1, 0, 6, false, 0x157);
         if (!e) return 0;
