@@ -2128,10 +2128,14 @@ bool Engine::load_disc(const std::vector<uint8_t>& game, LevelBuild& out, std::s
     // the scripts level_load and level_start run draw rand as the recording's load did (its tick 0)
     if (!feed.live) rand.start_tick(0, out.rand_from_vblank);
     load_heap = &ld.heap;
+    load_instance_init = [&ld](U inst, U model, I flags, U e) { return ld.instance_init(inst, model, flags, e) != 0; };
     struct Unset {
-        Heap*& h;
-        ~Unset() { h = nullptr; }
-    } unset{load_heap};
+        Engine& eng;
+        ~Unset() {
+            eng.load_heap = nullptr;
+            eng.load_instance_init = nullptr;
+        }
+    } unset{*this};
     if (!ld.level_load(err)) return false;
     for (U o : {0x28u, 0xE0u, 0x26u, 0xDEu, 0x84u, 0x13Cu, 0x82u, 0x13Au}) m.w8(0x8009A620 + o, 1);
     m.w32(0x8009C840, m.u32(0x8009C840) & ~I(4) & ~I(0x100));

@@ -551,6 +551,7 @@ original's every tick, as `engine.py cmp` does.
 | 3:1 (coverage tape) | 0 | 4,525 of 4,525 | 4,526 of 4,526 |
 | 3:3 (coverage tape) | 2 | 10,428 of 10,428 | 10,429 of 10,429 |
 | 3:4 (coverage tape) | 3 | 10,692 of 10,692 | 10,693 of 10,693 |
+| 4:1 (coverage tape) | 2 | 7,250 of 7,250 | 7,251 of 7,251 |
 | 4:3 (coverage tape) | 3 | 10,247 of 10,247 | 10,248 of 10,248 |
 | 5:1 (coverage tape) | 2 | 10,679 of 10,679 | 10,680 of 10,680 |
 | 5:4 (coverage tape) | 10 | 10,339 of 10,339 | 10,340 of 10,340 |
@@ -558,8 +559,8 @@ original's every tick, as `engine.py cmp` does.
 | 9:4 (coverage tape) | 5 | 9,901 of 9,901 | 9,902 of 9,902 |
 
 All of it, every one, from the seed and from the disc (a disc run also compares tick 1, which the
-seed's dump already holds). Synced to the Python engine at 02a91af, which is whole on the same
-twelve. The restarts are the engine's own: after a death the level restarts in place
+seed's dump already holds). Synced to the Python engine at e57b9bc, which is whole on the same
+thirteen. The restarts are the engine's own: after a death the level restarts in place
 (`level_restart`: every entity but the soldier, the camera, the world and type 8 removed, their
 handles kept until the idle work frees them, and `level_start` built as from the disc), where the
 Python engine reseeds from the dump after each restart (`seed/r*.bin`). Every respawned entity is

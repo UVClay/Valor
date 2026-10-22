@@ -118,6 +118,8 @@ public:
     // The game's heap at run time, once the state was built from the disc (load.h).
     std::unique_ptr<class GameHeap> gheap;
     struct Heap* load_heap = nullptr;  // load_disc's exact heap while it builds (the level start's spawns)
+    // model_instance_init (0x8006A96C) on load_disc's loader while it builds (GameHeap's after)
+    std::function<bool(U inst, U model, I flags, U e)> load_instance_init;
     std::map<I, size_t> idle_used_;  // the idle records consumed, by tick
     std::map<I, size_t> keys_used_;  // the SPU key records consumed, by tick
     // Live play (no recording): see start_live and live_frame; in_view answers the draw pass's

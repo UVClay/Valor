@@ -164,8 +164,20 @@ U character_create(Engine& eng, U model, I channels, I iflags) {
         p += U(0x3C * channels);
     }
     m.w32(a + 0x1EC, channels);
-    char_instance_init(eng, a, inst, model, nbones(m, model) ? pose_alloc(eng) : 0);
-    char_parts_init(m, a, inst, model, iflags);
+    // entity_defaults' instance fields, then model_instance_init with the characters' instance
+    // flags (0x85, | 0x200 with auto aim), its block from the pose pool: frame 0's quaternions are
+    // in the pose from the spawn on (a fresh soldier's head bone for its first sight test)
+    for (auto [o, v] : {std::pair<U, I>{0x5C, -1}, {0x5E, 0}, {0x62, -1}, {0x64, 0}, {0x3E, 0}, {0x40, -1}}) m.w16(inst + o, v);
+    if (eng.gheap)
+        eng.gheap->instance_init(inst, model, iflags, a);
+    else if (eng.load_instance_init)
+        eng.load_instance_init(inst, model, iflags, a);
+    else {
+        char_instance_init(eng, a, inst, model, nbones(m, model) ? pose_alloc(eng) : 0);
+        char_parts_init(m, a, inst, model, iflags);
+    }
+    // +0x88 at the pose block (the docs say 0; the posing reads it, open)
+    m.w32(inst + 0x88, m.u32(inst + 0x90));
     return a;
 }
 

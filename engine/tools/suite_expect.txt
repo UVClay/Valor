@@ -21,8 +21,8 @@
 3:3 seed 10428
 3:4 disc 10693
 3:4 seed 10692
-4:1 disc 1730
-4:1 seed 1729
+4:1 disc 7251
+4:1 seed 7250
 4:2 disc 976
 4:2 seed 975
 4:3 disc 10248
@@ -31,8 +31,8 @@
 5:1 seed 10679
 5:2 disc 751
 5:2 seed 750
-5:3 disc 671
-5:3 seed 670
+5:3 disc 743
+5:3 seed 742
 5:4 disc 10340
 5:4 seed 10339
 7:1 disc 10510
