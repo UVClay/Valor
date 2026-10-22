@@ -149,6 +149,7 @@ public:
     void end_frame();
     void idle_job(I state);  // frame_idle_job (0x80090A30)
     void idle_loop();        // frame_idle_loop (0x80090AEC)
+    void idle_work();        // a frame's idle work as the recording has it
     // Every frame of the recording's level (to: the last tick, 0 all); each tick's state line goes
     // to `line`.
     void run(I to, const std::function<void(const StateLine&)>& line);

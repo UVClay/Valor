@@ -299,8 +299,9 @@ int run_engine(int argc, char** argv) {
     eng.vblank_prev = vb0;
     eng.world.skip_to(vb0);
     eng.audio->adopt(vb0);
-    eng.logic->run_queue();
-    eng.handles_free_removed();
+    // the seed frame's own wait (its idle work as recorded)
+    eng.tick_no = t0;
+    eng.idle_work();
     Compare cmp;
     cmp.maxn = maxn;
     for (auto& d : after) cmp.orig[d.tick] = &d;

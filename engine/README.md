@@ -314,9 +314,9 @@ original's every tick, as `engine.py cmp` does.
 |---|---|---|---|
 | 1:3 | 7,296 | 7,073 (the other 223: impact-spark positions, one hit face at 1658 and 3454) | all |
 | 2:1 | 8,368 | 4,943 (everything to 768) | all |
-| 2:2 | 7,036 | 821 | all |
+| 2:2 | 7,036 | 826 (everything to 810) | all |
 
-Synced to the Python engine at 5a9fd9b; each number is the Python engine's own at that commit.
+Synced to the Python engine at eb3c158; each number is the Python engine's own at that commit.
 
 ### Why it keeps the original's memory layout
 

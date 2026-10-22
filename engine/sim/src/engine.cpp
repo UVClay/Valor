@@ -572,6 +572,12 @@ void Engine::timer_message() {
 
 void Engine::end_frame() {
     draw_pass(*this);
+    idle_work();
+    audio->update();
+}
+
+// The frame's wait for the vblank as recorded: frame_idle_job / frame_idle_loop calls.
+void Engine::idle_work() {
     auto it = feed.idle.find({level, tick_no});
     size_t& used = idle_used_[tick_no];
     if (it == feed.idle.end() || used >= it->second.size()) {
@@ -586,7 +592,6 @@ void Engine::end_frame() {
                 idle_job(j);
         }
     }
-    audio->update();
 }
 
 void Engine::idle_job(I state) {
