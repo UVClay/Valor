@@ -377,6 +377,14 @@ Dictionary ValorGame::get_state() const {
         d["weapon"] = p.a ? int(p.weapon()) : -1;
         d["clip"] = p.a ? int(p.clip()) : 0;
         d["reserve"] = p.a ? int(p.reserve()) : 0;
+        // For the presentation layer (present/): the slot (the ammo icon), aim mode (the reticle)
+        // and the first-person weapon model's animation and frame (the view model).
+        d["slot"] = p.a ? int(p.slot()) : -1;
+        d["aiming"] = p.a && (p.state() & 0x20);
+        view::Instance wi = sol.a ? view::instance(sol) : view::Instance{};
+        d["weapon_model"] = int64_t(sol.a ? sol.model_hash() : 0);
+        d["weapon_anim"] = wi.a ? int(wi.anim()) : -1;
+        d["weapon_frame"] = wi.a ? int(wi.frame()) : 0;
         int alive = 0, dead = 0;
         for (const view::Entity& e : view::entities(m))
             if (e.type() == 0x1402 || e.type() == 0x1405) (e.dead() ? dead : alive)++;
