@@ -5,13 +5,13 @@ extends Node
 ## here changes the rules. docs/re: hud.md, audio.md, formats.md (Sky), animation.md (the player's
 ## weapon models).
 ##
-## User arguments (after `--`): --no-hud, --no-viewmodel, --no-sky, --no-audio, --no-music,
+## User arguments (after `--`): --no-hud, --no-viewmodel, --no-sky, --no-effects, --no-audio, --no-music,
 ## --ambience-only (the B-mix music), --german (the 0 TAF: German soldiers' voices),
 ## --crosshair=SIZE (an always-on crosshair on the aim line, 0: none, the original's look),
 ## --square-stick (stretch a round stick to the DualShock's square range), --modern-sticks (the
 ## left stick strafes and the right one turns, instead of the original's left-turns, right-strafes),
-## --test-message=TEXT (a level message at the start, to see the text list), --test-press=MASK@TICK
-## (press PS1 buttons for 2 ticks from that tick: 0x40 fires, 0x80 reloads), --debug-text (keep
+## --test-message=TEXT (a level message at the start, to see the text list), --test-press=MASK@TICK[,...]
+## (press PS1 buttons for 2 ticks from that tick: 0x40 fires, 0x80 reloads, 0x20 switches), --debug-text (keep
 ## main.gd's state line).
 
 const ANGLE := TAU / 4096.0
@@ -30,6 +30,7 @@ var hud: Control
 var sky: Control
 var view_model: Node
 var audio: Node
+var effects: Node3D
 
 
 func _ready() -> void:
@@ -77,6 +78,9 @@ func _attach() -> void:
 		hud = preload("res://present/hud.gd").new()
 		layer.add_child(hud)
 		hud.setup(self)
+	if not args.has("no-effects"):
+		effects = preload("res://present/effects.gd").new()
+		effects.setup(self)
 	if not args.has("no-audio"):
 		audio = preload("res://present/audio.gd").new()
 		add_child(audio)
@@ -112,6 +116,8 @@ func _physics_process(_delta: float) -> void:
 		hud.on_tick()
 	if audio:
 		audio.on_tick()
+	if effects:
+		effects.on_tick()
 
 
 func _process(_delta: float) -> void:
@@ -172,11 +178,12 @@ func pad_input() -> Dictionary:
 	if assets == null:
 		return out
 	if args.has("test-press"):
-		var tp: PackedStringArray = String(args["test-press"]).split("@")
-		var at := int(tp[1])
-		var now := int(state.get("tick", 0))
-		if now >= at and now < at + 2:
-			out.buttons = tp[0].hex_to_int() if tp[0].begins_with("0x") else int(tp[0])
+		for press in String(args["test-press"]).split(","):
+			var tp: PackedStringArray = press.split("@")
+			var at := int(tp[1])
+			var now := int(state.get("tick", 0))
+			if now >= at and now < at + 2:
+				out.buttons |= tp[0].hex_to_int() if tp[0].begins_with("0x") else int(tp[0])
 	var dev := -1
 	for d in Input.get_connected_joypads():
 		dev = d

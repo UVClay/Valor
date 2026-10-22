@@ -11,8 +11,14 @@ extends Node
 ## shown, the left mouse button plays the firing animation and E the reload, the rest idles or
 ## sways while walking (the seven animations' meanings from animation.md).
 ##
-## Hidden while zoomed (hud.md, Sniper scope: drawn only at projection distance 400): stubbed as
-## never, the zoom isn't in the core's state yet.
+## Hidden while zoomed (hud.md, Sniper scope: drawn only at projection distance 400); the zoom
+## also narrows the main camera's view (the projection distance, movement.md).
+##
+## The muzzle flash (func_8006DD54, set up by func_8006DCAC on each draw): a 31 x 31 texel sprite
+## (tpage 0xF, u 0xC0, v 0x80, CLUT 0x3E7E: VRAM (1008, 128), CLUT (992, 249)), semi-transparent,
+## scaled by half (drawn at a random rotation; here unrotated), colour 96 (128 - 32 x its counter), on the weapon's bone
+## g_weapons[w]+0x34 at the offset +0x36, shown the frame after a shot (fire_gun sets the counter
+## to 1 unless the player's flags 0x200040, read as the silenced pistol and the thrown weapons).
 
 const IDLE := 5
 const MOVING := 0
@@ -33,6 +39,10 @@ var local_hash := 0
 var anim := IDLE
 var frame := 0
 var last_pos := Vector3.ZERO
+var flash: MeshInstance3D
+var flash_ticks := 0
+var flash_local := Vector3.ZERO  # in the weapon model's space
+var base_fov := 0.0
 var body_prev := Vector2.ZERO  # body pitch, Godot yaw (radians), last tick and this one
 var body_cur := Vector2.ZERO
 
@@ -50,6 +60,22 @@ func setup(present) -> void:
 	viewport.add_child(cam)
 	mesh = MeshInstance3D.new()
 	viewport.add_child(mesh)
+	flash = MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(31.0, 31.0) / 128.0  # world units (31 texels at half scale, view x 2.0)
+	flash.mesh = quad
+	var fm := StandardMaterial3D.new()
+	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	fm.no_depth_test = true
+	fm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	fm.albedo_texture = ImageTexture.create_from_image(p.assets.region_image(0xF, 0x3E7E, 0xC0, 0x80, 31, 31))
+	fm.albedo_color = Color(0.75, 0.75, 0.75)
+	flash.material_override = fm
+	flash.visible = false
+	viewport.add_child(flash)
 	var layer := CanvasLayer.new()
 	layer.layer = 1
 	add_child(layer)
@@ -95,6 +121,15 @@ func on_tick() -> void:
 		a = anim
 		f = frame
 	show_pose(h, a, f)
+	flash_ticks = maxi(flash_ticks - 1, 0)
+	for e in p.events:
+		if e.kind == "fire" and not (e.weapon in [2, 3, 7, 9, 10]):
+			var row: PackedByteArray = p.assets.level_bin(0x80093640 + 0x44 * e.weapon, 0x44)
+			var bone := row.decode_u16(0x34)
+			var off := Vector3i(row.decode_s16(0x36), row.decode_s16(0x38), row.decode_s16(0x3A))
+			flash_local = p.assets.bone_point(h, a, f, bone, off)
+			flash_ticks = 1
+	flash.visible = flash_ticks > 0 and mesh.visible
 
 
 func local_step() -> void:
@@ -147,8 +182,17 @@ func show_pose(h: int, a: int, f: int) -> void:
 func on_frame() -> void:
 	var main_cam: Camera3D = p.main.cam
 	viewport.size = p.main.get_viewport().get_visible_rect().size
+	if base_fov == 0.0:
+		base_fov = main_cam.fov
+	# The zoom: the projection distance (400 normal); the weapon is drawn only at 400.
+	var zoom := float(p.state.get("zoom", 400))
+	mesh.visible = zoom == 400.0
+	var fov := rad_to_deg(2.0 * atan(tan(deg_to_rad(base_fov) / 2.0) * 400.0 / maxf(zoom, 1.0)))
+	if p.state.has("zoom"):
+		main_cam.fov = fov
 	cam.keep_aspect = main_cam.keep_aspect
-	cam.fov = main_cam.fov
+	cam.fov = base_fov
+	flash.position = mesh.basis * flash_local
 	if p.state.has("body_yaw"):
 		var f := Engine.get_physics_interpolation_fraction()
 		var body := Basis.from_euler(Vector3(lerp_angle(body_prev.x, body_cur.x, f), lerp_angle(body_prev.y, body_cur.y, f), 0.0))

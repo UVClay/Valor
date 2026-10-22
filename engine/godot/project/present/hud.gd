@@ -7,8 +7,11 @@ extends Control
 ## From the state: the health ring, the compass (the view yaw), the clip and reserve with the
 ## slot's ammo picture (hidden for the papers), the aim reticle (aim mode; the bazooka's own
 ## shape), the pickup messages (from health and ammo changes), the level-start and death fades.
+## Tab shows the objectives (the pause menu's list: a box, ticked when done). The sniper scope
+## (aim mode with the scope, zoomed): the view outside a circle blacked out (inference: the scope
+## model, the weapon block's +0x130 object, wasn't read; hud.md).
 ## Stubbed until the core reports them: the hit wedges (the hit's direction), level messages
-## (show_text), the crosshair's movement (drawn at its rest point 256, 131), the scope.
+## (show_text), the crosshair's movement (drawn at its rest point 256, 131).
 ## --crosshair=SIZE adds an always-on crosshair on the aim line, hidden in aim mode.
 
 const FONT_TPAGE := 0xF
@@ -173,7 +176,10 @@ func _draw() -> void:
 		if not t.semi:
 			draw_game_text(self, t.text, at_middle(t.x, t.y), t.col)
 	var aiming: bool = s.get("aiming", false)
-	if aiming:
+	var scoped: bool = s.get("scoped", false) and int(s.get("zoom", 400)) > 400
+	if scoped:
+		draw_scope()
+	elif aiming:
 		draw_reticle(w)
 	elif crosshair > 0:
 		var c := at_middle(256, 131)
@@ -183,6 +189,8 @@ func _draw() -> void:
 		draw_line(c + Vector2(k * 0.6, 0), c + Vector2(k * 2, 0), col, maxf(1.0, scale_y() * 0.4))
 		draw_line(c - Vector2(0, k * 2), c - Vector2(0, k * 0.6), col, maxf(1.0, scale_y() * 0.4))
 		draw_line(c + Vector2(0, k * 0.6), c + Vector2(0, k * 2), col, maxf(1.0, scale_y() * 0.4))
+	if Input.is_physical_key_pressed(KEY_TAB):
+		draw_objectives(s.get("objectives", []))
 	# Fades (hud.md): cuts to black. The level start: black for 15 ticks. Death: 65 ticks, then black.
 	var tick := int(s.get("tick", 99))
 	if tick < 15 or (dead_since >= 0 and tick - dead_since >= 65):
@@ -245,3 +253,38 @@ func draw_reticle(w: int) -> void:
 		lines = [[0, -12, 0, -5], [0, 5, 0, 12], [-18, 0, -8, 0], [8, 0, 18, 0]]
 	for l in lines:
 		draw_line(at_middle(c.x + l[0], c.y + l[1]), at_middle(c.x + l[2], c.y + l[3]), col, width)
+
+
+## The scope: black outside a circle round the view's centre (the scoped shot goes to the view's
+## centre, player.md), with thin cross-hairs.
+func draw_scope() -> void:
+	var size := get_viewport_rect().size
+	var c := size / 2.0
+	var r := size.y * 0.46
+	var pts := PackedVector2Array()
+	for i in 65:
+		var a := TAU * i / 64.0
+		pts.append(c + Vector2(cos(a), sin(a)) * r)
+	# the four corners round the circle, as one polygon with a hole: two halves
+	for half in 2:
+		var poly := PackedVector2Array()
+		var x0 := 0.0 if half == 0 else size.x
+		poly.append(Vector2(c.x, 0))
+		poly.append(Vector2(x0, 0))
+		poly.append(Vector2(x0, size.y))
+		poly.append(Vector2(c.x, size.y))
+		for i in 33:
+			var a := PI / 2.0 + (PI * i / 32.0 if half == 0 else -PI * i / 32.0)
+			poly.append(c + Vector2(cos(a), sin(a)) * r)
+		draw_colored_polygon(poly, Color.BLACK)
+	var w := maxf(1.0, scale_y() * 0.3)
+	draw_line(Vector2(c.x - r, c.y), Vector2(c.x + r, c.y), Color.BLACK, w)
+	draw_line(Vector2(c.x, c.y - r), Vector2(c.x, c.y + r), Color.BLACK, w)
+
+
+## The objectives as the pause menu lists them: a box ("$") or a ticked box ("#"), then the text.
+func draw_objectives(objs: Array) -> void:
+	var y := 60
+	for o in objs:
+		draw_game_text(self, ("# " if o.done else "$ ") + String(o.text), at_middle(80, y), [128, 128, 128])
+		y += 14

@@ -68,6 +68,7 @@ void ValorAssets::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_anim_frames", "hash", "anim"), &ValorAssets::get_anim_frames);
     ClassDB::bind_method(D_METHOD("build_model_mesh", "hash", "anim", "frame"), &ValorAssets::build_model_mesh);
     ClassDB::bind_method(D_METHOD("get_texture_pages"), &ValorAssets::get_texture_pages);
+    ClassDB::bind_method(D_METHOD("bone_point", "hash", "anim", "frame", "bone", "offset"), &ValorAssets::bone_point);
     ClassDB::bind_method(D_METHOD("stick_roles", "rx", "ry", "lx", "ly"), &ValorAssets::stick_roles);
 }
 
@@ -297,4 +298,20 @@ PackedInt32Array ValorAssets::stick_roles(int rx, int ry, int lx, int ly) const 
     PackedInt32Array out;
     for (int r = 0; r < 4; r++) out.push_back(c.role_axis(r));
     return out;
+}
+
+Vector3 ValorAssets::bone_point(int64_t hash, int anim, int frame, int bone, Vector3i offset) {
+    const valor::Model* m = models_.by_hash(uint32_t(hash));
+    if (!m || !m->skinned() || anim < 0 || size_t(anim) >= m->anims.size() || m->anims[size_t(anim)].frames.empty())
+        return Vector3();
+    valor::AnimInstance inst;
+    inst.model = m;
+    inst.start(anim, frame, frame, 2);
+    inst.build(models_);
+    valor::HitPartTemplate t;
+    t.a = t.b = uint16_t(bone);
+    t.off[0] = int16_t(offset.x), t.off[1] = int16_t(offset.y), t.off[2] = int16_t(offset.z);
+    int16_t out[3];
+    valor::part_centre(t, inst.joints, &inst.pose, 0, out);
+    return to_godot(out[0], out[1], out[2]);
 }

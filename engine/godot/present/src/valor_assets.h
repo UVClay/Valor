@@ -14,6 +14,7 @@
 #include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/typed_array.hpp>
+#include <godot_cpp/variant/vector3i.hpp>
 
 #include <map>
 #include <string>
@@ -64,6 +65,9 @@ public:
     // weapon's origin at the eye's; surfaces named as the world shaders expect).
     int get_anim_frames(int64_t hash, int anim) const;
     Ref<ArrayMesh> build_model_mesh(int64_t hash, int anim, int frame);
+    // A point on a bone of that pose (model_bone_point: the joint plus the offset turned by the
+    // bone), Godot axes: where the muzzle flash hangs (g_weapons +0x34 bone, +0x36 offset).
+    Vector3 bone_point(int64_t hash, int anim, int frame, int bone, Vector3i offset);
     // The texture pages the meshes built so far use, one layer per page and CLUT.
     Ref<Texture2DArray> get_texture_pages();
 
