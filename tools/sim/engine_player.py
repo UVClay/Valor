@@ -62,7 +62,8 @@ def player_update(eng, e):
     if m.s32(e + 0x210) > 0x13880000:
         eng.note("player fell out of the world (10000 damage) not implemented")
     if m.u32(e + 0x38) & 0x4000:
-        eng.note("player death not implemented")
+        from engine_death import player_death_start
+        player_death_start(eng, e, m.s32(inv + 0x1C0))
     else:
         # aim mode: R2 held on the ground
         aimed = False

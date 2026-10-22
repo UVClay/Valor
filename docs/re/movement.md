@@ -457,7 +457,21 @@ When health reaches 0 (`apply_damage` sets contact flag 0x4000), the next `playe
   eye and look point follow the animation's bones), easing shift 3; its variable 2 picks the
   death animation: 30 if crouched, 20 if killed by an explosion (type 0x31), otherwise 50%
   10–12, 50% 0–2. The soldier copies the camera's position and angles every tick (`player_think_dead`; the camera is first in the entity list, so it is the camera's position after this tick's move: every dead tick of a 1:1 death matched it exactly; the soldier's own `+0x3BC` is stale meanwhile).
-- When the camera script ends: a 50-tick delay, then a 15-tick fade (which the game shows as
+- The death camera (camera mode 0x800, `camera_think`): while its model is set it runs its own
+  scripts (event matcher, then the channels) and `0x80046EB4` takes its targets from the
+  animation: the joint of bone `model+0xD4` (`co+0x54..`), and that bone's pose rotation (the
+  quaternion, current else next else first buffer) applied to the model's offsets `+0xD8` and
+  `+0xE0` plus the joint: the look target (`co+0x24..`) and side target (`co+0x84..`); the eased
+  points are then put through the camera entity's own matrix (`+0x340`, `+0x354`): the look point
+  (`co+0..`, its y also in `co+0x98`), the side point (`co+0x6C..`), and the eye (`co+0x3C..`,
+  from the eased joint, its height `co+0x94`; kept at least 85 above the camera's floor
+  `+0x208`), which `camera_setup` uses in modes 0x1800 instead of the entity's position. Without
+  a model the camera goes back to mode 0x80. Its touch (`0x800476C4`) is the object planes, its
+  world contact (`0x800476E8`) stops it on landing (forward speed 0, `+0x38` | 2).
+- `player_think_dead` then copies the camera's `+0x284` and position/angles (`+0x20C..+0x26C`)
+  each tick, sets `inv` 0x8000 when the soldier's channel-0 script is gone, runs the soldier's
+  scripts (a negative `+0x288` resets it and turns the soldier half round).
+- When the camera script ends (its variable 2 reads −1): a 50-tick delay, then a 15-tick fade (which the game shows as
   a cut; hud.md, Fades), and the level is lost (`0x8009C840` |= 2). Without a camera
   animation: only the delay and fade.
 - What follows (the level restarts in place, no file reload, unlimited retries) is in

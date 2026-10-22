@@ -10,9 +10,19 @@ def camera_think(eng, e):
     co = m.u32(e + 0x388)
     sol = eng.resolve(m.u32(co + 0xC))
     if sol:
-        mode = m.u32(co + 0x9C)
-        if mode & 0x800:
-            eng.note("death camera (mode 0x800) not implemented")
+        if m.u32(co + 0x9C) & 0x800:
+            # the death camera: its animation scripts run, its look points from the animation;
+            # with no model it falls back to the normal mode
+            inst = m.u32(e + 0x100)
+            if inst and m.u32(inst + 8):
+                from engine_scripts import EVM
+                from engine_death import death_points
+                vm = EVM(eng, e)
+                vm.run_b()
+                vm.run_a()
+                death_points(eng, e, co)
+            else:
+                m.w32(co + 0x9C, (m.u32(co + 0x9C) & ~0x800) | 0x80)
         ease(m, co)
         look_points(eng, e, co, sol)
         place(eng, e, co, sol)
@@ -40,6 +50,17 @@ def look_points(eng, e, co, sol):
     yaw) and a side point (obj+0x78..), from the soldier's position."""
     m = eng.m
     mode = m.u32(co + 0x9C)
+    if mode & 0x800:
+        # the eased targets through the camera entity's own matrix
+        from engine_death import cam_local
+        a = cam_local(m, e, m.s16(co + 0x1A), m.s16(co + 0x1E), m.s16(co + 0x22))
+        for k in range(3):
+            m.w32(co + 4 * k, s32(a[k] << 16))
+        m.w32(co + 0x98, a[1])
+        b = cam_local(m, e, m.s16(co + 0x7A), m.s16(co + 0x7E), m.s16(co + 0x82))
+        for k in range(3):
+            m.w32(co + 0x6C + 4 * k, s32(b[k] << 16))
+        return
     if not mode & 0x480:
         eng.note(f"camera look mode {mode:X} not implemented")
         return
@@ -59,6 +80,17 @@ def look_points(eng, e, co, sol):
 def place(eng, e, co, sol):
     """camera_place (0x800482A4), mode 0x80: the eye at the soldier, y + obj+0x94."""
     m = eng.m
+    if m.u32(co + 0x9C) & 0x800:
+        # the eye: the eased joint through the camera's matrix, kept 85 above its floor
+        from engine_death import cam_local
+        ly = m.s16(co + 0x4E)
+        m.w32(co + 0x94, ly)
+        p = cam_local(m, e, m.s16(co + 0x4A), ly, m.s16(co + 0x52))
+        m.w32(co + 0x3C, s32(p[0] << 16))
+        m.w32(co + 0x44, s32(p[2] << 16))
+        floor = m.s32(e + 0x208)
+        m.w32(co + 0x40, s32(floor - 0x550000) if (floor >> 16) - p[1] < 0x55 else s32(p[1] << 16))
+        return
     if m.u32(co + 0x9C) & 0x80:
         m.w32(e + 0x20C, m.s32(sol + 0x20C))
         m.w32(e + 0x210, s32(m.s32(sol + 0x210) + (m.s32(co + 0x94) << 16)))
@@ -72,11 +104,12 @@ def camera_setup(eng, e):
     frustum (drawing only) is left out."""
     m = eng.m
     co = m.u32(e + 0x388)
-    if m.u32(co + 0x9C) & 0x1800:
-        eng.note("camera_setup in death mode not implemented")
-        return
     look = [m.s16(co + 2), m.s16(co + 6), m.s16(co + 0xA)]
-    eye = [m.s16(e + 0x20E), m.s16(e + 0x212), m.s16(e + 0x216)]
+    if m.u32(co + 0x9C) & 0x1800:
+        # the death modes: the eye camera_place put at co+0x3C
+        eye = [m.s16(co + 0x3E), m.s16(co + 0x42), m.s16(co + 0x46)]
+    else:
+        eye = [m.s16(e + 0x20E), m.s16(e + 0x212), m.s16(e + 0x216)]
     side = [m.s16(co + 0x6E), m.s16(co + 0x72), m.s16(co + 0x76)]
     for k in range(3):
         m.w32(co + 0xE4 + 4 * k, look[k])

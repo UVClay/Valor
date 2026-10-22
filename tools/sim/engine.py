@@ -193,6 +193,8 @@ class Engine:
         engine_explosion.register(self)
         import engine_alarm
         engine_alarm.register(self)
+        import engine_death
+        engine_death.register(self)
         self.logic.adopt()
 
     # -- notes: what the engine left out, kept to report
