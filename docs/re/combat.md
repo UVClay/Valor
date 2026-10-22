@@ -100,9 +100,17 @@ a wall in the same tick hits the soldier. The second call clears 0x8, takes the 
 with flags B 0x20:
 1. A bullet hole: `0x8004E614(+0x318)` refuses when the point is within 16 units (each axis,
    exclusive) of the last one (`0x800AB918`) or the normal is zero; else the next of 100 decal
-   slots (`0x80093C58` index, slots of 0x80 at `0x80093C5C`; its polygon from `0x8004E354`,
-   which draws one `rand()`), the last point updated, and the projectile moved to the face
-   record's point.
+   slots (`0x80093C58` index, slots of 0x80 at `0x80093C5C`; its polygon from `0x8004E354`),
+   the last point updated (4 halfwords), and the projectile moved to the face record's point.
+   **Bullet holes are fitted to their face**, and that moves the record's point:
+   `0x8004E354` draws the hole's half size s = rand·4 >> 15 + 5 (5..8) and, by the normal's
+   largest component (y: `0x8004DE80` on x and z; else x: `0x8004E01C` on y and z; else z:
+   `0x8004E1B8` on x and y), keeps the square inside the face's bounding box (the record's three
+   vertices, `+0x10`, `+0x18`, `+0x20`) on those two axes: the half size a = s, or half the
+   narrower of the two extents when one is under 2s; per axis, with the box [lo, hi] and the
+   point p: if p + s > hi, p = lo + a when also p − s < lo, else p −= (p + s − hi); otherwise if
+   p − s < lo, p += lo − (p − s). So the sparks (2. below) start at the fitted point, up to s
+   units from where the bullet hit (1:3 tick 1658, 2:1 tick 769, 5:4 tick 2248).
 2. Unless object `+0x38` 0x200: sparks `particles_spawn(position, 1, rand·3 >> 15 + 2, 30, 25,
    15, 100, 0x3F4, 0xE0, 0x3E0, 0xFE, 15, 1.0, 1, rand·4 >> 15 + 6)` (the two draws first).
 3. With result & 3 (or `+0x38` 0x200): object `+0x38` |= 2 and the bounce/roll handling for

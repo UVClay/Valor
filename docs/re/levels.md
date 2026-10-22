@@ -722,15 +722,12 @@ bullet stops tick for tick):
   searched), so the result is the nearest hit in the first leaf, in walk order, that has one.
 - Across chunks the smallest t wins (the first chunk on a tie); the return is the face's index
   in its leaf, -1 for none.
-- **Open (a known gap of the reimplementation)**: on a bullet path grazing the shared edge of
-  two triangles, 1:3 tick 1658 (from (7431, 2235, 3775) to (8053, 2267, 3816), chunk C3 faces
-  944 and 945, and C4's 151 over the same ground), the rules above accept 944 at t = 311 (its
-  edge products all positive, two of them from cross products of (-1, -1, 0) and (-1, 0, -1)
-  after the >> 12) and reject 945 (edge 1: -26390); the original hit 945 at t = 337, 4 units
-  further. The chunk slots, the path and every instruction of `0x8003DC10` read the same; the
-  difference is in a detail not yet seen (the scratchpad copies of the points, or the
-  traversal's order). Only the impact's sparks (type 0x31 particles) move by those 4 units:
-  `tools/sim/engine.py` 1:3 differs in their positions alone (223 ticks), nothing else.
+- **The face record's point is moved by the bullet hole** (resolved; formerly an open gap of
+  the reimplementation at 1:3 tick 1658, 2:1 tick 769): the sweep itself matches the original
+  (VALOR_TRACE_SWEEP logs each `world_sweep` call: same point, same face), but a bullet's
+  impact then runs the decal (`0x8004E614` → `0x8004E354`), which fits the hole into the face's
+  bounding box by moving the record's point (combat.md, Bullet holes); the impact's sparks start
+  at that moved point.
 
 **The floor** (`floor_find`, `0x80060474` → `0x8006028C`, from `entity_move` and spawning).
 Every rule below is reproduced by `tools/sim/move_sim.py` (`floor_find`), which matched the

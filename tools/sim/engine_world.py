@@ -374,7 +374,7 @@ def leaf_sweep(ch, faces, a, b, miny, maxy, best):
         if not ok:
             continue
         best[0] = t
-        best[1] = (tuple(p), n, (ch.name, fi))
+        best[1] = (tuple(p), n, (ch.name, fi, tuple(tuple(v) for v in V), f[4]))
         hit = True
     return hit
 

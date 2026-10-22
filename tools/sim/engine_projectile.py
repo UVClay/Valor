@@ -583,10 +583,16 @@ def generic_move(eng, e):
 
 
 def write_contact(m, e, point, normal, face):
-    """world_sweep's face record into +0x318: the point, the normal (the vertices are not kept)."""
+    """world_sweep's face record into +0x318 (0x28 bytes): the point, the normal (+6: the face's
+    d), the three vertices (+0x10, +0x18, +0x20); the halfwords after the point and each vertex
+    are left (the original's are scratch and vertex padding nothing reads)."""
     for k in range(3):
         m.w16(e + 0x318 + 2 * k, point[k])
         m.w16(e + 0x320 + 2 * k, normal[k])
+    m.w16(e + 0x326, face[3])
+    for j, v in enumerate(face[2]):
+        for k in range(3):
+            m.w16(e + 0x328 + 8 * j + 2 * k, v[k])
 
 
 def floor_step(eng, e, res, ground0, vy16, walled=False):
@@ -841,7 +847,7 @@ def decal(eng, rec):
     i = m.s32(G_DECAL_INDEX) + 1
     if i >= 0x64:
         i = 0
-    eng.rand.draw(0x8004E354)
+    decal_fit(m, rec, ((eng.rand.draw(0x8004E354) * 4) >> 15) + 5)
     a = 0x80093C5C + (i << 7)
     for off, v in ((0x26, 0xC0), (0x28, 7), (0x2A, 0x1F), (0x2E, 0xFC), (0x24, 0x3E0), (0x2C, 0x3E0)):
         m.w16(a + off, v)
@@ -850,6 +856,37 @@ def decal(eng, rec):
     for k in range(4):
         m.w16(G_LAST_DECAL + 2 * k, m.u16(rec + 2 * k))
     return 1
+
+
+def decal_fit(m, rec, half):
+    """0x8004E354's fitting (0x8004DE80 / 0x8004E01C / 0x8004E1B8 by the normal's largest axis:
+    y, x, else z): the hole, a square of half size 5..8, is kept inside the face's bounding box on
+    the two other axes, moving the record's point (which the impact's sparks then use): where it
+    sticks out past one side it moves in by the overhang; past both, to the low side + the half
+    size (shrunk to half the narrower extent)."""
+    n = [abs(m.s16(rec + 8 + 2 * k)) for k in range(3)]
+    if max(n[0], n[2]) < n[1]:
+        axes = (0, 2)
+    elif n[2] < n[0]:
+        axes = (1, 2)
+    else:
+        axes = (0, 1)
+    rng = []
+    for k in axes:
+        v = [m.s16(rec + 0x10 + 8 * j + 2 * k) for j in range(3)]
+        rng.append((min(v), max(v)))
+    a = half
+    for lo, hi in rng:
+        if abs(hi - lo) < half * 2:
+            a = min(a, abs(hi - lo) >> 1)
+    for k, (lo, hi) in zip(axes, rng):
+        p = m.s16(rec + 2 * k)
+        under = p - half < lo
+        if hi < p + half:
+            p = lo + a if under else p - (p + half - hi)
+        elif under:
+            p = p - (p - half - lo)
+        m.w16(rec + 2 * k, p)
 
 
 def impact_sound(eng, e):
