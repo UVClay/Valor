@@ -385,6 +385,10 @@ Dictionary ValorGame::get_state() const {
         d["weapon_model"] = int64_t(sol.a ? sol.model_hash() : 0);
         d["weapon_anim"] = wi.a ? int(wi.anim()) : -1;
         d["weapon_frame"] = wi.a ? int(wi.frame()) : 0;
+        // The soldier's body angles (4096 per turn), which the weapon model is drawn with: they trail
+        // the view in the aiming stances (movement.md).
+        d["body_pitch"] = sol.a ? double(sol.pitch()) / 65536.0 : 0.0;
+        d["body_yaw"] = sol.a ? double(sol.yaw()) / 65536.0 : 0.0;
         int alive = 0, dead = 0;
         for (const view::Entity& e : view::entities(m))
             if (e.type() == 0x1402 || e.type() == 0x1405) (e.dead() ? dead : alive)++;
