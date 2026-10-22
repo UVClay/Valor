@@ -3,6 +3,8 @@
 // joints of the models drawn, the drawn flags, the out-of-sight counters and their removals
 // (tools/sim/engine_draw.py). Which models the renderer drew is taken from the original
 // (VALOR_TRACE_DRAWN, build/engine/drawn.log): it is the recording's view frustum.
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <map>
 
@@ -337,6 +339,173 @@ void entity_bounds(Engine& eng, U e) {
     for (int k = 0; k < 3; k++) m.w16(e + 0x2E0 + 2 * k, w[k]);
 }
 
+// The camera's view matrix and translation (camera_setup: the camera object's +0x100).
+static void view_of(Mem& m, U co, M3& M, V3& t) {
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++) M[i][j] = m.s16(co + 0x100 + 6 * i + 2 * j);
+    for (int k = 0; k < 3; k++) t[k] = m.s32(co + 0x114 + 4 * k);
+}
+
+// entity_in_view (0x8008E9DC) -> box_in_view (0x8008E5B0): the cube around the collision sphere
+// against the view (animation.md). The camera's view matrix (rows x2, x1.25, x2) and translation
+// as camera_setup left them; for each of the six edges the cube's corner farthest along that
+// edge's inward direction is projected (h 400, centre (256, 120), the recording's projection:
+// Gte::set_projection) and tested: behind the eye, x < 0, x > the right edge (540), y < 0,
+// y > 240, depth > the far distance. The directions are the edges' planes from the same view
+// (only their signs per axis matter: which corner); the original keeps them in the camera's
+// view block (frustum_build 0x8008D0CC).
+// 0x8008CCC8: a vector (16.16) normalised: shifted down to 14 bits, VectorNormal, x16.
+static V3 norm16(const Gte& g, V3 v) {
+    U bit = 0x40000000;
+    int a1 = 0x1E;
+    I ax = iabs(S32(v[0]));
+    while (!(ax & bit) && !(iabs(S32(v[1])) & bit) && !(iabs(S32(v[2])) & bit)) {
+        a1--;
+        bit >>= 1;
+        if (a1 < 0xE) break;
+    }
+    int sh = a1 - 0xD;
+    V3 t = v;
+    if (sh > 0)
+        for (I& x : t) x = S32(x) >> sh;
+    V3 n = vnormal(g, t);
+    return {S32(n[0] * 16), S32(n[1] * 16), S32(n[2] * 16)};
+}
+
+static V3 cross8(const V3& a, const V3& b) {
+    I ax = S32(a[0]) >> 8, ay = S32(a[1]) >> 8, az = S32(a[2]) >> 8, bx = S32(b[0]) >> 8, by = S32(b[1]) >> 8, bz = S32(b[2]) >> 8;
+    return {S32(ay * bz - az * by), S32(az * bx - ax * bz), S32(ax * by - ay * bx)};
+}
+
+// frustum_build (0x8008D0CC): the six directions box_in_view picks its corners with (the
+// camera's view block +0x50, +0x6C, +0x88, +0xA4, +0xC0, +0xDC): forward, the four side planes'
+// normals through the eye and the corners of the view rectangle at the projection distance,
+// backward. widen: the recording's (Valor's runtime, hook_view_frustum without its mouse reach:
+// the rectangle 1.1 / the projection's scale wider and taller).
+struct ViewDirs {
+    V3 d[6];
+};
+static ViewDirs view_dirs(Engine& eng, U cam, U co, bool widen) {
+    Mem& m = eng.m;
+    const Gte& g = eng.gte;
+    U blk = U(m.u32(co + 0xC8));
+    V3 eye = {m.s32(cam + 0x20C), m.s32(cam + 0x210), m.s32(cam + 0x214)};
+    V3 look = {m.s32(co), m.s32(co + 4), m.s32(co + 8)};
+    V3 side = {m.s32(co + 0x6C), m.s32(co + 0x70), m.s32(co + 0x74)};
+    I w = m.s32(blk + 0x30), h = m.s32(blk + 0x34);
+    if (widen) {
+        w = I(double(w) * 1.1 / g.proj_kx);
+        h = I(double(h) * 1.1 / g.proj_ky);
+    }
+    U tgt = U(m.u32(G_HANDLES + 4 * (m.u32(co + 0xC) & 0xFFFF)));
+    I dist = tgt ? S32(m.s32(m.u32(tgt + 0x388) + 0xA4) << 16) : 0x1900000;
+    V3 f = norm16(g, {S32(look[0] - eye[0]), S32(look[1] - eye[1]), S32(look[2] - eye[2])});
+    V3 sv = norm16(g, {S32(side[0] - eye[0]), S32(side[1] - eye[1]), S32(side[2] - eye[2])});
+    V3 u = norm16(g, cross8(f, sv));
+    V3 r = norm16(g, cross8(u, f));
+    V3 nu = {S32(-u[0]), S32(-u[1]), S32(-u[2])};
+    V3 R, Uv, c;
+    for (int k = 0; k < 3; k++) {
+        R[k] = S32((S32(r[k]) >> 8) * (w >> 9));
+        Uv[k] = S32((S32(nu[k]) >> 8) * (h >> 9));
+        c[k] = S32(eye[k] + (dist >> 8) * (S32(f[k]) >> 8));
+    }
+    V3 c70, c80, c90, cA0;
+    for (int k = 0; k < 3; k++) {
+        c70[k] = S32(c[k] + Uv[k] - R[k]);
+        c80[k] = S32(c[k] + Uv[k] + R[k]);
+        c90[k] = S32(c[k] - Uv[k] - R[k]);
+        cA0[k] = S32(c[k] - Uv[k] + R[k]);
+    }
+    // 0x8008CE28: the plane through the eye: normalise(eye - p1) x normalise(p3 - eye)
+    auto plane = [&](const V3& p1, const V3& p3) {
+        V3 a = norm16(g, {S32(eye[0] - p1[0]), S32(eye[1] - p1[1]), S32(eye[2] - p1[2])});
+        V3 b = norm16(g, {S32(p3[0] - eye[0]), S32(p3[1] - eye[1]), S32(p3[2] - eye[2])});
+        return norm16(g, cross8(a, b));
+    };
+    ViewDirs out;
+    out.d[0] = f;
+    out.d[1] = plane(c70, c90);
+    out.d[2] = plane(cA0, c80);
+    out.d[3] = plane(c80, c70);
+    out.d[4] = plane(c90, cA0);
+    out.d[5] = {S32(-f[0]), S32(-f[1]), S32(-f[2])};
+    return out;
+}
+
+// entity_in_view (0x8008E9DC) -> box_in_view (0x8008E5B0): the cube around the collision sphere
+// against the view (animation.md). For each of the six directions the cube's corner farthest
+// along it is projected through the camera's view (camera_setup's matrix, h 400, centre (256,
+// 120), the recording's projection) and tested in turn: behind the eye (the depth's flag), x < 0,
+// x > the right edge (540), y < 0, y > 240, depth > the far distance.
+static bool box_in_view(Engine& eng, const ViewDirs& vd, U co, const I mn[3], const I mx[3]) {
+    Mem& m = eng.m;
+    M3 M;
+    V3 t;
+    view_of(m, co, M, t);
+    I right_edge = m.s32(0x8009C828) ? m.s32(0x8009C828) : 540;
+    I bottom = m.s32(0x8009C82C) ? m.s32(0x8009C82C) : 240;
+    I far = m.s32(co + 0xC4) > 0xFFFF ? m.s32(co + 0xC4) >> 16 : m.s32(co + 0xC4);
+    for (int edge = 0; edge < 6; edge++) {
+        V3 v;
+        for (int k = 0; k < 3; k++) v[k] = vd.d[edge][k] >= 0 ? mx[k] : mn[k];
+        I acc = t[2] * 0x1000;
+        for (int k = 0; k < 3; k++) acc += M[2][k] * v[k];
+        I z = S32(acc >> 12);
+        I sx, sy;
+        rtps(eng.gte, M, t, 400, 256 << 16, 120 << 16, v, sx, sy);
+        bool out = false;
+        switch (edge) {
+            case 0: out = z < 0 || z > 0xFFFF; break;
+            case 1: out = sx < 0; break;
+            case 2: out = sx > right_edge; break;
+            case 3: out = sy < 0; break;
+            case 4: out = sy > bottom; break;
+            default: out = (z < 0 ? 0 : z > 0xFFFF ? 0xFFFF : z) > far; break;
+        }
+        if (out) return false;
+    }
+    return true;
+}
+
+// The test with the directions the camera's view block holds (a RAM dump's: the original's own,
+// Valor's runtime widening included).
+bool entity_in_view_mem(Engine& eng, U e) {
+    Mem& m = eng.m;
+    U co = U(m.u32(m.u32(G_PLAYER) + 0x388));
+    U blk = U(m.u32(co + 0xC8));
+    ViewDirs vd;
+    static const U offs[6] = {0x50, 0x6C, 0x88, 0xA4, 0xC0, 0xDC};
+    for (int i = 0; i < 6; i++)
+        for (int k = 0; k < 3; k++) vd.d[i][k] = m.s32(blk + offs[i] + 4 * k);
+    I r = m.u16(e + 0x2E8);
+    I mn[3], mx[3];
+    for (int k = 0; k < 3; k++) {
+        I c = m.u16(e + 0x2E0 + 2 * k);
+        mn[k] = S16(c - r), mx[k] = S16(c + r);
+    }
+    return box_in_view(eng, vd, co, mn, mx);
+}
+
+bool entity_in_view(Engine& eng, U e) {
+    Mem& m = eng.m;
+    U cam = U(m.u32(G_PLAYER));
+    U co = U(m.u32(cam + 0x388));
+    static ViewDirs vd;
+    static I vd_tick = -1, vd_frame = -1;
+    if (vd_tick != eng.tick_no || vd_frame != m.s32(G_FRAME_COUNT)) {
+        vd = view_dirs(eng, cam, co, true);
+        vd_tick = eng.tick_no, vd_frame = m.s32(G_FRAME_COUNT);
+    }
+    I r = m.u16(e + 0x2E8);
+    I mn[3], mx[3];
+    for (int k = 0; k < 3; k++) {
+        I c = m.u16(e + 0x2E0 + 2 * k);
+        mn[k] = S16(c - r), mx[k] = S16(c + r);
+    }
+    return box_in_view(eng, vd, co, mn, mx);
+}
+
 void draw_pass(Engine& eng) {
     Mem& m = eng.m;
     m.w32(G_FRAME_COUNT, m.u32(G_FRAME_COUNT) + 1);
@@ -347,12 +516,27 @@ void draw_pass(Engine& eng) {
         for (U e : eng.entities())
             if (eng.live_view(e)) live_seen[U(m.u32(e))] = {1, 1, m.s32(e + 0x294)};
         seen = &live_seen;
-    } else {
+    }
+    if (!eng.live_view || std::getenv("VALOR_VIEW_CHECK")) {
         auto& log = drawn_log(eng);
         auto lv = log.by_level.find(eng.level);
         if (lv != log.by_level.end()) {
             auto t = lv->second.find(eng.tick_no + 1);
-            if (t != lv->second.end()) seen = &t->second;
+            if (t != lv->second.end() && !eng.live_view) seen = &t->second;
+            // the view test against the recording's drawn flags (entities whose draw tests the
+            // view). They disagree often: the recordings drew through Valor's runtime, whose view
+            // test ran on its own presentation camera (README, The view test)
+            if (t != lv->second.end())
+                for (U e : eng.entities()) {
+                    if (!(m.u32(e + 0xC) & 0x03000000) || (m.u32(e + 0xC) & 0x80000)) continue;
+                    auto d = t->second.find(U(m.u32(e)));
+                    // in view: the out-of-sight counter back at its start value
+                    bool drawn = d != t->second.end() && d->second[2] == m.s32(e + 0x294);
+                    bool iv = entity_in_view(eng, e);
+                    eng.stats[iv == drawn ? "view test: agrees with the recording"
+                                          : (iv ? "view test: in view, not drawn in the recording"
+                                                : "view test: out of view, drawn in the recording")]++;
+                }
         }
     }
     static const std::map<U, std::array<I, 3>> empty;

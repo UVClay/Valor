@@ -244,6 +244,7 @@ int run_engine(int argc, char** argv) {
         }
     I seed_v = seed_arg ? seed_arg : seeds.at(level);
     std::string seed = root + "/build/engine/seed/d" + std::to_string(seed_v) + ".bin";
+    if (const char* sf = std::getenv("VALOR_SEED_FILE")) seed = sf;
     Engine eng(root, level, feed);
     std::string err;
     bool ok;
@@ -311,7 +312,7 @@ int run_engine(int argc, char** argv) {
     });
     std::printf("ran to tick %lld\n", (long long)eng.tick_no);
     for (auto& [k, v] : eng.stats)
-        if (k.rfind("think", 0) == 0 || k.find("not") != std::string::npos) {
+        if (k.rfind("think", 0) == 0 || k.find("not") != std::string::npos || k.rfind("view test", 0) == 0) {
             std::printf("  %s: %lld [", k.c_str(), (long long)v);
             for (auto& [t, d] : eng.notes[k]) std::printf(" (%lld %s)", (long long)t, d.c_str());
             std::printf(" ]\n");

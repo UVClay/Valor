@@ -429,17 +429,9 @@ bool ValorGame::start_engine(int ammo) {
         return false;
     }
     engine_->m.w8(0x80093B78, 1);  // an analog pad
-    valor::sim::Engine* eng = engine_.get();
-    const int32_t far = session_.info().view_distance;
-    engine_->start_live([eng, far](valor::sim::U e) {
-        // drawn when within the view distance of the camera
-        namespace view = valor::sim::view;
-        view::Entity cam = view::camera(eng->m), ent{&eng->m, e};
-        auto a = ent.position(), b = cam.position();
-        double d2 = 0;
-        for (int k = 0; k < 3; k++) d2 += (a[size_t(k)] - b[size_t(k)]) * (a[size_t(k)] - b[size_t(k)]);
-        return d2 < double(far) * double(far);
-    });
+    // drawn and culled by the original's view test (entity_in_view) at the recording's
+    // projection, whatever field of view Godot's camera is given
+    engine_->start_live(nullptr);
     prev_buttons_ = 0;
     return true;
 }

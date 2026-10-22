@@ -1,6 +1,7 @@
 #include "valor/sim/engine.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 
 #include "valor/sim/audio.h"
@@ -111,6 +112,19 @@ bool Engine::load(const std::string& seed_path, std::string* err) {
     logic = std::make_unique<LevelLogic>(*this);
     tick_no = m.u32(G_TICK);
     logic->adopt();
+    if (std::getenv("VALOR_VIEW_DUMPCHECK")) {
+        // the view test on the dump's own state against its drawn flags
+        int agree = 0, n = 0;
+        for (U e : m.entities()) {
+            I fa = m.u32(e + 0xC);
+            if (!(fa & 0x01000000) || (fa & 0x80000) || !m.u32(e + 0x298)) continue;
+            bool iv = entity_in_view_mem(*this, e), iv2 = entity_in_view(*this, e);
+            bool drawn = m.u32(e + 0x29C);
+            n++, agree += iv == drawn;
+            std::printf("dumpcheck %X type %llX drawn %d mem %d computed %d\n", U(m.u32(e)), (unsigned long long)m.s32(e + 8), drawn, iv, iv2);
+        }
+        std::printf("dumpcheck: %d of %d agree\n", agree, n);
+    }
     return true;
 }
 
@@ -606,7 +620,8 @@ static void write_dump(const Mem& m, const std::string& path) {
 // Live play: from here on the engine takes its input from the host (feed.live_*), draws with
 // PsyQ's rand, collides with every chunk of the level, and asks the host what the view shows.
 void Engine::start_live(std::function<bool(U)> in_view) {
-    live_view = std::move(in_view);
+    // without the host's own test, the original's (entity_in_view, at the recording's projection)
+    live_view = in_view ? std::move(in_view) : [this](U e) { return entity_in_view(*this, e); };
     rand.live_mem = &m;
     chunks_apply();
     vblank_prev = vblank;

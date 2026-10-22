@@ -107,6 +107,8 @@ void entity_bounds(Engine& eng, U e);
 
 // engine_draw.py
 void draw_pass(Engine& eng);
+bool entity_in_view(Engine& eng, U e);      // box_in_view on the view as the engine builds it
+bool entity_in_view_mem(Engine& eng, U e);  // with the view block's directions in memory
 
 // engine_enemy.py
 void witness_check(Engine& eng);

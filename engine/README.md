@@ -108,8 +108,8 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
   and re-skinned every tick;
 - the player's input is the keys and mouse above, in the game's layout 1 (the left mouse button
   is Cross: fire; Q is Circle: switch weapons);
-- `rand` is PsyQ's on the seed in memory. An entity counts as drawn when it's within the level's
-  view distance of the camera;
+- `rand` is PsyQ's on the seed in memory;
+- an entity counts as drawn when the original's view test passes (below);
 - chunks stream as the original streams them: entering a streaming record (class 0x4D078F23)
   runs `chunk_stream`, and so do the idle jobs 2 and 3. The record's chunks that aren't loaded
   replace the slots it doesn't list, one read at a time. The slot being read is left out of
@@ -358,6 +358,34 @@ d337b74: 5,632, as the seed run then). RAM differs from the seed run by a consta
 the timer and `rand`'s seed come a tick late from the seed: 0 identical (821 from the seed dump),
 first difference at tick 2 for both.
 
+### The view test
+
+Whether an entity is drawn matters to the logic, not only to the picture. It decides whether a
+soldier's pose is rebuilt off screen, and whether an out-of-sight counter runs down to the
+entity's removal (and its record's message 2). Live play uses the original's test
+(`entity_in_view`, `sim/src/anim.cpp`):
+- `frustum_build` (`0x8008D0CC`) is ported: the six directions are built from the camera's eye,
+  look and side points, the view rectangle and the projection distance;
+- `box_in_view` (`0x8008E5B0`) takes the corner of the collision sphere's cube farthest along each
+  direction and projects it through the camera's view matrix;
+- an entity is out of view when that corner is behind the eye, left of x 0 or right of x 540,
+  above y 0 or below y 240, or past the far distance.
+
+The directions computed this way equal the ones in the original's view block at all seven 1:3
+dumps (21 of 21 entities' results).
+
+The projection is the recording's: 21:9 with a 110° horizontal field of view, the rectangle
+widened as Valor's runtime widens it (1.1 / the projection's scale). This doesn't depend on
+Godot's camera. The tradeoff: if a player widens Godot's field of view past the recording's,
+an entity near the screen's edge can be on screen in Godot but out of the engine's view. Its
+pose then holds, and if it's a soldier or an object its out-of-sight counter runs, as it would
+for the original's narrower view.
+
+The recordings can't check the test: their drawn flags came through Valor's runtime, which ran
+the view test against its own presentation camera (interpolated, with its mouse-turn reach).
+In the recorded runs the engine still takes the drawn flags from the recording. It also counts
+how often its own test agrees: 1:3 25,905 agree, 19,123 differ.
+
 ### The game's heap at run time
 
 From the disc the engine keeps using the exe's allocator (`GameHeap`, load.h) after the start:
@@ -386,8 +414,8 @@ in the recordings: the pad words and the control roles' values per tick.
 
 ## What's next
 
-1. **Live play's own rules**: the view from the camera's frustum (`draw_pass` asks the host),
-   the idle work's real schedule (the time left in the vblank wait), and the player's death and restart (`level_start`
+1. **Live play's own rules**: the idle work's real schedule (the time left in the vblank wait),
+   and the player's death and restart (`level_start`
    again on the built state).
 3. **Presentation**: the first-person weapon, pickups and effects (tracers, explosions' particle
    systems), sounds and music from the engine's voice table, the HUD.

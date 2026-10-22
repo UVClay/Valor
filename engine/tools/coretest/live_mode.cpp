@@ -28,7 +28,7 @@ int run_live(int argc, char** argv) {
         return 2;
     }
     std::string level = argv[2];
-    I ticks = 600, ammo = 99, turn = 0, forward = 0, view_dist = 3000;
+    I ticks = 600, ammo = 99, turn = 0, forward = 0, view_dist = 0;
     struct Hold {
         U mask;
         I from, to;
@@ -69,15 +69,19 @@ int run_live(int argc, char** argv) {
     }
     eng.m.w8(0x80093B78, 1);  // an analog pad
     Mem& m = eng.m;
-    eng.start_live([&](U e) {
-        view::Entity cam = view::camera(m), ent{&m, e};
-        double d = 0;
-        for (int k = 0; k < 3; k++) {
-            double x = ent.position()[size_t(k)] - cam.position()[size_t(k)];
-            d += x * x;
-        }
-        return d < double(view_dist) * double(view_dist);
-    });
+    // the original's view test, unless --view DIST asks for a distance instead
+    if (view_dist > 0)
+        eng.start_live([&](U e) {
+            view::Entity cam = view::camera(m), ent{&m, e};
+            double d = 0;
+            for (int k = 0; k < 3; k++) {
+                double x = ent.position()[size_t(k)] - cam.position()[size_t(k)];
+                d += x * x;
+            }
+            return d < double(view_dist) * double(view_dist);
+        });
+    else
+        eng.start_live(nullptr);
     U prev = 0;
     for (I t = 1; t <= ticks; t++) {
         U now = 0;
