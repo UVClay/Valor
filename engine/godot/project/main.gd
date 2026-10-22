@@ -51,6 +51,8 @@ var materials := {}  # by surface name, shared by every mesh
 var skinned := {}  # actor index -> MeshInstance3D
 var level_info := {}
 var engine_mode := false
+var world: MeshInstance3D
+var end_every := 0  # --end-every=TICKS (with --engine): end each level after so many ticks
 var engine_meshes := {}  # entity handle -> MeshInstance3D
 var engine_xf := {}  # entity handle -> [the previous tick's transform, this tick's]: blended per frame
 var skip_to := 0  # --skip=TICKS: run the engine up to this tick at once (50 ticks a frame)
@@ -73,6 +75,7 @@ func _ready() -> void:
 	skip_to = int(args.get("skip", "0"))
 	shot_tick = int(args.get("shot-tick", "0"))
 	aimbot = args.has("aimbot")
+	end_every = int(args.get("end-every", "0"))
 	if args.has("camtrace"):
 		camtrace = FileAccess.open(String(args.camtrace), FileAccess.WRITE)
 	spin = float(args.get("spin", "0"))
@@ -90,7 +93,7 @@ func _ready() -> void:
 		game.place(p[0], p[1], p[2], p[3], p[4] if p.size() > 4 else 0.0)
 
 	level_info = info
-	var world := MeshInstance3D.new()
+	world = MeshInstance3D.new()
 	world.mesh = game.build_world_mesh()
 	apply_materials(world)
 	add_child(world)
@@ -275,6 +278,8 @@ func _physics_process(_delta: float) -> void:
 				turn = aim[1]
 				if int(game.get_state().tick) % 4 < 2:
 					buttons |= PAD_CROSS
+		if end_every > 0 and int(game.get_state().tick) >= end_every:
+			game.debug_end_level()
 		game.engine_tick(buttons, fwd, strafe, turn, pitch_role)
 	else:
 		game.tick(held_buttons() | tapped | pad_buttons, fwd, strafe, turn, pitch_role)
@@ -294,6 +299,8 @@ func _physics_process(_delta: float) -> void:
 		mi.mesh = game.build_actor_mesh(i)
 		apply_materials(mi)
 	if engine_mode:
+		if game.take_level_change():
+			next_level()
 		update_engine_actors()
 
 
@@ -318,6 +325,25 @@ func aim_at_nearest() -> Array:
 		turn = int(clampf(off, -48.0, 48.0) * 65536.0)
 		found = true
 	return [found, turn]
+
+
+## The engine finished the level and built the next: the world and the actors rebuilt from its files,
+## the fog and the view distance the new level's.
+func next_level() -> void:
+	level_info = game.get_level_info()
+	print("Valor: on to %d:%d" % [level_info.mission, level_info.level])
+	for h in engine_meshes:
+		engine_meshes[h].queue_free()
+	engine_meshes.clear()
+	engine_xf.clear()
+	for mat in materials.values():
+		mat.set_shader_parameter("fog_near", float(level_info.fog_near))
+		var fog: Color = level_info.fog_color
+		mat.set_shader_parameter("fog_color", Vector3(fog.r, fog.g, fog.b))
+	world.mesh = game.build_world_mesh()
+	apply_materials(world)
+	cam.far = float(level_info.view_distance) / ValorGame.kUnitsPerMetre
+	first_tick = true
 
 
 ## The engine's entities as meshes: new ones added, gone ones freed, skinned ones re-posed from the

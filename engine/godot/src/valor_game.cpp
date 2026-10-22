@@ -48,6 +48,9 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("is_engine_running"), &ValorGame::is_engine_running);
     ClassDB::bind_method(D_METHOD("engine_tick", "buttons", "forward", "strafe", "turn", "pitch"), &ValorGame::engine_tick);
     ClassDB::bind_method(D_METHOD("get_engine_actors"), &ValorGame::get_engine_actors);
+    ClassDB::bind_method(D_METHOD("take_level_change"), &ValorGame::take_level_change);
+    ClassDB::bind_method(D_METHOD("is_campaign_done"), &ValorGame::is_campaign_done);
+    ClassDB::bind_method(D_METHOD("debug_end_level"), &ValorGame::debug_end_level);
     ClassDB::bind_method(D_METHOD("get_engine_voices"), &ValorGame::get_engine_voices);
     ClassDB::bind_method(D_METHOD("set_engine_replay", "log_path"), &ValorGame::set_engine_replay);
     ClassDB::bind_method(D_METHOD("build_engine_actor_mesh", "handle"), &ValorGame::build_engine_actor_mesh);
@@ -486,9 +489,36 @@ void ValorGame::engine_tick(int64_t buttons, int64_t forward, int64_t strafe, in
         }
     }
     engine_->live_frame();
+    if (engine_->level_changes != level_changes_seen_) {
+        // the engine went on to the next level: its files for drawing (the engine itself is built)
+        level_changes_seen_ = engine_->level_changes;
+        std::string err;
+        int mi = engine_->mission_n, li = engine_->level_n;
+        if (session_.load(data_dir_, mi, li, &err) && render_.load(data_dir_, session_.info(), &err) && models_.load(data_dir_, mi, li, &err)) {
+            mission_ = mi, level_ = li;
+            pages_.unref();
+            layer_of_.clear();
+            page_images_.clear();
+            actors_.clear();
+            level_changed_ = true;
+        } else
+            error_ = String(("the next level: " + err).c_str());
+    }
     session_.vblanks(2);  // the world's animated lights
     session_.end_frame();
 }
+
+bool ValorGame::take_level_change() {
+    bool c = level_changed_;
+    level_changed_ = false;
+    return c;
+}
+
+void ValorGame::debug_end_level() {
+    if (engine_) engine_->m.w32(0x8009C840, engine_->m.u32(0x8009C840) | 0x24);  // level_set(3, 1)
+}
+
+bool ValorGame::is_campaign_done() const { return engine_ && engine_->campaign_done; }
 
 bool ValorGame::set_engine_replay(const String& log_path) {
     if (log_path.is_empty()) {  // back to the host's input

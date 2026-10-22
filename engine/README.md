@@ -125,6 +125,19 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
   plays (20 frames), and the level restarts at 2701 at full health with its statistics zeroed.
   (The doc's "the camera runs script 0xF" is the soldier: `a0` is still the soldier at the
   call.) Godot draws the death camera's own eye and look point;
+- the campaign plays through. A level's end (flags 4 or 8, as the level script's `level_set(3, 1)`
+  makes them) runs `level_exit` with `level_end_carry`, then what the shell's CONTINUE does
+  (`progress_commit`):
+  - `carry_to_next_level`: the slot's next level row gets the carried ammo and health; no carry
+    between missions;
+  - `campaign_advance`: on through the slots, MSN8 skipped, MSN9's third level as LVL4;
+  - the next level is built from the disc on the carried save data (the rand seed and the
+    vblank timer kept).
+
+  Godot rebuilds the world, textures and fog for it (`take_level_change`).
+  `coretest --live 1:1 --end-every 300` and Godot's `--engine --end-every=60` go through all 24
+  levels from 1:1 to 9:4, ending each as its script would; within a mission the ammo carries
+  (5:2's 15 rounds reach 5:3);
 - chunks stream as the original streams them: entering a streaming record (class 0x4D078F23)
   runs `chunk_stream`, and so do the idle jobs 2 and 3. The record's chunks that aren't loaded
   replace the slots it doesn't list, one read at a time. The slot being read is left out of
@@ -429,7 +442,7 @@ in the recordings: the pad words and the control roles' values per tick.
 
 ## What's next
 
-1. **Live play's own rules**: level transitions (end of level → the next, the mission through).
+1. **Live play**: the shell between levels (briefings, results, saving), level transitions' fade.
 3. **Presentation**: the first-person weapon, pickups and effects (tracers, explosions' particle
    systems), sounds and music from the engine's voice table, the HUD.
 4. **2:2 from the disc**: a dump from before its tick 1 (the capture's earlier vblank), so its

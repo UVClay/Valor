@@ -25,7 +25,7 @@ using namespace valor::sim;
 
 int run_live(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: coretest --live M:L [--ticks N] [--ammo N] [--hold MASK[@FROM:TO]]... [--turn V] [--forward V] [--view DIST] [--replay] [--aimbot]\n");
+        std::fprintf(stderr, "usage: coretest --live M:L [--ticks N] [--ammo N] [--hold MASK[@FROM:TO]]... [--turn V] [--forward V] [--view DIST] [--replay] [--aimbot] [--cheats MASK] [--end-every TICKS]\n");
         return 2;
     }
     std::string level = argv[2];
@@ -36,12 +36,15 @@ int run_live(int argc, char** argv) {
     };
     std::vector<Hold> holds;
     bool replay = false, aimbot = false;
+    I cheats = 0, warp_end = 0;
     for (int i = 3; i < argc; i++) {
         if (!std::strcmp(argv[i], "--ticks") && i + 1 < argc) ticks = std::strtoll(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--ammo") && i + 1 < argc) ammo = std::strtoll(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--turn") && i + 1 < argc) turn = std::strtoll(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--replay")) replay = true;
         else if (!std::strcmp(argv[i], "--aimbot")) aimbot = true;
+        else if (!std::strcmp(argv[i], "--end-every") && i + 1 < argc) warp_end = std::strtoll(argv[++i], nullptr, 0);
+        else if (!std::strcmp(argv[i], "--cheats") && i + 1 < argc) cheats = std::strtoll(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--forward") && i + 1 < argc) forward = std::strtoll(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--view") && i + 1 < argc) view_dist = std::strtoll(argv[++i], nullptr, 0);
         else if (!std::strcmp(argv[i], "--hold") && i + 1 < argc) {
@@ -64,7 +67,9 @@ int run_live(int argc, char** argv) {
     LevelBuild lb;
     lb.rand_seed = 0x12345678;
     std::string err;
-    if (!eng.load_disc(game_defaults(level[0] - '0', level[2] - '0', ammo), lb, &err)) {
+    std::vector<uint8_t> game = game_defaults(level[0] - '0', level[2] - '0', ammo);
+    for (int k = 0; k < 4; k++) game[0xD8 + size_t(k)] = uint8_t(cheats >> (8 * k));  // g_cheats (0x80: no damage)
+    if (!eng.load_disc(game, lb, &err)) {
         std::fprintf(stderr, "coretest --live: %s\n", err.c_str());
         return 2;
     }
@@ -93,14 +98,14 @@ int run_live(int argc, char** argv) {
         U held_prev = prev;
         prev = now;
         if (replay) {
-            auto it = rec.pad.find({level, t});
+            auto it = rec.pad.find({eng.level, eng.tick_no + 1});
             if (it != rec.pad.end()) {
                 feed.live_pad = it->second;
                 feed.live_pad[0] |= now, feed.live_pad[2] |= held_prev;  // the holds on top
             }
             for (int r = 0; r < 4; r++) {
-                feed.live_role[size_t(r)] = rec.role(level, t, 0, r);
-                feed.live_role_alt[size_t(r)] = rec.role_alt(level, t, 0, r);
+                feed.live_role[size_t(r)] = rec.role(eng.level, eng.tick_no + 1, 0, r);
+                feed.live_role_alt[size_t(r)] = rec.role_alt(eng.level, eng.tick_no + 1, 0, r);
             }
         }
         if (aimbot) {
@@ -125,7 +130,13 @@ int run_live(int argc, char** argv) {
                 feed.live_pad[2] = (feed.live_pad[2] & ~U(0x40)) | ((t - 1) % 4 < 2 ? 0x40 : 0);
             }
         }
-        I ld0 = m.s32(0x800AA184), s00 = m.s32(0x80098970), rs0 = eng.restarts;
+        if (warp_end && eng.tick_no % warp_end == warp_end - 1) {
+            // the level's end as its script's level_set(3, 1) makes it (flags | 0x24): a test of the
+            // transitions without playing each level through
+            m.w32(0x8009C840, m.u32(0x8009C840) | 0x24);
+            std::printf("tick %5lld: level_set(3, 1) forced\n", (long long)eng.tick_no);
+        }
+        I ld0 = m.s32(0x800AA184), s00 = m.s32(0x80098970), rs0 = eng.restarts, lc0 = eng.level_changes;
         U cam0 = U(m.u32(G_PLAYER));
         I mode0 = cam0 ? m.u32(m.u32(cam0 + 0x388) + 0x9C) : 0, hp0 = view::soldier(m).a ? view::soldier(m).health() : 0;
         eng.live_frame();
@@ -143,6 +154,12 @@ int run_live(int argc, char** argv) {
             if ((mode ^ mode0) & 0x800)
                 std::printf("tick %5lld: the death camera %s (var 2 = %lld)\n", (long long)eng.tick_no, (mode & 0x800) ? "starts" : "ends",
                             (long long)m.s32(cam + 0x54));
+            if (eng.level_changes != lc0)
+                std::printf("tick %5lld: the level is over: on to %s (%lld)\n", (long long)eng.tick_no, eng.level.c_str(), (long long)eng.level_changes);
+            if (eng.campaign_done) {
+                std::printf("the campaign is over\n");
+                break;
+            }
             if (eng.restarts != rs0) std::printf("tick %5lld: the level restarts (%lld)\n", (long long)eng.tick_no, (long long)eng.restarts);
         }
         if (std::getenv("VALOR_LIVE_CAM")) {

@@ -123,6 +123,13 @@ public:
     // entity but the player's soldier, the camera, the world and type 8 removed, level_start.
     void level_restart();
     I restarts = 0;
+    // The level's end in live play (flags 4 or 8: level_exit 0x80062298 with level_end_carry, then
+    // the shell's progress_commit as CONTINUE does: carry_to_next_level, campaign_advance), and the
+    // next level built from the disc on the carried save data. level_changes counts them;
+    // campaign_done is set past the campaign's last level.
+    bool level_transition();
+    I level_changes = 0;
+    bool campaign_done = false;
     void remove(U e, const std::string& why = "");
 
     // -- input

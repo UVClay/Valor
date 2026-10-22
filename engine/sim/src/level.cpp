@@ -21,6 +21,10 @@ void Level::load(const Mem& m, const std::string& nm) {
     g_level = U(m.u32(G_LEVEL));
     U table = U(m.u32(g_level + 0x53C));
     I n = m.u32(table);
+    *this = Level{};  // a new level: nothing kept from the last
+    name = nm;
+    mem = &m;
+    g_level = U(m.u32(G_LEVEL));
     records.resize(size_t(n));
     for (I i = 0; i < n; i++) {
         Record& r = records[size_t(i)];

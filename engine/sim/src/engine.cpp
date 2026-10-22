@@ -657,6 +657,96 @@ void Engine::stream_end() {
     }
 }
 
+// The campaign's slots (shell.md, The campaign): mission index, level count; slot 6 (MSN8) isn't
+// on the disc; slot 7's third level is LVL4.
+namespace {
+constexpr int kSlots[8][2] = {{0, 3}, {1, 4}, {2, 4}, {3, 3}, {4, 4}, {6, 3}, {7, 3}, {8, 3}};
+}
+
+bool Engine::level_transition() {
+    constexpr U G_GAME = 0x800385CC, G_LEVEL_END = 0x80038D4C;
+    I flags = m.u32(0x8009C840);
+    // level_exit (0x80062298): reason 4 (flags 4) or 1 (flags 8), both carry: level_end_carry
+    m.w32(0x80039C58, (flags & 8) ? 3 : 0);
+    U sol = U(m.u32(G_SOLDIER));
+    U inv = sol ? U(m.u32(sol + 0x388)) : 0;
+    for (I i = 0; i < m.s32(0x8009E874) && inv; i++) {
+        U w = U(0x80093640 + 0x44 * m.u8(0x8009E878 + i));
+        m.w16(w + 6, m.u16(inv + 0x56 + 2 * i) + m.u16(inv + 0x66 + 2 * i));
+    }
+    for (I k = 0; k < 0xD; k++) {
+        m.w16(G_LEVEL_END + 0x10 + 4 * k, m.u16(0x80093640 + 0x44 * k + 6));
+        m.w16(G_LEVEL_END + 0x12 + 4 * k, m.u16(0x80093640 + 0x44 * k + 0x30));
+    }
+    I n = m.s32(0x80098620), done = 0;
+    for (I i = 0; i < n; i++) done += m.u32(0x800988DC + 4 * i) != 0;
+    m.w8(G_LEVEL_END + 1, done);
+    m.w8(G_LEVEL_END, n);
+    if (done == n) m.w32(0x80098624, 1);
+    m.w32(G_LEVEL_END + 0xC, m.u32(0x80098624));
+    m.w32(G_LEVEL_END + 8, sol ? m.u32(sol + 0xF4) : 0);
+    // progress_commit (CONTINUE): carry_to_next_level within the slot, campaign_advance
+    I mission = m.s32(G_GAME + 0x94), cur_level = m.s32(G_GAME + 0x98);
+    int slot = -1;
+    for (int k = 0; k < 8; k++)
+        if (kSlots[k][0] == mission) slot = k;
+    I idx = (slot == 7 && cur_level == 3) ? 2 : cur_level;  // slot 7's third level is LVL4
+    if (slot < 0) {
+        note("level transition: not a campaign mission");
+        campaign_done = true;
+        return false;
+    }
+    I next_mission = mission, next_level = idx + 1;
+    bool carry = next_level < kSlots[slot][1];
+    if (!carry) {
+        if (slot == 7) {
+            campaign_done = true;
+            stats["the campaign's end"]++;
+            return false;
+        }
+        int ns = slot == 5 ? 7 : slot + 1;
+        next_mission = kSlots[ns][0], next_level = 0, slot = ns;
+    }
+    I dir_level = (slot == 7 && next_level == 2) ? 3 : next_level;
+    std::vector<uint8_t> game(m.ptr(G_GAME), m.ptr(G_GAME) + 0x780);
+    auto w16 = [&](size_t o, I v) { game[o] = uint8_t(v), game[o + 1] = uint8_t(v >> 8); };
+    auto w32 = [&](size_t o, I v) {
+        for (int k = 0; k < 4; k++) game[o + size_t(k)] = uint8_t(v >> (8 * k));
+    };
+    size_t row = 0x18C + size_t(next_mission) * 0x98 + size_t(dir_level) * 0x24;
+    if (carry) {
+        for (I k = 0; k < 0xD; k++) w16(row + 2 * size_t(k), m.u16(G_LEVEL_END + 0x10 + 4 * k));
+        w32(row + 0x1C, m.u32(G_LEVEL_END + 8));
+    }
+    w32(row + 0x20, 1);  // unlocked
+    w32(0x94, next_mission);
+    w32(0x98, dir_level);
+    w32(0xA8, slot);
+    w32(0xAC, next_level);
+    // the next LEVEL: the overlay and heap afresh, rand's seed and the save data carried over
+    LevelBuild lb;
+    lb.rand_seed = U(m.u32(0x800CA2A4));
+    mission_n = int(next_mission + 1), level_n = int(dir_level + 1);
+    level = std::to_string(mission_n) + ":" + std::to_string(level_n);
+    std::string err;
+    auto view = live_view;
+    I timer = m.s32(G_VBL_TIMER);
+    ents.clear();
+    if (!load_disc(game, lb, &err)) {
+        note("level transition: " + err);
+        campaign_done = true;
+        return false;
+    }
+    m.w8(0x80093B78, 1);
+    m.w32(G_VBL_TIMER, timer);
+    stream_slot = -1;
+    stream_frames_left = 0;
+    start_live(view);
+    level_changes++;
+    stats["level transitions"]++;
+    return true;
+}
+
 void Engine::level_restart() {
     for (U e : m.entities()) {
         I t = m.s32(e + 8);
@@ -742,6 +832,7 @@ void Engine::live_frame(I vblanks) {
     audio->update();
     // level_main: a death (flags 2) ends the frame loop; the level restarts in place
     if ((m.u32(0x8009C840) & 2) && gheap) level_restart();
+    if ((m.u32(0x8009C840) & 0xC) && gheap) level_transition();
 }
 
 void Engine::run(I to, const std::function<void(const StateLine&)>& line) {

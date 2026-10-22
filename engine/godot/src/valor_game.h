@@ -87,6 +87,12 @@ public:
     // The entities to draw, by handle: { handle: { model, skinned, type, dead, transform } }
     // (through the accessor layer, sim/views.h).
     Dictionary get_engine_actors() const;
+    // The level is over and the engine has built the next (the campaign plays through): true once
+    // after each, when the world's meshes and textures are to be rebuilt (get_level_info is the
+    // new level's).
+    bool take_level_change();
+    bool is_campaign_done() const;
+    void debug_end_level();  // as the level script's level_set(3, 1): for testing the transitions
     // The engine's effect voices 1..23 (audio.md, Voices) through the accessor layer: { voice, status
     // (0 off, 1 on, 3 releasing), flags, handle, bank, sound, loop, cls, volume, pitch, age, fade_out,
     // pos (game units) }, for the presentation layer to play.
@@ -126,6 +132,8 @@ private:
     std::unique_ptr<valor::sim::Feed> feed_, replay_;
     std::unique_ptr<valor::sim::Engine> engine_;
     uint32_t prev_buttons_ = 0;
+    int64_t level_changes_seen_ = 0;
+    bool level_changed_ = false;
     Ref<ArrayMesh> mesh_of(const valor::Model& m, const std::vector<valor::Quat>* pose,
                            const std::vector<std::array<int16_t, 3>>* joints);
 };
