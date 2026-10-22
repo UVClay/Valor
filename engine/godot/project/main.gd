@@ -4,7 +4,10 @@ extends Node3D
 ## the mouse turns the view at once (its yaw reaches the core on the next tick).
 ##
 ## User arguments (after `--`): --data=DIR (extracted/moh/DATA), --level=M:L (1:1),
-## --walk=TICKS (walk forward on its own), --place=X,Y,Z,YAW,PITCH (game units and angles), --screenshot=FILE.png --frames=N (save the frame N and quit).
+## --walk=TICKS (walk forward on its own), --place=X,Y,Z,YAW,PITCH (game units and angles), --screenshot=FILE.png --frames=N (save the frame N and quit),
+## --engine[=AMMO] (the whole engine live: the level built from the disc, its soldiers and dogs on
+## their own logic, drawn from the engine's poses; the left mouse button fires, Q switches weapons),
+## --replay=LOG (with --engine: a recording's input instead of the keyboard and mouse).
 
 const RUN := 0x22DD00  # 34.863 units per tick: the keyboard's (and a full stick's) speed
 # The pad's buttons (a fresh card's layout, controls.cpp): keys press them, and the core reads
@@ -14,6 +17,8 @@ const PAD_L2 := 0x1  # crouch
 const PAD_SQUARE := 0x80  # Use, reload
 const PAD_R2 := 0x2  # aim
 const PAD_L3 := 0x200  # centre the view
+const PAD_CROSS := 0x40  # fire (the engine's layout 1)
+const PAD_CIRCLE := 0x20  # switch weapons (the engine's layout 1)
 const PAD_LEFT := 0x8000
 const PAD_RIGHT := 0x2000
 const ANGLE := TAU / 4096.0
@@ -39,6 +44,11 @@ var hud: Label
 var materials := {}  # by surface name, shared by every mesh
 var skinned := {}  # actor index -> MeshInstance3D
 var level_info := {}
+var engine_mode := false
+var engine_meshes := {}  # entity handle -> MeshInstance3D
+var skip_to := 0  # --skip=TICKS: run the engine up to this tick at once (50 ticks a frame)
+var shot_tick := 0  # --shot-tick=T: the screenshot once the core reaches tick T
+var aimbot := false  # --aimbot (with --engine): turn to the nearest living soldier and fire
 
 
 func _ready() -> void:
@@ -51,6 +61,9 @@ func _ready() -> void:
 	auto_walk = int(args.get("walk", "0"))
 	screenshot = args.get("screenshot", "")
 	screenshot_frame = int(args.get("frames", "60"))
+	skip_to = int(args.get("skip", "0"))
+	shot_tick = int(args.get("shot-tick", "0"))
+	aimbot = args.has("aimbot")
 
 	game = ValorGame.new()
 	if not game.load_level(data, int(lv[0]), int(lv[1])):
@@ -71,7 +84,18 @@ func _ready() -> void:
 	add_child(world)
 	# The models the records name, posed by the core; skinned ones are rebuilt every tick. With
 	# --scene=FILE (engine/tools/scene_from_dump.py), the view and the characters of a RAM dump.
-	game.spawn_actors()
+	engine_mode = args.has("engine")
+	if engine_mode:
+		var ammo := int(args.engine) if String(args.engine) != "" else 99
+		if not game.start_engine(ammo):
+			push_error("Valor: " + game.get_error())
+			get_tree().quit(1)
+			return
+		if args.has("replay"):
+			game.set_engine_replay(String(args.replay))
+		print("Valor: the engine runs the level live")
+	else:
+		game.spawn_actors()
 	if args.has("scene"):
 		var scene: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(args.scene))
 		var pl: Dictionary = scene.player
@@ -166,6 +190,8 @@ func key_button(key: Key) -> int:
 			return PAD_L2
 		KEY_E:
 			return PAD_SQUARE
+		KEY_Q:
+			return PAD_CIRCLE
 		KEY_LEFT:
 			return PAD_LEFT
 		KEY_RIGHT:
@@ -175,11 +201,13 @@ func key_button(key: Key) -> int:
 
 func held_buttons() -> int:
 	var b := 0
-	for key in [KEY_SPACE, KEY_C, KEY_CTRL, KEY_E, KEY_LEFT, KEY_RIGHT]:
+	for key in [KEY_SPACE, KEY_C, KEY_CTRL, KEY_E, KEY_Q, KEY_LEFT, KEY_RIGHT]:
 		if Input.is_physical_key_pressed(key):
 			b |= key_button(key)
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
 		b |= PAD_R2
+	if engine_mode and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		b |= PAD_CROSS
 	if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
 		b |= PAD_L3
 	return b
@@ -209,7 +237,24 @@ func _physics_process(_delta: float) -> void:
 	prev_eye = cur_eye
 	prev_yaw = cur_yaw
 	prev_pitch = cur_pitch
-	game.tick(held_buttons() | tapped, fwd, strafe, turn, pitch_role)
+	if engine_mode:
+		var n := 0
+		while n < 50 and game.get_state().tick < skip_to - 1:
+			game.engine_tick(0, 0, 0, 0, 0)
+			n += 1
+		var buttons := held_buttons() | tapped
+		if aimbot:
+			var aim := aim_at_nearest()
+			if aim[0]:
+				game.set_engine_replay("")  # the bot takes over from the recording
+				fwd = 0
+				strafe = 0
+				turn = aim[1]
+				if int(game.get_state().tick) % 4 < 2:
+					buttons |= PAD_CROSS
+		game.engine_tick(buttons, fwd, strafe, turn, pitch_role)
+	else:
+		game.tick(held_buttons() | tapped, fwd, strafe, turn, pitch_role)
 	tapped = 0
 	cur_eye = game.get_eye_position()
 	cur_yaw = game.get_yaw()
@@ -222,6 +267,57 @@ func _physics_process(_delta: float) -> void:
 		var mi: MeshInstance3D = skinned[i]
 		mi.mesh = game.build_actor_mesh(i)
 		apply_materials(mi)
+	if engine_mode:
+		update_engine_actors()
+
+
+## --aimbot: [found, turn role] toward the nearest living soldier or dog within 1500 units.
+func aim_at_nearest() -> Array:
+	var best := 1500.0
+	var turn := 0
+	var found := false
+	var actors := game.get_engine_actors()
+	var look := -game.get_yaw() / ANGLE  # the game's yaw, 4096 per turn
+	for h in actors:
+		var a: Dictionary = actors[h]
+		if a.dead or not (int(a.type) == 0x1402 or int(a.type) == 0x1405):
+			continue
+		var d: Vector3 = (a.transform.origin - cur_eye) * ValorGame.kUnitsPerMetre
+		var dist := Vector2(d.x, d.z).length()
+		if dist >= best:
+			continue
+		var ang := atan2(d.x, -d.z) / ANGLE  # game x = Godot x, game z = -Godot z
+		var off := fposmod(ang - look + 2048.0, 4096.0) - 2048.0
+		best = dist
+		turn = int(clampf(off, -48.0, 48.0) * 65536.0)
+		found = true
+	return [found, turn]
+
+
+## The engine's entities as meshes: new ones added, gone ones freed, skinned ones re-posed from the
+## engine's pose every tick, all placed at the entity.
+func update_engine_actors() -> void:
+	var actors := game.get_engine_actors()
+	for h in engine_meshes.keys():
+		if not actors.has(h):
+			engine_meshes[h].queue_free()
+			engine_meshes.erase(h)
+	for h in actors:
+		var a: Dictionary = actors[h]
+		var mi: MeshInstance3D = engine_meshes.get(h)
+		if mi == null:
+			mi = MeshInstance3D.new()
+			add_child(mi)
+			engine_meshes[h] = mi
+			mi.mesh = game.build_engine_actor_mesh(h)
+			apply_materials(mi)
+		elif a.skinned:
+			mi.mesh = game.build_engine_actor_mesh(h)
+			apply_materials(mi)
+		mi.transform = a.transform
+	var pages := game.get_texture_pages()
+	for mat in materials.values():
+		mat.set_shader_parameter("pages", pages)
 
 
 func _process(_delta: float) -> void:
@@ -235,8 +331,12 @@ func _process(_delta: float) -> void:
 	hud.text = "%d:%d  tick %d  pos %.1f %.1f %.1f  %s%s  zone %d  %d fps" % [
 		game.get_level_info().mission, game.get_level_info().level, s.tick, s.x, s.y, s.z,
 		"ground" if s.ground else "air", " crouched" if s.crouched else "", s.zone, Engine.get_frames_per_second()]
+	if engine_mode:
+		hud.text += "\nhealth %.0f  weapon %d  %d / %d  enemies %d (%d down)" % [
+			s.health, s.weapon, s.clip, s.reserve, s.enemies, s.enemies_dead]
 	frames += 1
-	if not screenshot.is_empty() and frames == screenshot_frame:
+	var due := frames == screenshot_frame if shot_tick == 0 else int(s.tick) >= shot_tick
+	if not screenshot.is_empty() and due:
 		get_viewport().get_texture().get_image().save_png(screenshot)
 		print("Valor: saved ", screenshot, " at tick ", s.tick)
 		get_tree().quit()

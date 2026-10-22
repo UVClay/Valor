@@ -94,6 +94,41 @@ the core each tick (`lights_update`) and coloured in the shader. Every chunk is 
 follows the streaming slots, with instant loads. It uses the Compatibility renderer, whose output matched the
 original's brightness side by side.
 
+### The whole engine, live (`--engine`)
+
+```sh
+build/godot/Godot_v4.7.2-stable_linux.x86_64 --path engine/godot/project -- --level=1:3 --engine
+```
+
+With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core:
+- the start is built from the disc files (`Engine::load_disc`) with a fresh campaign's save data
+  (`game_defaults`), where every weapon of the level starts with AMMO rounds (99 by default);
+- the soldiers and dogs spawn from their records and run on their own logic: scripts, brain,
+  sensing, movement, firing. They are drawn from the engine's poses through the accessor layer
+  and re-skinned every tick;
+- the player's input is the keys and mouse above, in the game's layout 1 (the left mouse button
+  is Cross: fire; Q is Circle: switch weapons);
+- `rand` is PsyQ's on the seed in memory. Collision uses every chunk. An entity counts as drawn
+  when it's within the level's view distance of the camera.
+
+The HUD line adds health, weapon, clip and reserve, and the soldiers alive and down. Testing
+options:
+- `--replay=build/engine/orig.log` plays the recording's pad and roles instead of the keyboard
+  and mouse; the rest stays live;
+- `--aimbot` turns toward the nearest living soldier within 1500 units and fires;
+- `--skip=T` runs to tick T at once;
+- `--shot-tick=T` saves the screenshot at tick T.
+
+```sh
+engine/godot/tools/screenshot.sh build/gd/engine_shot_1_3.png --level=1:3 --engine \
+    --replay=/work/build/engine/orig.log --aimbot --skip=200 --shot-tick=372 --frames=1000000
+```
+
+At tick 371 one of 1:3's first soldiers has been shot dead and the next is in the corridor.
+`coretest --live 1:3 [--replay] [--aimbot] [--hold MASK@FROM:TO]...` runs the same loop
+headless. With `--replay --aimbot` the player kills the first soldier at tick 370, and by tick
+1,200 has fired 42 rounds while the soldiers have shot the player down to 45.0 health.
+
 The level's records' models are drawn at their records: objects with their static meshes, soldiers
 and dogs skinned from poses the core builds every tick (a walk or their first animation, looping:
 the scripts that choose animations aren't ported). The characters' textures aren't right yet: their
@@ -327,19 +362,14 @@ in the recordings: the pad words and the control roles' values per tick.
 
 ## What's next
 
-In order, following the closed-loop Python engine in `tools/sim/engine*.py`, which composes the
-reference simulators:
-
-1. **The rest of the player**: the death camera (a camera animation's root motion carries the
-   soldier) and the restart in place (`level_start`, shell.md), riding a parent, the aim ray
-   against objects' boxes, weapons and their scripts, Use's messages delivered.
-2. **Entities**: the contact phase (`entities_collide`: touches, hit parts), spawning by records.
-3. **Level logic** (levels.md, messages.md; `level_vm.py`): records, the level-script VM, triggers
-   and zones, the deferred queue, objectives.
-4. **Enemies** (enemies.md, soldier.md; `sst_vm.py`, `brain_sim.py`): the behaviour-script VM, the
-   brain and movement, animation with root motion.
-5. **Combat** (combat.md; `combat_sim.py`): weapons, bullets, hit spheres, damage.
-6. **Presentation in Godot**: the characters' textures, the sky, PVS culling, sounds and music.
-
-Each system gets a coretest mode against the original's trace, as movement has, and its events
-leave the pad mode as the system is ported.
+1. **Live play's own rules**: the view from the camera's frustum (`draw_pass` asks the host),
+   the idle work's real schedule (the time left in the vblank wait), chunk streaming by the
+   player's position instead of every chunk, and the player's death and restart (`level_start`
+   again on the built state).
+2. **The engine's allocations on the game's heap at run time**, as the disc build already does
+   (spawned entities still come from the engine's own bump heap above 2 MB).
+3. **Presentation**: the first-person weapon, pickups and effects (tracers, explosions' particle
+   systems), sounds and music from the engine's voice table, the HUD.
+4. **2:2 from the disc**: a dump from before its tick 1 (the capture's earlier vblank), so its
+   timer and seed come in on time.
+5. Keep syncing the Python engine's commits as small diffs (each with the Python engine's numbers).

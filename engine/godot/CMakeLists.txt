@@ -10,7 +10,7 @@ add_library(valor_godot SHARED
     src/register_types.cpp
     src/valor_game.cpp
 )
-target_link_libraries(valor_godot PRIVATE valor_core godot-cpp)
+target_link_libraries(valor_godot PRIVATE valor_core valor_sim godot-cpp)
 get_target_property(GODOTCPP_SUFFIX godot-cpp GODOTCPP_SUFFIX)
 set_target_properties(valor_godot PROPERTIES
     PREFIX "lib"

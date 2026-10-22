@@ -22,12 +22,21 @@
 #include "valor/render_data.h"
 #include "valor/session.h"
 
+#include <memory>
+
+namespace valor::sim {
+class Engine;
+class Feed;
+}  // namespace valor::sim
+
 namespace godot {
 
 class ValorGame : public RefCounted {
     GDCLASS(ValorGame, RefCounted)
 
 public:
+    ValorGame();
+    ~ValorGame() override;
     // World units per metre in Godot space (the eye is 240 units up: 1.9 m).
     static constexpr double kUnitsPerMetre = 128.0;
 
@@ -67,6 +76,23 @@ public:
 
     static Vector3 to_godot(double x, double y, double z);
 
+    // The whole engine (engine/sim) live: the level built from the disc files (no RAM dump), its
+    // soldiers and dogs on their own logic, the player's input per tick. After load_level. ammo:
+    // the rounds every weapon of the level starts with (-1: a fresh game's none).
+    bool start_engine(int ammo);
+    bool is_engine_running() const { return bool(engine_); }
+    // One 30 Hz tick, the input as tick() takes it (the buttons in the game's layout 1: Cross
+    // 0x40 fires, Circle 0x20 switches weapons, Square 0x80 reloads / uses).
+    void engine_tick(int64_t buttons, int64_t forward, int64_t strafe, int64_t turn, int64_t pitch);
+    // The entities to draw, by handle: { handle: { model, skinned, type, dead, transform } }
+    // (through the accessor layer, sim/views.h).
+    Dictionary get_engine_actors() const;
+    // Drive the engine with a recording's input (build/engine/orig.log) instead of the host's:
+    // only the pad and the roles; everything else stays live. An empty path returns to the host's.
+    bool set_engine_replay(const String& log_path);
+    // An entity's mesh as its pose shows it now (skinned models re-skinned from the core's pose).
+    Ref<ArrayMesh> build_engine_actor_mesh(int64_t handle);
+
 protected:
     static void _bind_methods();
 
@@ -91,6 +117,13 @@ private:
     int layer(uint16_t tpage, uint16_t clut);
     String error_;
     bool loaded_ = false;
+    std::string data_dir_;
+    int mission_ = 0, level_ = 0;
+    std::unique_ptr<valor::sim::Feed> feed_, replay_;
+    std::unique_ptr<valor::sim::Engine> engine_;
+    uint32_t prev_buttons_ = 0;
+    Ref<ArrayMesh> mesh_of(const valor::Model& m, const std::vector<valor::Quat>* pose,
+                           const std::vector<std::array<int16_t, 3>>* joints);
 };
 
 }  // namespace godot

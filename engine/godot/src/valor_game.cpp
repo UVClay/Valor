@@ -1,5 +1,10 @@
 #include "valor_game.h"
 
+#include "valor/sim/engine.h"
+#include "valor/sim/feed.h"
+#include "valor/sim/load.h"
+#include "valor/sim/views.h"
+
 #include <cmath>
 #include <map>
 
@@ -39,9 +44,18 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_pitch"), &ValorGame::get_pitch);
     ClassDB::bind_method(D_METHOD("get_state"), &ValorGame::get_state);
     ClassDB::bind_method(D_METHOD("get_light_colours"), &ValorGame::get_light_colours);
+    ClassDB::bind_method(D_METHOD("start_engine", "ammo"), &ValorGame::start_engine);
+    ClassDB::bind_method(D_METHOD("is_engine_running"), &ValorGame::is_engine_running);
+    ClassDB::bind_method(D_METHOD("engine_tick", "buttons", "forward", "strafe", "turn", "pitch"), &ValorGame::engine_tick);
+    ClassDB::bind_method(D_METHOD("get_engine_actors"), &ValorGame::get_engine_actors);
+    ClassDB::bind_method(D_METHOD("set_engine_replay", "log_path"), &ValorGame::set_engine_replay);
+    ClassDB::bind_method(D_METHOD("build_engine_actor_mesh", "handle"), &ValorGame::build_engine_actor_mesh);
     ClassDB::bind_static_method("ValorGame", D_METHOD("to_godot", "x", "y", "z"), &ValorGame::to_godot);
     BIND_CONSTANT(kUnitsPerMetre);
 }
+
+ValorGame::ValorGame() = default;
+ValorGame::~ValorGame() = default;
 
 Vector3 ValorGame::to_godot(double x, double y, double z) {
     // y down, z forward at yaw 0 -> Godot's y up, -z forward: a half turn about x.
@@ -56,6 +70,8 @@ bool ValorGame::load_level(const String& data_dir, int mission, int level) {
         error_ = String(err.c_str());
         return false;
     }
+    data_dir_ = dir, mission_ = mission, level_ = level;
+    engine_.reset();
     pages_.unref();
     layer_of_.clear();
     page_images_.clear();
@@ -216,11 +232,21 @@ void ValorGame::remove_skinned_actors() {
 }
 
 Ref<ArrayMesh> ValorGame::build_actor_mesh(int i) {
+    if (i < 0 || size_t(i) >= actors_.size()) {
+        Ref<ArrayMesh> mesh;
+        mesh.instantiate();
+        return mesh;
+    }
+    Actor& a = actors_[i];
+    return mesh_of(*a.model, &a.inst.pose, &a.inst.joints);
+}
+
+// A model's mesh: skinned by the pose (bone quaternions and joints) when it has a skeleton, else
+// its static faces.
+Ref<ArrayMesh> ValorGame::mesh_of(const valor::Model& m, const std::vector<valor::Quat>* pose,
+                                  const std::vector<std::array<int16_t, 3>>* joints) {
     Ref<ArrayMesh> mesh;
     mesh.instantiate();
-    if (i < 0 || size_t(i) >= actors_.size()) return mesh;
-    Actor& a = actors_[i];
-    const valor::Model& m = *a.model;
     Surface surf[5];
     // Model colours follow the animated lights as the world's do (formats.md: red below 40 names
     // a light, black past the level's).
@@ -235,7 +261,8 @@ Ref<ArrayMesh> ValorGame::build_actor_mesh(int i) {
         s.uv2.push_back(Vector2(l, float(valor::LevelRender::light_index(info, rv) + 1)));
     };
     if (m.skinned()) {
-        auto verts = valor::skin_vertices(m, a.inst.pose, a.inst.joints);
+        if (!pose || !joints || pose->empty()) return mesh;
+        auto verts = valor::skin_vertices(m, *pose, *joints);
         for (const valor::SkinFace& f : m.faces) {
             Surface& s = surf[semi(f.tpage) ? 1 + blend_mode(f.tpage) : 0];
             float l = float(layer(f.tpage, f.clut));
@@ -313,15 +340,50 @@ void ValorGame::place(double x, double y, double z, double yaw, double pitch) {
 }
 
 Vector3 ValorGame::get_eye_position() const {
+    if (engine_) {
+        // the camera entity: the view's position
+        valor::sim::view::Entity cam = valor::sim::view::camera(engine_->m);
+        auto p = cam.position();
+        return to_godot(p[0], p[1], p[2]);
+    }
     const valor::Player& player = session_.player();
     const valor::Walker& w = player.w;
     return to_godot(w.pos[0] / 65536.0, w.pos[1] / 65536.0 + player.eye_offset, w.pos[2] / 65536.0);
 }
 
-double ValorGame::get_yaw() const { return -(session_.player().yaw() / 65536.0) * kAngle; }
-double ValorGame::get_pitch() const { return (session_.player().pitch() / 65536.0) * kAngle; }
+double ValorGame::get_yaw() const {
+    if (engine_) return -(valor::sim::view::player(engine_->m).look_yaw() / 65536.0) * kAngle;
+    return -(session_.player().yaw() / 65536.0) * kAngle;
+}
+double ValorGame::get_pitch() const {
+    if (engine_) return (valor::sim::view::player(engine_->m).look_pitch() / 65536.0) * kAngle;
+    return (session_.player().pitch() / 65536.0) * kAngle;
+}
 
 Dictionary ValorGame::get_state() const {
+    if (engine_) {
+        namespace view = valor::sim::view;
+        const valor::sim::Mem& m = engine_->m;
+        view::Entity sol = view::soldier(m);
+        view::Player p = view::player(m);
+        Dictionary d;
+        d["tick"] = int64_t(view::tick(m));
+        auto pos = sol.a ? sol.position() : std::array<double, 3>{0, 0, 0};
+        d["x"] = pos[0], d["y"] = pos[1], d["z"] = pos[2];
+        d["ground"] = sol.a && sol.on_ground();
+        d["crouched"] = p.a && (p.state() & 2);
+        d["zone"] = 0;
+        d["health"] = sol.a ? sol.health() / 65536.0 : 0.0;
+        d["weapon"] = p.a ? int(p.weapon()) : -1;
+        d["clip"] = p.a ? int(p.clip()) : 0;
+        d["reserve"] = p.a ? int(p.reserve()) : 0;
+        int alive = 0, dead = 0;
+        for (const view::Entity& e : view::entities(m))
+            if (e.type() == 0x1402 || e.type() == 0x1405) (e.dead() ? dead : alive)++;
+        d["enemies"] = alive;
+        d["enemies_dead"] = dead;
+        return d;
+    }
     const valor::Player& player = session_.player();
     const valor::Walker& w = player.w;
     Dictionary d;
@@ -338,6 +400,124 @@ Dictionary ValorGame::get_state() const {
     for (int c : session_.streaming().slot_chunk) slots.push_back(c);
     d["chunk_slots"] = slots;
     return d;
+}
+
+// ---------------------------------------------------------------- the engine, live
+
+bool ValorGame::start_engine(int ammo) {
+    if (!loaded_) return false;
+    // the repository root: the data directory is <root>/extracted/moh/DATA
+    std::string root = data_dir_ + "/../../..";
+    feed_ = std::make_unique<valor::sim::Feed>();
+    feed_->live = true;
+    std::string lv = std::to_string(mission_) + ":" + std::to_string(level_);
+    engine_ = std::make_unique<valor::sim::Engine>(root, lv, *feed_);
+    valor::sim::LevelBuild lb;
+    lb.rand_seed = 0x2468ACE1;
+    std::string err;
+    if (!engine_->load_disc(valor::sim::game_defaults(mission_, level_, ammo), lb, &err)) {
+        error_ = String(("the engine: " + err).c_str());
+        engine_.reset();
+        return false;
+    }
+    engine_->m.w8(0x80093B78, 1);  // an analog pad
+    valor::sim::Engine* eng = engine_.get();
+    const int32_t far = session_.info().view_distance;
+    engine_->start_live([eng, far](valor::sim::U e) {
+        // drawn when within the view distance of the camera
+        namespace view = valor::sim::view;
+        view::Entity cam = view::camera(eng->m), ent{&eng->m, e};
+        auto a = ent.position(), b = cam.position();
+        double d2 = 0;
+        for (int k = 0; k < 3; k++) d2 += (a[size_t(k)] - b[size_t(k)]) * (a[size_t(k)] - b[size_t(k)]);
+        return d2 < double(far) * double(far);
+    });
+    prev_buttons_ = 0;
+    return true;
+}
+
+void ValorGame::engine_tick(int64_t buttons, int64_t forward, int64_t strafe, int64_t turn, int64_t pitch) {
+    if (!engine_) return;
+    uint32_t now = uint32_t(buttons) & 0xFFFF;
+    feed_->live_pad = {now, 0, prev_buttons_, 0};
+    prev_buttons_ = now;
+    feed_->live_role = {forward, strafe, pitch, turn};
+    feed_->live_role_alt = {0, 0, 0, 0};
+    if (replay_) {
+        valor::sim::I t = engine_->tick_no + 1;
+        auto it = replay_->pad.find({engine_->level, t});
+        if (it != replay_->pad.end()) feed_->live_pad = it->second;
+        for (int r = 0; r < 4; r++) {
+            feed_->live_role[size_t(r)] = replay_->role(engine_->level, t, 0, r);
+            feed_->live_role_alt[size_t(r)] = replay_->role_alt(engine_->level, t, 0, r);
+        }
+    }
+    engine_->live_frame();
+    session_.vblanks(2);  // the world's animated lights
+    session_.end_frame();
+}
+
+bool ValorGame::set_engine_replay(const String& log_path) {
+    if (log_path.is_empty()) {  // back to the host's input
+        replay_.reset();
+        return true;
+    }
+    replay_ = std::make_unique<valor::sim::Feed>();
+    if (!replay_->load(data_dir_ + "/../../..", log_path.utf8().get_data())) {
+        replay_.reset();
+        error_ = "can't read the replay " + log_path;
+        return false;
+    }
+    return true;
+}
+
+Dictionary ValorGame::get_engine_actors() const {
+    Dictionary out;
+    if (!engine_) return out;
+    namespace view = valor::sim::view;
+    const valor::sim::Mem& m = engine_->m;
+    uint32_t player = view::soldier(m).a;
+    for (const view::Entity& e : view::entities(m)) {
+        if (e.removed() || e.a == player || e.type() == 2 || e.type() == 3) continue;
+        uint32_t hash = e.model_hash();
+        const valor::Model* model = hash ? models_.by_hash(hash) : nullptr;
+        if (!model || (!model->skinned() && model->static_faces.empty())) continue;
+        Dictionary d;
+        d["model"] = int64_t(hash);
+        d["skinned"] = model->skinned();
+        d["type"] = int64_t(e.type());
+        d["dead"] = e.dead();
+        auto ang = e.angles();
+        int16_t r[3][3];
+        valor::rot_yxz(ang[0], ang[1], ang[2], r);
+        const float c[3] = {1, -1, -1};
+        Basis b;
+        for (int row = 0; row < 3; row++)
+            for (int col = 0; col < 3; col++) b[row][col] = real_t(c[row] * c[col] * r[row][col] / 4096.0);
+        auto p = e.position();
+        d["transform"] = Transform3D(b, to_godot(p[0], p[1], p[2]));
+        out[int64_t(e.handle())] = d;
+    }
+    return out;
+}
+
+Ref<ArrayMesh> ValorGame::build_engine_actor_mesh(int64_t handle) {
+    Ref<ArrayMesh> mesh;
+    mesh.instantiate();
+    if (!engine_) return mesh;
+    namespace view = valor::sim::view;
+    const valor::sim::Mem& m = engine_->m;
+    for (const view::Entity& e : view::entities(m)) {
+        if (int64_t(e.handle()) != handle) continue;
+        const valor::Model* model = models_.by_hash(e.model_hash());
+        if (!model) return mesh;
+        view::Instance in = view::instance(e);
+        std::vector<valor::Quat> pose;
+        for (const auto& q : in.quaternions()) pose.push_back(q);
+        std::vector<std::array<int16_t, 3>> joints = in.joints();
+        return mesh_of(*model, &pose, &joints);
+    }
+    return mesh;
 }
 
 }  // namespace godot
