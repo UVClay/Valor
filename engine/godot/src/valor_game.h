@@ -109,8 +109,8 @@ public:
     // (0 off, 1 on, 3 releasing), flags, handle, bank, sound, loop, cls, volume, pitch, age, fade_out,
     // pos (game units) }, for the presentation layer to play.
     Array get_engine_voices() const;
-    // The engine's particle effects (views::sprites): { pos (Godot), size (metres), color, rot,
-    // tpage, clut, u, v, w, h, additive, fireball }, for the presentation layer to draw.
+    // The engine's particle effects (views::sprites): { pos (Godot), half (metres), color (1 = as
+    // stored), rot (4096 per turn), tpage, clut, u, v, w, h, additive, billboard, triangle }.
     Array get_engine_sprites() const;
     // Drive the engine with a recording's input (build/engine/orig.log) instead of the host's:
     // only the pad and the roles; everything else stays live. An empty path returns to the host's.

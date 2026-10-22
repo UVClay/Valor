@@ -119,39 +119,51 @@ std::vector<Sprite> sprites(const Mem& m) {
         U think = U(m.u32(e.a + 0x36C)), o = e.object_addr();
         if (!o) continue;
         if (think == 0x80073B08) {
-            // particles_spawn: systems at +0xC (sparks) and +0x38 (smoke), 0x34-byte particles
+            // particles_spawn: systems at +0xC (sparks) and +0x38 (smoke), 0x34-byte particles,
+            // drawn by 0x800732F8 while the system's +0 flag is clear
             for (U sys : {o + 0xC, o + 0x38}) {
                 U arr = U(m.u32(sys + 0x28));
                 int n = int(m.s32(sys + 4));
                 double scale = m.s32(sys + 8) / 65536.0;
                 for (int i = 0; arr && i < n && i < 64; i++) {
                     U q = arr + 0x34 * U(i);
-                    if (m.u8(q) != 1 || m.u8(q + 1)) continue;  // live, its delay over
+                    if (!(m.u8(q) & 1) || m.u8(q + 1)) continue;  // live, its delay over
                     Sprite sp;
                     sprite_texture(m, sys, sp);
                     for (int k = 0; k < 3; k++) sp.pos[size_t(k)] = m.s32(q + 4 + 4 * k) / 65536.0;
-                    sp.size = m.s16(q + 0x30) * 2.0 * scale;
+                    sp.half_w = m.s16(q + 0x30) * scale;
+                    sp.half_h = m.s16(q + 0x32) * scale;
                     for (int k = 0; k < 3; k++) sp.rgb[k] = uint8_t(m.u8(q + 0x2C + k));
-                    sp.rot = uint16_t(m.u16(q + 0x1C));
+                    for (int k = 0; k < 3; k++) sp.rot[k] = uint16_t(m.u16(q + 0x1C + 2 * k));
+                    sp.triangle = m.u8(q + 3) != 0;
                     out.push_back(sp);
                 }
             }
         } else if (think == 0x800715D4) {
-            // explosion_spawn: fireballs at +0xC, puffs at +0x38, 0x3C-byte records
+            // explosion_spawn: fireballs at +0xC, puffs at +0x38, 0x3C-byte records (0x80070F24)
             for (U sys : {o + 0xC, o + 0x38}) {
                 U arr = U(m.u32(sys + 0x28));
                 int n = int(m.s16(sys + 4));
-                double scale = m.s32(sys + 0xC) / 65536.0;
+                double scale = (m.s32(sys + 0xC) >> 4) / 4096.0;
                 for (int i = 0; arr && i < n && i < 64; i++) {
                     U r = arr + 0x3C * U(i);
                     int st = int(m.u8(r));
-                    if (st < 3 || st > 5 || m.s16(r + 6)) continue;
+                    if (st == 6 || m.s16(r + 6) > 0) continue;
                     Sprite sp;
                     sprite_texture(m, sys, sp);
-                    sp.fireball = sys == o + 0xC;
+                    sp.billboard = true;
                     for (int k = 0; k < 3; k++) sp.pos[size_t(k)] = m.s32(r + 0x24 + 4 * k) / 65536.0;
-                    sp.size = m.s32(r + 0x20) / 65536.0 * 2.0 * scale;
-                    sp.rot = uint16_t(m.u16(r + 0xA));
+                    sp.half_w = 2.0 * (m.u16(r + 0xC) >> 1) * scale;
+                    sp.half_h = 2.0 * (m.u16(r + 0xE) >> 1) * scale;
+                    sp.rot[0] = uint16_t(m.u16(r + 0xA));
+                    // the colour is the size's whole part (r +0x22): brighter as it grows; shrinking
+                    // fireballs go red (size, size - 10, size - 15, none below 0)
+                    int c = int(m.s16(r + 0x22));
+                    int g = c, b = c;
+                    if (st == 5) g = c - 10, b = c - 15;
+                    sp.rgb[0] = uint8_t(c & 0xFF);
+                    sp.rgb[1] = uint8_t((g & 0xFF) >= 0x81 ? 0 : g);
+                    sp.rgb[2] = uint8_t((b & 0xFF) >= 0x81 ? 0 : b);
                     out.push_back(sp);
                 }
             }

@@ -173,12 +173,19 @@ struct Voice {
 // with its texture in its header (+0x18: VRAM x, y, CLUT x, y, width, height; +0x26 2: additive).
 struct Sprite {
     std::array<double, 3> pos{};  // whole units
-    double size = 0;              // the quad's side, world units (approximate, README)
-    uint8_t rgb[3]{128, 128, 128};
-    uint16_t rot = 0;             // 4096 per turn
+    // The quad's half extents in world units. Particles (0x800732F8): corners (+-w, +-h) scaled by
+    // the system's +0x8 (16.16), turned by RotMatrixYXZ of the particle's three angles (a tumbling
+    // quad; a triangle when its +0x3 flag is set). Fireballs and puffs (0x80070F24 ->
+    // func_8006E058): camera-facing, corners (+-(w >> 1), +-(h >> 1)) of the record's +0xC/+0xE
+    // turned by its +0xA in the view plane, scaled by the header's +0xC >> 4 (4096 = 1), then
+    // laid along the view matrix's right and up rows (lengths 2.0 and 1.25, the up one x 1.6), so 2x.
+    double half_w = 0, half_h = 0;
+    uint8_t rgb[3]{128, 128, 128};  // the prim's colour: 128 leaves the texel as it is
+    uint16_t rot[3]{};              // particles: pitch, yaw, roll; billboards: rot[0] in the view plane
     uint16_t tex_x = 0, tex_y = 0, clut_x = 0, clut_y = 0, w = 0, h = 0;
     bool additive = false;
-    bool fireball = false;
+    bool billboard = false;
+    bool triangle = false;
 };
 
 // The objectives (levels.md, Objectives: the list the pause menu shows).

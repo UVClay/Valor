@@ -643,9 +643,11 @@ Array ValorGame::get_engine_sprites() const {
     for (const valor::sim::view::Sprite& sp : valor::sim::view::sprites(engine_->m)) {
         Dictionary d;
         d["pos"] = to_godot(sp.pos[0], sp.pos[1], sp.pos[2]);
-        d["size"] = sp.size / kUnitsPerMetre;
+        d["half"] = Vector2(real_t(sp.half_w / kUnitsPerMetre), real_t(sp.half_h / kUnitsPerMetre));
         d["color"] = Color(sp.rgb[0] / 128.0f, sp.rgb[1] / 128.0f, sp.rgb[2] / 128.0f);
-        d["rot"] = int(sp.rot);
+        d["rot"] = Vector3i(sp.rot[0], sp.rot[1], sp.rot[2]);
+        d["billboard"] = sp.billboard;
+        d["triangle"] = sp.triangle;
         // the texture as a 4-bit page, CLUT and UV (tpage x / 64 | y / 256 << 4)
         d["tpage"] = int((sp.tex_x / 64) | ((sp.tex_y / 256) << 4));
         d["clut"] = int((sp.clut_x / 16) | (sp.clut_y << 6));
@@ -654,7 +656,6 @@ Array ValorGame::get_engine_sprites() const {
         d["w"] = int(sp.w);
         d["h"] = int(sp.h);
         d["additive"] = sp.additive;
-        d["fireball"] = sp.fireball;
         out.push_back(d);
     }
     return out;
