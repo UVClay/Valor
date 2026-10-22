@@ -67,23 +67,23 @@ works per axis). `--square-stick` stretches the round range to the DualShock's s
 card has left-x turn, right-x strafe). `main.gd` adds the pad to the keyboard's and mouse's input
 (`Present.pad_input()`).
 
+## Also drawn
+
+- Impact slivers and explosion bursts (2D, the screen-space rules of 0x8006F7BC / 0x8006FBF0; the
+  bursts' corners approximated), hit puffs and drops on soldiers and dogs (the drops' size not
+  traced), the enemies' muzzle flashes (at the muzzle a new enemy bullet left from), the explosion
+  light and scorches on the world (`world.gdshaderinc`).
+- From the engine when it keeps them: the text list (level messages, pickups, ammo digits), the hit
+  wedges, looping sounds (re-triggered voices start again).
+
 ## Stubbed
 
-Waiting for the engine to keep them (each is state the original keeps that the engine doesn't yet):
-
-- **Hit wedges**: `hit_indicator`'s timers (0x8009A590..) aren't set by the engine's apply_damage.
-- **Level messages**: built-in 8 `show_text` is a no-op in `engine/sim/src/level.cpp`, and nothing
-  keeps the text list (`g_texts`); `--test-message=TEXT` shows the path works.
-- **Weapon brightness** in dark places: the soldier's flags B 0x400 isn't traced (hud.md).
-- **Looping sounds** (alarms, script loops): the engine notes them as not restarted.
+- **Weapon brightness** in dark places: the flag is the script variable 0x8A, never set (docs).
 - **The crosshair's movement** (the reticle sits at its rest point); footsteps (not documented).
-- **The explosion light** tinting the world (engine/README.md, Coordination).
-- **Other effects**: the impact effect (type 0x23, `impact_effect_spawn`), the enemies' gun smoke
-  puffs and blood drops (weapon block `+0x3E8`, `+0x49C`) aren't in the sprites view yet.
 - **Without the engine** (a walk) the weapon is the level's first and plays its animations from
-  input (left mouse fire, E reload), and there are no sounds but the music.
-- **PVS culling**: the world is one mesh (main.gd's, ValorGame.build_world_mesh); per-chunk meshes
-  belong with the streaming work there.
+  input (left mouse fire, the Use binding reloads), and there are no sounds but the music.
+- **PVS culling**: the world is one mesh (main.gd's); per-chunk meshes belong with the streaming
+  work there.
 
 `--test-press=MASK@TICK[,...]` presses PS1 buttons for two ticks (0x40 fires, 0x20 switches), for
 screenshots; `--show-objectives`; `--audio-log` and `--fx-log` print what plays and what's drawn.
