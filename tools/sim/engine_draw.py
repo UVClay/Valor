@@ -109,6 +109,9 @@ def draw_pass(eng):
         # and its muzzle flash (inv +0x1D4)
         if m.u32(e + 0x370) == 0x8007B8F4:
             player_draw(m, e)
+        # the mounted gun's draw (0x8005D8B0): its flash every drawing
+        if m.u32(e + 0x370) == 0x8005D8B0:
+            flash_countdown(m, m.u32(e + 0x388))
         if d is not None and d[2] != m.s32(e + 0x290) and fa & 0x8000:
             eng.note("out-of-sight counter differs from the original's", f"{h:X} {m.s32(e + 0x290)} / {d[2]}")
         # entities_draw (0x8006C714): counted out -> message 2 to its record, removed

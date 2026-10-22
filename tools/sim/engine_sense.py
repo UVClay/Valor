@@ -67,10 +67,16 @@ def model_bone_point(eng, e, bone, off=None):
     the entity's matrix and integer position."""
     m = eng.m
     inst = m.u32(e + 0x100)
-    if not inst or not m.u32(inst + 0x84):
+    if not inst:
         return [s16(m.s32(e + 0x20C + 4 * k) >> 16) for k in range(3)]
-    jp = m.u32(inst + 0x94)
-    j = [m.s16(jp + 8 * bone + 2 * k) for k in range(3)]
+    if not m.u32(inst + 0x84):
+        # an unanimated model: the index is a vertex of the instance's table (+0x2C), no offset
+        vt = m.u32(inst + 0x2C)
+        j = [m.s16(vt + 8 * bone + 2 * k) for k in range(3)]
+        off = None
+    else:
+        jp = m.u32(inst + 0x94)
+        j = [m.s16(jp + 8 * bone + 2 * k) for k in range(3)]
     if off is not None and any(off):
         qp = m.u32(inst + 0x88) or m.u32(inst + 0x8C)
         if qp:

@@ -221,6 +221,10 @@ def spawn_by_type(eng, t, model, rec):
         return e
     if t == 0x1776:
         return door_spawn(eng, rec, model)
+    if t == 0x1772:
+        from engine_mounted import mounted_gun_spawn
+        e = mounted_gun_spawn(eng, rec, model)
+        return e
     if t in (0x1777, 0x1779, 0x177A) or t not in KNOWN_SPAWNERS:
         from engine_planes import object_spawn
         return object_spawn(eng, rec, model)

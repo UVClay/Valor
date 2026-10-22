@@ -393,6 +393,27 @@ works it. Its scripts (the same 6 in every level, `et_sst.py --type 1772`):
 | 4 | **Manned by the player**: v9 = 1 | 0x400 → 1 |
 | 5 | Removed (`s38` 0x2000 from `mounted_gun_think`) | |
 
+**The gun entity** (`mounted_gun_spawn`, `0x8005E2AC`): `entity_create(3, object 0x88, the
+record's model, instance flags 0x157, no hit parts, 10 script channels)` and a brain (head bone
+13, both sight ranges 3000, field of view 0x200, turn rate 1.0), flags B 0x40211, A 0x03038000,
+collide mask 0x411; the record's cull counter (`+0x5E`), group `0x80099EC9`, health (`+0x5C`),
+position and angles (also its old position), variable 7 = its yaw; sphere 100 (centre half up);
+touch `0x8005E288` (the object planes), destructor `0x8006A37C`; its muzzle flash at vertex
+0x38. **`mounted_gun_think`** (`0x8005DA24`) each tick: not on a bone while variable 4 says it
+was: `+0x38` | 0x2000 (script 5: removed); the event matcher, then the channels with variable 8
+= its yaw (written back after); without the player working it (variable 9), its holder (`+0x2C`,
+when attached) gets flags B 0x4000; **firing** while variable 5: every third tick (variable 6
+counts 2 down) a bullet (`bullet_spawn(gun, vertices 0x94 → 0x38, the player's middle (y −
+eye/2), damage 5.0, type 0x13F4)`, mask 0x08000401, flags A | 0x800), the flash, a recoil
+(variables 11..13 = rand·20 >> 15 − 10, rand·66 >> 15 − 33, rand·40 >> 15 − 20; the last two
+added to the bullet's pitch and yaw, and to the drawn gun's angles only), the sound 1:0xB
+(volume 2.0, spread 0x1800, class 2); not firing: variables 6, 11..13 = 0. Then variable 4 =
+on a bone, variable 10 = variable 9. A model without animation has no bones: the "bones" of
+`bullet_spawn` and `model_bone_point` are then vertices of the instance's table (`+0x2C`),
+through the entity's matrix. The player's side (mounting, turning with the stick within ±0x294
+of the record's yaw, the camera's height, bullets along the gun, casings, rumble, camera shake,
+the shot statistic) is in the same think under variable 9 (not reimplemented yet).
+
 The bits come from: the player (`player_update` around `0x8007A478`: 0x4000 when mounting,
 0x400 when leaving), and a soldier holding the gun's node (soldier.md, cover: a kind-0x10 node
 with a gun within reach; 1:3's 96 sends 0x200 while the player is within 969 units of the
