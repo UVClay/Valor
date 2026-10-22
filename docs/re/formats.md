@@ -218,7 +218,7 @@ unless the table names another base.
 | +0x1C | Set to 1 when the first instance is made; with it, later instances share the face lists | `0x8006A96C` |
 | +0x20, +0x24, +0x28 | Copied to the instance (`+0x14`, `+0x18`, `+0x1C`); +0x24 is set on 2 models | `0x8006A96C` |
 | +0x2C | **Static faces**: {u32 count, ...}, 16 bytes each (below) | `0x8006A96C`, `0x8008080C` |
-| +0x30 | A list {u32 count, u32, count × u32}, copied per instance (so it changes at run time); set on 24 models, always with +0x90 | `0x8006A96C` |
+| +0x30 | **Untextured face list**: {u32 count, count × u32}, each face three 10-bit vertex indices (bits 0..9, 10..19, 20..29) and two flag bits, drawn as Gouraud triangles in the vertex colours (+0xC4); copied per instance (so it changes at run time); set on 24 models, always with +0x90. The sniper scope (model 0x003C8662, hud.md) is one | `0x8006A96C`, `scope_draw` `0x8007B534` |
 | +0x34 | A second face list in the +0x2C format, drawn instead of it when the draw's fourth argument is set; set on no model | `0x8006A96C`, `0x8008080C` |
 | +0x38 | Face table index (an offset into +0x564): skinned faces | relocate, `0x80080DD4` |
 | +0x3C..+0x43 | From the bounds block: a minimum corner? | `0x80086798` |

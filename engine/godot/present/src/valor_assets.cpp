@@ -68,6 +68,7 @@ void ValorAssets::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_anim_frames", "hash", "anim"), &ValorAssets::get_anim_frames);
     ClassDB::bind_method(D_METHOD("build_model_mesh", "hash", "anim", "frame"), &ValorAssets::build_model_mesh);
     ClassDB::bind_method(D_METHOD("get_texture_pages"), &ValorAssets::get_texture_pages);
+    ClassDB::bind_method(D_METHOD("get_model_list_faces", "hash"), &ValorAssets::get_model_list_faces);
     ClassDB::bind_method(D_METHOD("bone_point", "hash", "anim", "frame", "bone", "offset"), &ValorAssets::bone_point);
     ClassDB::bind_method(D_METHOD("stick_roles", "rx", "ry", "lx", "ly"), &ValorAssets::stick_roles);
 }
@@ -314,4 +315,32 @@ Vector3 ValorAssets::bone_point(int64_t hash, int anim, int frame, int bone, Vec
     int16_t out[3];
     valor::part_centre(t, inst.joints, &inst.pose, 0, out);
     return to_godot(out[0], out[1], out[2]);
+}
+
+Dictionary ValorAssets::get_model_list_faces(int64_t hash) const {
+    Dictionary d;
+    uint32_t count = rd32(bsd_, kBody + 0x5A4);
+    for (uint32_t i = 0; i < count; i++) {
+        size_t o = kBody + 0x5A8 + 0x100 * size_t(i);
+        if (rd32(bsd_, o) != uint32_t(hash)) continue;
+        size_t list = kBody + rd32(bsd_, o + 0x30), verts = kBody + rd32(bsd_, o + 0x88), cols = kBody + rd32(bsd_, o + 0xC4);
+        int nv = rd16(bsd_, o + 0x8C);
+        if (list == kBody || verts == kBody) return d;
+        PackedVector2Array v;
+        PackedColorArray c;
+        for (int k = 0; k < nv; k++) {
+            v.push_back(Vector2(int16_t(rd16(bsd_, verts + 8 * size_t(k))), int16_t(rd16(bsd_, verts + 8 * size_t(k) + 2))));
+            c.push_back(Color(bsd_[cols + 4 * size_t(k)] / 255.0f, bsd_[cols + 4 * size_t(k) + 1] / 255.0f, bsd_[cols + 4 * size_t(k) + 2] / 255.0f));
+        }
+        // {u32 count, count x u32}: three 10-bit vertex indices per face
+        PackedInt32Array t;
+        uint32_t n = rd32(bsd_, list);
+        for (uint32_t f = 0; f < n && f < 1024; f++) {
+            uint32_t w = rd32(bsd_, list + 4 + 4 * size_t(f));
+            t.push_back(int(w & 0x3FF)), t.push_back(int((w >> 10) & 0x3FF)), t.push_back(int((w >> 20) & 0x3FF));
+        }
+        d["verts"] = v, d["colors"] = c, d["tris"] = t;
+        return d;
+    }
+    return d;
 }

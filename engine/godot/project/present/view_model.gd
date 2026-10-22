@@ -16,7 +16,7 @@ extends Node
 ##
 ## The muzzle flash (func_8006DD54, set up by func_8006DCAC on each draw): a 31 x 31 texel sprite
 ## (tpage 0xF, u 0xC0, v 0x80, CLUT 0x3E7E: VRAM (1008, 128), CLUT (992, 249)), semi-transparent,
-## scaled by half (drawn at a random rotation; here unrotated), colour 96 (128 - 32 x its counter), on the weapon's bone
+## scaled by half, at one of eight rotations, colour 96 (128 - 32 x its counter), on the weapon's bone
 ## g_weapons[w]+0x34 at the offset +0x36, shown the frame after a shot (fire_gun sets the counter
 ## to 1 unless the player's flags 0x200040, read as the silenced pistol and the thrown weapons).
 
@@ -39,7 +39,9 @@ var local_hash := 0
 var anim := IDLE
 var frame := 0
 var last_pos := Vector3.ZERO
-var flash: MeshInstance3D
+var flash: Control
+var flash_tex: ImageTexture
+var flash_angle := 0.0
 var flash_ticks := 0
 var flash_local := Vector3.ZERO  # in the weapon model's space
 var base_fov := 0.0
@@ -60,22 +62,6 @@ func setup(present) -> void:
 	viewport.add_child(cam)
 	mesh = MeshInstance3D.new()
 	viewport.add_child(mesh)
-	flash = MeshInstance3D.new()
-	var quad := QuadMesh.new()
-	quad.size = Vector2(31.0, 31.0) / 128.0  # world units (31 texels at half scale, view x 2.0)
-	flash.mesh = quad
-	var fm := StandardMaterial3D.new()
-	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	fm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	fm.no_depth_test = true
-	fm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	fm.albedo_texture = ImageTexture.create_from_image(p.assets.region_image(0xF, 0x3E7E, 0xC0, 0x80, 31, 31))
-	fm.albedo_color = Color(0.75, 0.75, 0.75)
-	flash.material_override = fm
-	flash.visible = false
-	viewport.add_child(flash)
 	var layer := CanvasLayer.new()
 	layer.layer = 1
 	add_child(layer)
@@ -84,6 +70,18 @@ func setup(present) -> void:
 	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(rect)
+	# The flash, over the weapon, added to the picture (a semi-transparent prim): drawn in 2D at the
+	# projection of its 3D place, as func_8006E058's camera-facing square projects.
+	flash = Control.new()
+	flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fm := CanvasItemMaterial.new()
+	fm.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	flash.material = fm
+	flash.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	layer.add_child(flash)
+	flash_tex = ImageTexture.create_from_image(p.assets.region_image(0xF, 0x3E7E, 0xC0, 0x80, 31, 31))
+	flash.draw.connect(_draw_flash)
 	if not p.state.has("weapon_model"):
 		for w in [12, 1, 8, 0, 5, 4, 6, 11, 9, 2, 3, 10]:
 			var h: int = p.weapon_model(w)
@@ -128,8 +126,11 @@ func on_tick() -> void:
 			var bone := row.decode_u16(0x34)
 			var off := Vector3i(row.decode_s16(0x36), row.decode_s16(0x38), row.decode_s16(0x3A))
 			flash_local = p.assets.bone_point(h, a, f, bone, off)
+			# ((g_update_stamp & 7) << 9) + (counter << 7): one of eight turns, plus 1/32
+			flash_angle = float(((randi() & 7) << 9) + (1 << 7)) * TAU / 4096.0
 			flash_ticks = 1
 	flash.visible = flash_ticks > 0 and mesh.visible
+	flash.queue_redraw()
 
 
 func local_step() -> void:
@@ -179,6 +180,21 @@ func show_pose(h: int, a: int, f: int) -> void:
 		mesh.set_surface_override_material(i, mat)
 
 
+## The flash's square: half 2 x (31 >> 1) x 0.5 = 15 units round its point, facing the camera,
+## turned by its angle; colour 96 (0x80 - 32 x the counter).
+func _draw_flash() -> void:
+	if not flash.visible:
+		return
+	var at := mesh.basis * flash_local
+	if cam.is_position_behind(at):
+		return
+	var c := cam.unproject_position(at)
+	var r := cam.unproject_position(at + Vector3(15.0 / 128.0, 0, 0)).distance_to(c)
+	flash.draw_set_transform(c, flash_angle)
+	flash.draw_texture_rect(flash_tex, Rect2(-r, -r, 2 * r, 2 * r), false, Color(0.75, 0.75, 0.75))
+	flash.draw_set_transform(Vector2.ZERO)
+
+
 func on_frame() -> void:
 	var main_cam: Camera3D = p.main.cam
 	viewport.size = p.main.get_viewport().get_visible_rect().size
@@ -192,7 +208,7 @@ func on_frame() -> void:
 		main_cam.fov = fov
 	cam.keep_aspect = main_cam.keep_aspect
 	cam.fov = base_fov
-	flash.position = mesh.basis * flash_local
+	flash.queue_redraw()
 	if p.state.has("body_yaw"):
 		var f := Engine.get_physics_interpolation_fraction()
 		var body := Basis.from_euler(Vector3(lerp_angle(body_prev.x, body_cur.x, f), lerp_angle(body_prev.y, body_cur.y, f), 0.0))

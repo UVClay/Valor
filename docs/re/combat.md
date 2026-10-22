@@ -126,6 +126,15 @@ particle (`0x80073960`: life down, dead at 0; after its delay it moves, gravity 
 the limit, drag towards 0 on x and z, rotation += speed) and removes the entity once both
 systems had no live particle. So its life is its longest particle's.
 
+**Drawing particles** (`0x800732F8`, while the system's done flag, object `+0`, is clear): each
+live particle past its delay is a `POLY_FT4` of corners (±`+0x30`, ±`+0x32`), scaled by the
+system's `+0x8` (16.16: 1.0 for impacts, 1.5 for the rocket's) and turned by `RotMatrixYXZ` of its
+three angles (`+0x1C..+0x20`, stepping each tick: the quads tumble), at its position (`0x8008D9D8`,
+then `RTPT`); a triangle (the fourth corner on the third) when its `+0x3` flag is set; textured
+from the header (`+0x18` VRAM x, `+0x1A` y, `+0x1C`/`+0x1E` the CLUT, `+0x20`/`+0x22` the size in
+texels: the sparks 15 × 15 at (1012, 224), the debris one texel at (1023, 63), the smoke 31 × 31 at
+(1000, 0)); coloured by `+0x2C` (128 = the texel as is); semi-transparent when `+0x26` is non-zero.
+
 **The shell casing** (`casing_spawn`, `0x80088040`): at most 5 pending (`0x8009EC60`);
 `entity_create(1 (an instance, no model), object 0xC)`, type 0x66, flags A 0x07020000, flags
 B 0x213, think `casing_think` (`0x80087FA0`), destructor `0x8006A318`; the given position;

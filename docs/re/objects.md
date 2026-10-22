@@ -653,6 +653,19 @@ shrinking, the damage stops. The **smoke puffs**: same placement, start after 8.
 grow by 5.0 to 20..29, hold 45 ticks, shrink by 5.0, rise faster (-1/8 per tick²). The
 explosion entity is removed when both systems are done (about 2.5 s).
 
+**Drawing them** (`0x80070F24`): each fireball, then each puff, not finished (state 6) and past
+its delay, through the billboard function (hud.md, Billboards): a camera-facing square from the
+record's `+0xC`/`+0xE` (fireballs (35..134) × 2, puffs 120), centred, scaled by the system's `+0xC
+>> 4` (4096 = 1: 1.0 for the fireballs, 2.0 for the puffs), turned by `+0xA` (spinning by `+8` a
+tick), so a fireball is a square of half 70..268 units and a puff 240; textured from the header
+(fireballs 63 × 63 at VRAM (992, 32), CLUT (992, 255); puffs 31 × 31 at (1000, 0)), additive; its
+**colour is its size's whole part** (`+0x22`): the fireballs brighten from 5 to 64 (half the
+texel) as they grow and, shrinking, go red (G 10 and B 15 less, none below 0); the puffs 20..29.
+The "size" grows no quad: the quads are fixed, the size is their brightness. Drawn natively by
+`engine/godot/project/present/effects.gd`; a recomp frame of a 1:3 grenade
+(`build/gdp/cmp_explosion.png`) also shows the explosion light tinting the walls, which the native
+world doesn't draw yet.
+
 The soldier "within 80" is `0x8005788C(grenade, 0x50, -1)`: the nearest living character by
 `dist_approx` (max + (mid + min)/4, 16-bit) less than 1000 apart in y.
 

@@ -237,11 +237,20 @@ State: `inv` flag 0x100 (scope; sniper rifle in aim mode, movement.md), the proj
 - The **weapon model is drawn only while `inv+0xA4` is 400** and `inv` flags 0xC000 are clear
   (`player_draw`): it disappears as soon as the zoom starts and comes back when aim mode ends
   (which resets the zoom at once).
-- While flag 0x100 is set, `scope_draw` (`0x8007B534`) replaces the reticle: a model (the
-  weapon block's `inv+0x130` object, its faces and per-vertex colours) drawn flat in front of
-  the camera (identity rotation with the vertical scaled 0x780/0x1000, 201 units ahead) as
-  Gouraud triangles: the scope's black surround (inference: the model wasn't looked at; no
-  separate cross-hair lines are drawn for it).
+- While flag 0x100 is set, `scope_draw` (`0x8007B534`) replaces the reticle: the model
+  **0x003C8662** (`player_soldier_init`, `0x8007BE04`, finds it with `model_find` into
+  `inv+0x130`; present in every level with the sniper rifle) drawn flat in front of the camera:
+  rotation identity with y scaled 0x780/0x1000, 201 units ahead, projection distance 400, round
+  the screen's centre. Its **+0x30 face list** (formats.md) is 30 untextured Gouraud triangles
+  (`POLY_G3`) over its 34 vertices (`+0x88`, z 0) in their vertex colours (`+0xC4`): a dark
+  square of ±131 × ±132 (the whole screen: ±261 × ±123 pixels) with a 22-sided hole of radius
+  about 85..111 (wider than tall: 85 across, 99..111 up and down before the y scale), almost
+  black (around (15, 9, 7), two vertices (0, 0, 0)), and two **cross-hair bars**, vertical x 0..1,
+  y −115..107 (grey 75) and horizontal y −7..−5, x −93..95 (grey 59..70). Each prim is linked at
+  the head of its ordering-table slot, so the list's last faces (the bars) are drawn first and
+  the surround trims them to the hole. The compass, ring and ammo are drawn over it (a recomp
+  frame of 2:2 scoped). Drawn natively by `engine/godot/project/present/hud.gd` (draw_scope), side
+  by side with the recomp in `build/gdp/cmp_scope.png`.
 - The zoom itself is the projection distance (movement.md); the scope's turning is ÷8.
 
 ## Camera shake
@@ -290,7 +299,27 @@ Flag 4 of a fade also ramps a value at `+0x6C` from 0x300000 to 0 (no caller pas
 
 ## Other things drawn over the view
 
-- **Muzzle flash** (`0x8006DD54` on `inv+0x1D4`, from `player_draw`; combat.md).
+- **Muzzle flash** (`0x8006DD54` on `inv+0x1D4`, from `player_draw`; combat.md). Set up on every
+  weapon draw (`0x8006DCAC`): its bone and offset from the weapon table (`g_weapons[w]+0x34`, the
+  8 bytes at `+0x36`), the soldier's handle, and a sprite template (`0x8006E004(prim, 0x3F0,
+  0x80, 31, 31, 8, 0x3E0, 0xF9, 2, 1)`: 31 × 31 texels at VRAM (1008, 128), i.e. tpage 0xF, u
+  0xC0, v 0x80, CLUT (992, 249) = 0x3E7E; semi-transparent). `fire_gun` sets its counter (`+2`)
+  to 1 unless the player's flags 0x200040; each draw with the counter above 0 draws it and takes
+  1 off, so it shows for one drawn frame. Drawn by the billboard function `0x8006E058` (below)
+  with scale 0x800 (½): a square of half 2 × (31 >> 1) × ½ = **15 world units**, facing the
+  camera, turned in the view plane by `((g_update_stamp & 7) << 9) + (counter << 7)` (one of
+  eight turns plus 1/32), colour 0x80 − 32 × counter (96), at the bone point (for the player the
+  model placed at the camera less its eye offset, with the body's angles and scale: the bone
+  point is about 178 units ahead of the eye for the Garand, where the barrel's end is seen).
+  Checked: a recomp RAM dump at 1:3 vblank 8654 has its quad 44 lines tall round (281, 149);
+  the native one matches (`build/gdp/cmp_flash.png`).
+- **Billboards** (`0x8006E058(point, scale_x, angle, colour, template, ctx, prim, ...,
+  scale_y, centred)`): the template's half width and height (`+2`, `+4`, halved when centred),
+  turned by `RotMatrixZ(angle)` and scaled by the scales (4096 = 1; scale_y 0: scale_x), become
+  a world offset along the view matrix's first two rows (`0x8009C804`, lengths 2.0 and 1.25; the
+  second taken ×1.6, `0x88888889` arithmetic), so a square of half 2 × half × scale in world
+  units round the point, then projected with the rest (`RTPT`). Used by the muzzle flash and
+  the explosions' fireballs and puffs (objects.md).
 - **Weapon model brightness**: `player_draw` moves the weapon model's `+0x6C` toward 0x40
   (2 a frame) while the soldier's flags B 0x400 are set, else back to 0x80 (inference: darker
   in dark places; who sets 0x400 wasn't traced).

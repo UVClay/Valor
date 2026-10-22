@@ -68,6 +68,11 @@ public:
     // A point on a bone of that pose (model_bone_point: the joint plus the offset turned by the
     // bone), Godot axes: where the muzzle flash hangs (g_weapons +0x34 bone, +0x36 offset).
     Vector3 bone_point(int64_t hash, int anim, int frame, int bone, Vector3i offset);
+    // A model's +0x30 face list as scope_draw (0x8007B534) draws it: untextured Gouraud triangles
+    // over its vertices (+0x88, x and y) and vertex colours (+0xC4): { verts: PackedVector2Array,
+    // colors: PackedColorArray (0..255 as is), tris: PackedInt32Array }. Empty for an unknown model.
+    Dictionary get_model_list_faces(int64_t hash) const;
+
     // The texture pages the meshes built so far use, one layer per page and CLUT.
     Ref<Texture2DArray> get_texture_pages();
 

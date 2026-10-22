@@ -7,9 +7,8 @@ extends Control
 ## From the state: the health ring, the compass (the view yaw), the clip and reserve with the
 ## slot's ammo picture (hidden for the papers), the aim reticle (aim mode; the bazooka's own
 ## shape), the pickup messages (from health and ammo changes), the level-start and death fades.
-## Tab (or --show-objectives) shows the objectives (the pause menu's list: a box, ticked when done). The sniper scope
-## (aim mode with the scope, zoomed): the view outside a circle blacked out (inference: the scope
-## model, the weapon block's +0x130 object, wasn't read; hud.md).
+## Tab (or --show-objectives) shows the objectives (the pause menu's list: a box, ticked when done).
+## The sniper scope: the game's scope model, as scope_draw draws it (draw_scope).
 ## Stubbed until the core reports them: the hit wedges (the hit's direction), level messages
 ## (show_text), the crosshair's movement (drawn at its rest point 256, 131).
 ## --crosshair=SIZE adds an always-on crosshair on the aim line, hidden in aim mode.
@@ -34,6 +33,7 @@ var crosshair := 4
 var texts := []  # {text, x, y, col: Array[3] 0..255, semi, life, hold, fade_in, step: Array[3]}
 var add_layer: Control  # additive texts
 var dead_since := -1
+var scope := {}  # the scope model's faces (draw_scope)
 
 
 func setup(present) -> void:
@@ -161,6 +161,10 @@ func _draw() -> void:
 	var size := get_viewport_rect().size
 	var s: Dictionary = p.state
 	var health: float = float(s.get("health", 128.0))
+	# the scope is drawn under the HUD (a recomp frame: compass and ammo over it)
+	var scoped: bool = s.get("scoped", false)
+	if scoped:
+		draw_scope()
 	draw_health_ring(health)
 	draw_compass()
 	var w := int(s.get("weapon", -1))
@@ -176,9 +180,8 @@ func _draw() -> void:
 		if not t.semi:
 			draw_game_text(self, t.text, at_middle(t.x, t.y), t.col)
 	var aiming: bool = s.get("aiming", false)
-	var scoped: bool = s.get("scoped", false) and int(s.get("zoom", 400)) > 400
 	if scoped:
-		draw_scope()
+		pass
 	elif aiming:
 		draw_reticle(w)
 	elif crosshair > 0:
@@ -261,31 +264,39 @@ func draw_reticle(w: int) -> void:
 		draw_line(at_middle(c.x + l[0], c.y + l[1]), at_middle(c.x + l[2], c.y + l[3]), col, width)
 
 
-## The scope: black outside a circle round the view's centre (the scoped shot goes to the view's
-## centre, player.md), with thin cross-hairs.
+## The scope (scope_draw, 0x8007B534): the model 0x003C8662's +0x30 face list (player_soldier_init
+## finds it), untextured Gouraud triangles in its vertex colours, drawn flat in front of the view:
+## identity rotation with y scaled by 0x780 / 0x1000, 201 units ahead, projection distance 400,
+## round the screen's centre (256, 120). It is a dark square (+-131 x +-132: the whole screen) with a
+## round hole, and two thin grey bars for the cross-hairs. Beyond the 4:3 middle the square's dark
+## colour fills the rest of a wide screen.
 func draw_scope() -> void:
+	if scope.is_empty():
+		var shape: Dictionary = p.assets.get_model_list_faces(0x3C8662)
+		scope = shape if not shape.is_empty() else {"verts": PackedVector2Array(), "colors": PackedColorArray(), "tris": PackedInt32Array()}
+	var verts: PackedVector2Array = scope.verts
+	if verts.is_empty():
+		return
 	var size := get_viewport_rect().size
-	var c := size / 2.0
-	var r := size.y * 0.46
 	var pts := PackedVector2Array()
-	for i in 65:
-		var a := TAU * i / 64.0
-		pts.append(c + Vector2(cos(a), sin(a)) * r)
-	# the four corners round the circle, as one polygon with a hole: two halves
-	for half in 2:
-		var poly := PackedVector2Array()
-		var x0 := 0.0 if half == 0 else size.x
-		poly.append(Vector2(c.x, 0))
-		poly.append(Vector2(x0, 0))
-		poly.append(Vector2(x0, size.y))
-		poly.append(Vector2(c.x, size.y))
-		for i in 33:
-			var a := PI / 2.0 + (PI * i / 32.0 if half == 0 else -PI * i / 32.0)
-			poly.append(c + Vector2(cos(a), sin(a)) * r)
-		draw_colored_polygon(poly, Color.BLACK)
-	var w := maxf(1.0, scale_y() * 0.3)
-	draw_line(Vector2(c.x - r, c.y), Vector2(c.x + r, c.y), Color.BLACK, w)
-	draw_line(Vector2(c.x, c.y - r), Vector2(c.x, c.y + r), Color.BLACK, w)
+	for v in verts:
+		pts.append(at_middle(256.0 + 400.0 * v.x / 201.0, 120.0 + 400.0 * (v.y * 0x780 / 4096.0) / 201.0))
+	var edge := at_middle(0, 0).x
+	if edge > 0.0:
+		var dark: Color = scope.colors[0]
+		draw_rect(Rect2(0, 0, edge + 1.0, size.y), dark)
+		draw_rect(Rect2(size.x - edge - 1.0, 0, edge + 1.0, size.y), dark)
+	var tris: PackedInt32Array = scope.tris
+	var cols: PackedColorArray = scope.colors
+	# Each prim is linked at the head of its ordering-table slot, so the last face is drawn first:
+	# the cross-hair bars (the list's last faces) go under the dark surround, which trims them.
+	for i in range(tris.size() - 3, -1, -3):
+		var a := tris[i]
+		var b := tris[i + 1]
+		var c := tris[i + 2]
+		if a >= pts.size() or b >= pts.size() or c >= pts.size():
+			continue
+		draw_polygon(PackedVector2Array([pts[a], pts[b], pts[c]]), PackedColorArray([cols[a], cols[b], cols[c]]))
 
 
 ## The objectives as the pause menu lists them: a box ("$") or a ticked box ("#"), then the text.
