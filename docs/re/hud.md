@@ -103,7 +103,11 @@ CLUT 0x3E3E, from the level's textures; semi-transparent) rotated with the view.
 
 `compass_place` (`0x80060924`), every frame: `RotMatrixZ(−yaw)` turns three points
 (`0x8009A5A0`: (0, 0, 320), (23, −23, 320), (23, 23, 320)), projected with H 400; the quad's
-corners are the centre ± the two projected offsets, x doubled. The result (checked in the dump
+corners are the centre ± the two projected offsets, x doubled. On screen the rose spans ±28.75 in x and ±14.4 in y
+round its centre (23 · 400 / 320 = 28.75 for x, half that for y): it fits inside the health
+ring's inner radius (14, x doubled), as a recomp frame shows; the native HUD
+(`engine/godot/project/present/hud.gd`) draws it so. (Inference: the projection's y scale is half
+its x scale here; the GTE's settings in `compass_place` weren't followed.) The result (checked in the dump
 at yaw 1847, and by the formula at yaw 0): **the texture's top edge is drawn at screen angle
 90° − yaw** (clockwise from up). At yaw 0 the rose's top points right; turning so that yaw
 grows turns the rose counter-clockwise, keeping its marks on fixed world directions. Which

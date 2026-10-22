@@ -10,7 +10,8 @@ extends Node
 ## --crosshair=SIZE (an always-on crosshair on the aim line, 0: none, the original's look),
 ## --square-stick (stretch a round stick to the DualShock's square range), --modern-sticks (the
 ## left stick strafes and the right one turns, instead of the original's left-turns, right-strafes),
-## --test-message=TEXT (a level message at the start, to see the text list), --debug-text (keep
+## --test-message=TEXT (a level message at the start, to see the text list), --test-press=MASK@TICK
+## (press PS1 buttons for 2 ticks from that tick: 0x40 fires, 0x80 reloads), --debug-text (keep
 ## main.gd's state line).
 
 const ANGLE := TAU / 4096.0
@@ -170,6 +171,12 @@ func pad_input() -> Dictionary:
 	var out := {"buttons": 0, "roles": PackedInt32Array([0, 0, 0, 0])}
 	if assets == null:
 		return out
+	if args.has("test-press"):
+		var tp: PackedStringArray = String(args["test-press"]).split("@")
+		var at := int(tp[1])
+		var now := int(state.get("tick", 0))
+		if now >= at and now < at + 2:
+			out.buttons = tp[0].hex_to_int() if tp[0].begins_with("0x") else int(tp[0])
 	var dev := -1
 	for d in Input.get_connected_joypads():
 		dev = d

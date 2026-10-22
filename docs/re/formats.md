@@ -149,6 +149,44 @@ rotation decoding, the bone tree and the 28-byte skinned face. 1:3's counts are 
 game reads the frames in `0x80084718` (the pose, from the skinned draw `0x80080DD4`); the
 rotation decoding wasn't cross-checked against it.
 
+### Sky, stars and moon (drawing)
+
+Read from `render_pass` (`0x800503D4`), which draws them first, before the level, and the code it
+calls; drawn natively from this by `engine/godot/project/present/sky.gd` (checked by eye against a
+recomp frame of 1:1).
+
+- **Stars**, when `+0x58F` (the star height) is non-zero (`func_80088368`): 255 single-pixel
+  tiles (`TILE_1`, code 0x68), each a direction turned by the camera's rotation only (no
+  translation: they sit at infinity). `stars_init` (`0x80088744`, from `sky_init`) places them on a
+  sphere of radius 0x6FFF: y = −((`+0x58F` << 8) + rand 0..0x2FFF) (up), the rest of the radius
+  round at a random angle; colours from an 8-entry RGB table in LEVEL.BIN (`0x8009EC6C`: grey,
+  orange, olive, red, blue, white, orange, violet), stepped through from a random start
+  (inference: the pointer arithmetic wasn't followed exactly). **Twinkle**: each drawn frame, three
+  times in four (`rand() & 3`), a star's components above 32 are drawn 32 darker.
+- **Moon**, drawn by the stars' function when `sky_init` (`0x800888C4`) found `+0x594` non-zero
+  ("Using Scene Y/Z value for moon"): the point (0, `+0x594`, `+0x596`) turned by the camera, a
+  textured quad (`POLY_FT4`, opaque, colour 0x80; tpage 0xF, CLUT 0x3FBF, u 0xC0..0xDF, v
+  0x60..0x7F) from that point's projection to the projections of the point moved right by
+  ⅔·a and down by a, a = (`+0x596` << 5) / 200 (`0x80088170`, `0x80088280`). Every level with a moon
+  uses (y −17142, z 21341): high in the +z direction.
+- **Gradient**, when the sky colour (`+0x58C..+0x58E`, read R, B, G) is non-zero (`func_80089A0C`
+  → `func_80088A5C`; `func_80089174` instead in a mode `g_params` 2 / `+4` 3, not seen): eight
+  full-width `POLY_G4` strips of 30 lines (`sky_gradient_init`, `0x80088980`), the lowest at y
+  210..240. From the look pitch (`inv+0x17A`, the whole part of `+0x178`): v = clamp(pitch >> 2,
+  −128, 127), t = (v + 1) >> 5, k = (4 if t ≥ 0 else 3) − t (0..7, smaller looking up). With H =
+  half the colour (each component >> 1) and C the colour: strips 0..k (from the bottom) ramp from
+  black to H in steps of H/(k+1) (as fixed-point multiplies: k 7 `>> 3`, 6 ×0x249, 5 ×0x2AB, 4
+  ×0x333, 3 `>> 2`, 2 ×0x555, 1 `>> 1`, `>> 12` after the multiplies); the strips above ramp from
+  H toward C in steps of (C − H)/(8 − k) (k 0 `>> 3`, 1 ×0x249, 2 ×0x2AB, 3 ×0x333, 4 `>> 2`, 5
+  ×0x555, 6 `>> 1`). Each strip's top vertices get the brighter colour, its bottom ones the
+  darker: a night sky, black at the bottom of the screen, brightest at the top, its horizon moving
+  down as the view looks up. (With k = 0 the first ramp is skipped and the second fills the seven
+  lowest strips; the top strip keeps the previous frame's colours.)
+
+Levels with a sky: 1:1, 2:2, 3:1 and 5:4 (0x17, 0x1B, 0x29 as R, G, B), 1:2, 2:3, 2:4, 7:1, 9:1
+and 9:4 (0x10, 0x12, 0x1A), 3:2, 4:1; with stars all of them but 9:1; with the moon 1:1, 1:2,
+2:3, 2:4, 3:2, 4:1, 5:4, 7:1, 9:1, 9:4.
+
 ### Models (+0x5A8, 0x100 bytes each)
 
 `g_models` (`0x8009EC58`). The viewer calls these "RenderObjects".
@@ -470,7 +508,7 @@ viewer). jPSXdec reads it when given raw sectors, not the 2048-byte extracted fi
 | Vertex colours | TSP colours, with red < 40 substituted by animated lights (or black) when the level has lights | Known |
 | Animated lights | BSD +0xD8/+0xDC, stepped once per 30 Hz tick | Known |
 | Fog, clear colour, view distance | BSD +0xCC..+0xD4, +0x590 | Known. The exact depth used for fog (screen z vs OTZ) wasn't measured |
-| Sky, stars, moon | BSD +0x58C..+0x597 | Fields known; the drawing (`0x80088170`, the 16 POLY_G4 strips of `0x80088980`) wasn't read |
+| Sky, stars, moon | BSD +0x58C..+0x597 | Known (Sky, below); drawn natively by engine/godot/project/present/sky.gd |
 | PVS | TSP node masks, cross test | Known |
 | Animated faces | TSP dynamic blocks, driven by level scripts | Known |
 | Static models | BSD models +0x2C/+0x88/+0xC4, scale, inheritance | Known; +0x30/+0x90 (24 models) unknown |

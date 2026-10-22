@@ -458,9 +458,14 @@
 80087308 level_load                 # reads the TAF and BSD, relocates, builds spawners
 80087FA0 casing_think
 80088040 casing_spawn
+80088170 moon_init                  # the moon's quad (tpage 0xF, CLUT 0x3FBF) and its size from +0x596
+80088280 moon_draw                  # project the moon's three points, an axis-aligned quad
+80088368 stars_draw                 # 255 TILE_1 stars by the view's rotation, twinkle, then the moon
 80088744 stars_init                 # 255 stars, height from g_level+0x58F
 800888C4 sky_init                   # moon from g_level+0x594/+0x596
 80088980 sky_gradient_init          # 16 POLY_G4 strips, colour g_level+0x58C..+0x58E
+80088A5C sky_gradient_draw          # the 8 strips' colours from the look pitch (formats.md, Sky)
+80089A0C sky_draw                   # the gradient (func_80089174 in another mode), linked first
 80089D68 tsp_draw_chunk             # world drawing; 4 x 0x800AA168 = the near-subdivision distance
 8008A6A8 music_ring_init
 8008A6D8 music_transfer_done        # rewinds at the end of the file
