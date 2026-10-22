@@ -126,7 +126,14 @@ def character_create(eng, model, channels):
         m.w32(a + 0x124 + 0x74 * ch, p)
         p += 0x3C * channels
     m.w32(a + 0x1EC, channels)
-    instance_init(eng, a, inst, model, pose_alloc(eng) if nbones(m, model) else 0)
+    # entity_defaults' instance fields, then model_instance_init (engine_heap.py) with the
+    # characters' instance flags 0x85 (| 0x200 with the option byte 0x80093A06), its block from
+    # the pose pool
+    for o, v in ((0x5C, -1), (0x5E, 0), (0x62, -1), (0x64, 0), (0x3E, 0), (0x40, -1)):
+        m.w16(inst + o, v)
+    from engine_heap import instance_init as model_instance_init
+    model_instance_init(eng, inst, model, 0x85 | (0x200 if m.u8(0x80093A06) else 0), a)
+    m.w32(inst + 0x88, m.u32(inst + 0x90))
     return i, a
 
 

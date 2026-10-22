@@ -120,7 +120,10 @@ joints of the soldier at `0x800BA31C` (mid_14000) from its quaternions and the b
 gives the joints in RAM within 22 units in total with the transposed matrix, 1244 with the
 textbook one.
 
-**`model_instance_init`** (`0x8006A96C(inst, model, flags, entity)`), what the logic reads:
+**`model_instance_init`** (`0x8006A96C(inst, model, flags, entity)`; soldiers and dogs get
+flags 0x85, or 0x285 when the byte `0x80093A06` is set, with their block from the pose pool:
+frame 0's quaternions are in the pose from the spawn on, which the head bone's facing for a
+first sight test reads), what the logic reads:
 `+0x6C` = 0x80, `+0x68` = 0, `+4` = flags, `+8` = the model; with an animation table: `+0x70`
 its count, `+0x78` its entries, `+0x72` the bones (first entry's byte 1), `+0x74`, `+0x7C`
 (model +0x38), `+0x80` (+0x84), `+0x84` the root bone (+0x9C), pose buffers from the pool
