@@ -684,6 +684,12 @@ void LevelLogic::kind0_enter(Ent*, Record& r) {
         return;
     }
     if (r.cls == 0xD1BA7D1E) m_.w32(LEVEL_FLAGS, m_.u32(LEVEL_FLAGS) | 0x24);
+    // chunk_stream_trigger (0x80054378): the streaming record entered (a state built from the
+    // disc; the collision of recorded runs follows the CD's timing all the same)
+    if (r.cls == 0x4D078F23 && eng_.gheap) {
+        m_.w32(0x80099070, r.addr);
+        eng_.chunk_stream();
+    }
 }
 
 // record_spawn_type(0x4C, pair) (0x80074BB8): only while the record's bit 0 is clear; the entity

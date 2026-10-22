@@ -108,8 +108,17 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
   and re-skinned every tick;
 - the player's input is the keys and mouse above, in the game's layout 1 (the left mouse button
   is Cross: fire; Q is Circle: switch weapons);
-- `rand` is PsyQ's on the seed in memory. Collision uses every chunk. An entity counts as drawn
-  when it's within the level's view distance of the camera.
+- `rand` is PsyQ's on the seed in memory. An entity counts as drawn when it's within the level's
+  view distance of the camera;
+- chunks stream as the original streams them: entering a streaming record (class 0x4D078F23)
+  runs `chunk_stream`, and so do the idle jobs 2 and 3. The record's chunks that aren't loaded
+  replace the slots it doesn't list, one read at a time. The slot being read is left out of
+  collision until the read ends. A read takes 125 frames: the session's four took 244 to 353
+  vblanks, the music's reads sharing the CD. In a recorded run from the disc the same logic
+  runs, with the reads ending when the CD's did. The slot table matches the original's at the
+  dumps of ticks 4675, 5000 and 6943, and so do the slots' parsed headers. The chunk files'
+  bytes differ only where the world's animated faces and lights write into them, which the
+  engine doesn't model.
 
 The HUD line adds health, weapon, clip and reserve, and the soldiers alive and down. Testing
 options:
@@ -378,8 +387,7 @@ in the recordings: the pad words and the control roles' values per tick.
 ## What's next
 
 1. **Live play's own rules**: the view from the camera's frustum (`draw_pass` asks the host),
-   the idle work's real schedule (the time left in the vblank wait), chunk streaming by the
-   player's position instead of every chunk, and the player's death and restart (`level_start`
+   the idle work's real schedule (the time left in the vblank wait), and the player's death and restart (`level_start`
    again on the built state).
 3. **Presentation**: the first-person weapon, pickups and effects (tracers, explosions' particle
    systems), sounds and music from the engine's voice table, the HUD.

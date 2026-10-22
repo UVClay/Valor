@@ -120,7 +120,13 @@ int run_live(int argc, char** argv) {
                 feed.live_pad[2] = (feed.live_pad[2] & ~U(0x40)) | ((t - 1) % 4 < 2 ? 0x40 : 0);
             }
         }
+        I ld0 = m.s32(0x800AA184), s00 = m.s32(0x80098970);
         eng.live_frame();
+        if (std::getenv("VALOR_LIVE_SLOTS") && m.s32(0x80098970) != s00) std::printf("tick %lld: slot 0 %lld -> %lld\n", (long long)eng.tick_no, (long long)s00, (long long)m.s32(0x80098970));
+        if (m.s32(0x800AA184) != ld0)
+            std::printf("tick %5lld: chunk slot %lld %s (slots %lld %lld %lld %lld)\n", (long long)eng.tick_no,
+                        (long long)(ld0 == -1 ? m.s32(0x800AA184) : ld0), ld0 == -1 ? "read starts" : "read ends",
+                        (long long)m.s32(0x80098970), (long long)m.s32(0x80098974), (long long)m.s32(0x80098978), (long long)m.s32(0x8009897C));
         if (std::getenv("VALOR_LIVE_SEEN")) {
             // characters in front of the view within 1500 units (where a screenshot shows them)
             view::Entity cam = view::camera(m);

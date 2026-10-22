@@ -112,6 +112,13 @@ public:
     std::function<bool(U e)> live_view;
     void start_live(std::function<bool(U e)> in_view);
     void live_frame(I vblanks = 2);
+    // Live play's chunk streaming (levels.md, Streaming): chunk_stream (0x8005439C) on the
+    // record last entered, the read's end at a frame's start (0x8008C798), the collision slots
+    // following the slot table.
+    void chunk_stream();
+    I stream_frames_left = 0, stream_slot = -1;
+    void chunks_apply();
+    void stream_end();
     void remove(U e, const std::string& why = "");
 
     // -- input

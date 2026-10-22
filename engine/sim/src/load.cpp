@@ -2018,6 +2018,15 @@ void GameHeap::model_swap(U e, U model, I flags) {
     ld.instance_init(inst, model, flags, e);
 }
 
+void GameHeap::tsp_unload(I slot) {
+    Mem& m = impl_->ld.m;
+    U inst = U(0x80098D8C + slot * 0xB0);
+    if (m.u32(inst)) free(U(m.u32(inst)));
+    m.w32(inst, 0);
+}
+
+void GameHeap::tsp_load(I chunk_file, I slot) { impl_->ld.tsp_load(chunk_file, slot); }
+
 void GameHeap::destroy(U e) {
     Loader& ld = impl_->ld;
     Mem& m = ld.m;

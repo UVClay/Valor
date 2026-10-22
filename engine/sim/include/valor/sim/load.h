@@ -43,6 +43,10 @@ public:
     // The removal's part of the destructors (+0x384) for an entity on the heap: its instance's
     // pose buffers and its brain released, its block freed two frames late.
     void destroy(U e);
+    // Streaming: tsp_unload (0x8008C8F4, the slot's instance buffer freed) and a read's end (the
+    // chunk file into the slot's buffer, tsp_parse, its instance: 0x8008C798).
+    void tsp_unload(I slot);
+    void tsp_load(I chunk_file, I slot);
 
 private:
     struct Impl;

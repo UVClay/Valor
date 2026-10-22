@@ -583,7 +583,9 @@ void Engine::idle_job(I state) {
     else if (state == 2) {
         handles_free_removed();
         logic->run_one();
-    }
+        if (gheap) chunk_stream();
+    } else if (state == 3 && gheap)
+        chunk_stream();
     m.w32(0x800AB8E8, state >= 2 ? 0 : state + 1);
 }
 
@@ -606,8 +608,90 @@ static void write_dump(const Mem& m, const std::string& path) {
 void Engine::start_live(std::function<bool(U)> in_view) {
     live_view = std::move(in_view);
     rand.live_mem = &m;
-    world.w.set_all_chunks();
+    chunks_apply();
     vblank_prev = vblank;
+}
+
+// The collision tests' slots: the slot table's chunks, the one being read left out.
+void Engine::chunks_apply() {
+    int nums[4];
+    for (int k = 0; k < 4; k++) nums[k] = int(m.s32(0x80098970 + 4 * k));
+    world.w.set_slots_by_number(nums);
+    I ld = m.s32(G_CHUNK_LOADING);
+    if (0 <= ld && ld < 4) world.w.slots[size_t(ld)] = nullptr;
+}
+
+// A chunk's read: in the session the four reads took 244 to 353 vblanks each, the music's
+// reads sharing the CD; live play takes 250 (125 frames).
+constexpr I STREAM_READ_FRAMES = 125;
+
+// game_frame: a chunk read that has ended is parsed and its slot opened (0x8008C798).
+// Live play counts the read's frames down; a recorded run ends it when the CD did (the timing
+// log clears the loading slot).
+void Engine::stream_end() {
+    if (!gheap || stream_slot < 0) return;
+    if (live_view) {
+        if (--stream_frames_left > 0) return;
+    } else if (m.s32(G_CHUNK_LOADING) != -1)
+        return;
+    gheap->tsp_load(m.s32(0x80098970 + 4 * stream_slot), stream_slot);
+    stream_slot = -1;
+    if (live_view) {
+        m.w32(G_CHUNK_LOADING, -1);
+        chunks_apply();
+    }
+}
+
+void Engine::chunk_stream() {
+    U rec = U(m.u32(0x80099070));
+    auto loaded = [&](I c) {
+        for (int k = 0; k < 4; k++)
+            if (m.s32(0x80098970 + 4 * k) == c) return true;
+        return false;
+    };
+    auto not_in_record = [&](I c) {
+        for (int k = 0; k < 4; k++)
+            if (m.s16(rec + 0x30 + 2 * k) == c) return false;
+        return true;
+    };
+    I ld = m.s32(G_CHUNK_LOADING);
+    if (ld != -1 && !(rec && not_in_record(m.s32(0x80098970 + 4 * ld)))) return;
+    if (ld != -1) note("chunk_stream: a read replaced");
+    m.w32(0x8009896C, rec);
+    // chunk_stream_needed (0x80054100): the record's chunks not loaded, in its order
+    for (int k = 0; k < 4; k++) m.w32(0x80099074 + 4 * k, -1);
+    if (rec) {
+        I n = 0;
+        for (int k = 0; k < 4; k++) {
+            I c = m.s16(rec + 0x30 + 2 * k);
+            if (!loaded(c)) m.w32(0x80099074 + 4 * n++, c);
+        }
+        m.w32(0x80098964, n);
+    }
+    // chunk_stream_evictable (0x80054298): the slots whose chunk the record doesn't list
+    m.w32(0x80098968, 0);
+    for (int k = 0; k < 4; k++) m.w32(0x80099084 + 4 * k, -1);
+    if (rec)
+        for (int k = 0; k < 4; k++) {
+            I c = m.s32(0x80098970 + 4 * k);
+            if (c != -1 && not_in_record(c)) {
+                I n = m.s32(0x80098968);
+                m.w32(0x80099084 + 4 * n, k);
+                m.w32(0x80098968, n + 1);
+            }
+        }
+    if (!m.s32(0x80098964)) return;
+    if (m.s32(0x80098964) != m.s32(0x80098968)) note("chunk_stream: needed and evictable differ");
+    I slot = m.s32(0x80099084);
+    I file = m.s32(0x80099074);
+    if (slot < 0) return;
+    if (gheap) gheap->tsp_unload(slot);
+    m.w32(G_CHUNK_LOADING, slot);  // tsp_load_async (0x8008C718): the read under way
+    m.w32(0x80098970 + 4 * slot, file);
+    stream_frames_left = STREAM_READ_FRAMES;
+    stream_slot = slot;
+    stats["chunk reads"]++;
+    if (live_view) chunks_apply();
 }
 
 // One frame of live play: the vblanks since the last (the 20-vblank timer), the character pools,
@@ -617,6 +701,7 @@ void Engine::live_frame(I vblanks) {
     vblank += vblanks;
     m.w32(G_VBL_TIMER, m.s32(G_VBL_TIMER) + vblanks);
     vblank_prev = vblank;
+    stream_end();
     if (gheap) gheap->frame();
     char_pool_update(*this);
     tick(true);
@@ -633,7 +718,7 @@ void Engine::run(I to, const std::function<void(const StateLine&)>& line) {
         vblank_prev = vb;
         vblank = vb;
         world.at(vb);
-        if (gheap) gheap->frame();
+        if (gheap) stream_end(), gheap->frame();
         char_pool_update(*this);
         // a paused frame (no tick due): the timer reset, then the draw and the idle work all
         // the same (game_frame, objects.md)
