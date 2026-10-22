@@ -679,6 +679,21 @@ if the player is within 3000 (d: max + (the two others)/4).
 thinks +(8, 3, 1) and +175 (to (144, 64, 18), 1550), then -(4, 3, 1) and -75 per tick until the
 explosion ends (watched: 150, 325, 500, ... 1550, then 1475, 1400 ...).
 
+**How it lights the world** (the world's face drawer `0x80010B60` and its vertex step
+`func_800114B0`; the subdivided faces' `func_80012FF8` / `func_800135F8` do the same): the
+light's centre is the source entity's integer position (`+0x20E..`, `g_last_explosion`: an
+explosion, or a rocket in flight, `rocket_spawn`: (180, 160, 16), radius 500); faces whose
+bounding box overlaps the cube centre ± radius (`func_80011AB0`) get, at each vertex within the
+radius (d² = the squared distance in whole units, `sqr`), its colour + light × (1 − d²/r²)
+(`0x10000 − (d² << 8) / (r² >> 8)`, then `× light >> 16`), each component clamped at 255, for that
+drawn frame only. **Scorches**: while `0x800AA160` is set (by `explosion_spawn`; `draw_level`
+clears it after the frame), the same faces' colours are darkened in the colour table itself, for
+good: colour − colour × ((1 − d²/r²) / 8), at least 1, with the spawn's radius 150: a lasting dark
+patch round every explosion. (Models aren't lit by it: only the TSP faces' drawer reads it.) Drawn
+natively by the world shader (`engine/godot/project/world.gdshaderinc`) from
+`present/effects.gd`; a recomp frame of a 1:3 grenade and the native one side by side:
+`build/gdp/cmp_explosion_light.png`.
+
 ## Replays
 
 A headless replay (`--hidden` without a display: "SDL init failed ... running headless")

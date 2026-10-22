@@ -11,7 +11,9 @@ extends Node
 ## Without the engine (a walk) there is no voice table: only the music plays, from the start.
 
 const VOICES := 24  # voice 0 is the music's
-const S := 168  # the effects setting (g_params+0xA = 4 x 42, the default)
+const Settings := preload("res://shell/settings.gd")
+# The music voice's volume per Background setting 0..6 (music_voice_on, audio.md, Settings).
+const MUSIC_LEVELS := [0, 0x800, 0x1000, 0x2000, 0x3000, 0x3800, 0x3FFF]
 const FALLOFF := [6912, 7936, 8960, 9984]  # R per distance class
 const ANGLE := TAU / 4096.0
 
@@ -44,13 +46,24 @@ func setup(present) -> void:
 			music = AudioStreamPlayer.new()
 			music.stream = stream
 			# the music voice at the default setting (4: 0x3000 of 0x3FFF)
-			music.volume_db = linear_to_db(0x3000 / float(0x3FFF))
+			music.volume_db = music_db()
 			add_child(music)
 			if not p.state.has("music"):
 				music.play()
 
 
+## The effects setting S: Sound Effects 0..6 x 42 (g_params+0xA; 168 at the default 4).
+func effects_s() -> int:
+	return clampi(Settings.effects_volume, 0, 6) * 42
+
+
+func music_db() -> float:
+	return linear_to_db(maxf(MUSIC_LEVELS[clampi(Settings.music_volume, 0, 6)] / float(0x3FFF), 0.00001))
+
+
 func on_tick() -> void:
+	if music:
+		music.volume_db = music_db()
 	if music and not music.playing and p.state.get("music", false):
 		music.play()
 	if not p.game.is_engine_running():
@@ -85,7 +98,7 @@ func place(i: int, v: Dictionary) -> void:
 	var left: float
 	var right: float
 	if int(v.flags) & 1:
-		var side := float(((int(v.volume) >> 10) * S) >> 8)
+		var side := float(((int(v.volume) >> 10) * effects_s()) >> 8)
 		left = side
 		right = side
 	else:
@@ -118,7 +131,7 @@ func pan(pos: Vector3, cls: int) -> Vector2i:
 	var d: int = a[2] + (a[0] + a[1]) / 4
 	var r: int = FALLOFF[clampi(cls, 0, 3)]
 	var g := maxi(0, 4096 - (maxi(d, 256) - 256) * 4096 / r)
-	g = (g * S) >> 7
+	g = (g * effects_s()) >> 7
 	if z > 400:
 		x = x / (absi(z) - 400)
 	var ax := absi(x)

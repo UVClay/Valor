@@ -2,6 +2,9 @@
 # Keep sorted by address. Details live in the docs next to this file.
 
 # --- SLUS_009.74 (exe) ---
+80010B60 tsp_faces_draw              # the world's faces (formats.md, Faces), with the explosion light
+800114B0 face_lights                 # the explosion light added to a face's vertex colours, scorches (objects.md)
+80011AB0 light_box_overlap          # a face's box against the light's cube
 80013AE4 skeleton_walk              # (bone, parent matrix, out table, inst): vertices + joints (inst+0x94)
 80013E58 quat_matrix                # quaternion -> GTE rotation (transposed form)
 8001552C rand
@@ -347,17 +350,19 @@
 8006DD54 flash_draw                 # the muzzle flash for one drawn frame (hud.md)
 8006E004 sprite_template            # a billboard's template: VRAM place, size, CLUT, semi, centred
 8006E058 billboard_draw             # a camera-facing square along the view rows (hud.md, Billboards)
-8006F7BC impact_effect_draw
+8006F7BC impact_effect_draw         # POLY_GT3 slivers from start to end point (combat.md)
+8006FBF0 burst_draw                 # the explosion burst's POLY_GT4 streaks
 800701DC impact_effect_think        # life countdown, colours halved over the last 3 ticks
 800702E0 impact_effect_spawn        # type 0x23: up to 8 particles at a hit point
+800708F0 burst_spawn                # type 0x23: 10 streaks of two kinds
 80070DEC explosion_burst
 80070F24 explosion_draw             # fireballs and puffs as billboards, coloured by size (objects.md)
 800712A0 particles_update
 800715D4 explosion_think
 800719C0 explosion_spawn            # type 0x31: fireball hit parts, camera shake, noise
-80072310 enemy_puffs_draw
-80072704 enemy_puffs_update         # weapon block +0x3E8: 5 rising, fading puffs (smoke, inferred)
-800729C0 enemy_drops_draw
+80072310 enemy_puffs_draw           # the hit puffs (blood off): camera-facing quads (combat.md, Hit reactions)
+80072704 enemy_puffs_update         # object +0x3E8: 5 hit puffs, fading (combat.md, Hit reactions)
+800729C0 enemy_drops_draw           # the hit drops (blood): textured quads (combat.md, Hit reactions)
 800730D4 enemy_drops_update         # weapon block +0x49C: falling particles that lie on the floor (blood, inferred)
 800732F8 particles_draw             # tumbling quads (combat.md, Drawing particles)
 80073BA8 particles_spawn            # type 0x31 particle entity, no collision

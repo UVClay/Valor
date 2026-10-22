@@ -9,8 +9,10 @@ extends Control
 ## shape), the pickup messages (from health and ammo changes), the level-start and death fades.
 ## Tab (or --show-objectives) shows the objectives (the pause menu's list: a box, ticked when done).
 ## The sniper scope: the game's scope model, as scope_draw draws it (draw_scope).
-## Stubbed until the core reports them: the hit wedges (the hit's direction), level messages
-## (show_text), the crosshair's movement (drawn at its rest point 256, 131).
+## From the engine when it keeps them (get_state's texts and hit_wedges): the text list (level
+## messages, pickups, the ammo digits) and the hit wedges; else the pickup messages and the
+## digits from the state's changes. Stubbed: the crosshair's movement (drawn at its rest point
+## 256, 131).
 ## --crosshair=SIZE adds an always-on crosshair on the aim line, hidden in aim mode.
 
 const FONT_TPAGE := 0xF
@@ -33,6 +35,7 @@ var crosshair := 4
 var texts := []  # {text, x, y, col: Array[3] 0..255, semi, life, hold, fade_in, step: Array[3]}
 var add_layer: Control  # additive texts
 var dead_since := -1
+var hit_wedges := PackedInt32Array()  # right, left, front, behind (hud.md, Hit wedges)
 var scope := {}  # the scope model's faces (draw_scope)
 
 
@@ -100,7 +103,14 @@ func text_add(text: String, x: int, y: int, col: Array, semi: bool, life: int, h
 
 
 func on_tick() -> void:
+	if p.state.has("texts"):
+		engine_texts()
+		hit_wedges = p.state.get("hit_wedges", PackedInt32Array())
+		if p.args.has("fx-log") and (hit_wedges[0] > 0 or hit_wedges[1] > 0 or hit_wedges[2] > 0 or hit_wedges[3] > 0):
+			print("Valor hud: tick %d wedges %s" % [int(p.state.get("tick", 0)), hit_wedges])
 	for e in p.events:
+		if p.state.has("texts"):
+			break  # the engine keeps the text list itself
 		match e.kind:
 			"health":
 				# health_pickup_touch: at (10, 70), from 0 up by (10, 8, 4) for 11 ticks, 40 ticks
@@ -149,10 +159,25 @@ func draw_game_text(ci: CanvasItem, text: String, origin: Vector2, col: Array) -
 		x += 12
 
 
+## The engine's text list (hud.md, Messages: get_state's texts, as texts_draw draws them): the
+## level messages, pickups and the ammo digits, at their places in the 512 x 240 frame (x 256 and
+## over keep to the right edge on a wide screen, the rest to the 4:3 middle).
+func engine_texts() -> void:
+	texts = []
+	for t in p.state.texts:
+		var c: Color = t.color
+		texts.append({"text": t.text, "x": int(t.x), "y": int(t.y), "col": [c.r8, c.g8, c.b8], "semi": bool(t.additive),
+			"life": int(t.life), "hold": -2, "fade_in": 0, "step": [0, 0, 0], "id": 0})
+
+
+func text_at(t: Dictionary) -> Vector2:
+	return at_right(t.x, t.y) if int(t.x) >= 256 else at_middle(t.x, t.y)
+
+
 func _draw_additive() -> void:
 	for t in texts:
 		if t.semi:
-			draw_game_text(add_layer, t.text, at_middle(t.x, t.y), t.col)
+			draw_game_text(add_layer, t.text, text_at(t), t.col)
 
 
 # ---------------------------------------------------------------- drawing
@@ -167,18 +192,21 @@ func _draw() -> void:
 		draw_scope()
 	draw_health_ring(health)
 	draw_compass()
+	draw_hit_wedges()
 	var w := int(s.get("weapon", -1))
 	if w >= 0 and w != 7:
-		# ammo_hud: the clip right-aligned in 2 at (380, 18), the reserve in 3 at (453, 18), grey
-		draw_game_text(self, "%2d" % int(s.clip), at_right(380, 18), [100, 100, 100])
-		draw_game_text(self, "%3d" % int(s.reserve), at_right(453, 18), [100, 100, 100])
+		# ammo_hud: the clip right-aligned in 2 at (380, 18), the reserve in 3 at (453, 18), grey (in
+		# the engine's text list when it keeps one)
+		if not s.has("texts"):
+			draw_game_text(self, "%2d" % int(s.clip), at_right(380, 18), [100, 100, 100])
+			draw_game_text(self, "%3d" % int(s.reserve), at_right(453, 18), [100, 100, 100])
 		var slot := int(s.get("slot", 0))
 		var ic: ImageTexture = icon_tex[slot if slot >= 0 and slot < 4 else 0]
 		var a := at_right(415, 15)
 		draw_texture_rect(ic, Rect2(a, at_right(447, 35) - a), false)
 	for t in texts:
 		if not t.semi:
-			draw_game_text(self, t.text, at_middle(t.x, t.y), t.col)
+			draw_game_text(self, t.text, text_at(t), t.col)
 	var aiming: bool = s.get("aiming", false)
 	if scoped:
 		pass
@@ -305,3 +333,22 @@ func draw_objectives(objs: Array) -> void:
 	for o in objs:
 		draw_game_text(self, ("# " if o.done else "$ ") + String(o.text), at_middle(80, y), [128, 128, 128])
 		y += 14
+
+
+## The hit wedges (hud.md): a dark red (64, 0, 0) quarter of the compass to radius 20 (x doubled)
+## for each timer running (front the top quarter, right 45..135 degrees, behind the bottom, left
+## the left), opaque from 40 down to 25, semi-transparent below, drawn over the compass.
+func draw_hit_wedges() -> void:
+	if hit_wedges.size() < 4:
+		return
+	var centre := [90.0, 270.0, 0.0, 180.0]  # right, left, front, behind: degrees clockwise from up
+	for i in 4:
+		var t := hit_wedges[i]
+		if t <= 0:
+			continue
+		var col := Color8(64, 0, 0, 255 if t >= 25 else 128)
+		var pts := PackedVector2Array([at_left(60, 44)])
+		for k in 9:
+			var a := deg_to_rad(centre[i] - 45.0 + k * 90.0 / 8.0)
+			pts.append(at_left(60 + 2 * 20 * sin(a), 44 - 20 * cos(a)))
+		draw_colored_polygon(pts, col)

@@ -9,7 +9,8 @@ extends Node
 ##
 ## Without the engine (a walk through the level) nothing animates it: the level's first weapon is
 ## shown, the left mouse button plays the firing animation and E the reload, the rest idles or
-## sways while walking (the seven animations' meanings from animation.md).
+## sways while walking (the seven animations' meanings from animation.md); the Use binding
+## (valor_use, E by default) reloads.
 ##
 ## Hidden while zoomed (hud.md, Sniper scope: drawn only at projection distance 400); the zoom
 ## also narrows the main camera's view (the projection distance, movement.md).
@@ -44,7 +45,8 @@ var flash_tex: ImageTexture
 var flash_angle := 0.0
 var flash_ticks := 0
 var flash_local := Vector3.ZERO  # in the weapon model's space
-var base_fov := 0.0
+var base_fov := 0.0  # main.cam's field of view unzoomed
+var zoomed := false
 var body_prev := Vector2.ZERO  # body pitch, Godot yaw (radians), last tick and this one
 var body_cur := Vector2.ZERO
 
@@ -143,7 +145,7 @@ func local_step() -> void:
 	if fire and anim != FIRE and anim != RELOAD:
 		anim = FIRE
 		frame = 0
-	elif Input.is_physical_key_pressed(KEY_E) and anim != RELOAD and anim != FIRE:
+	elif (Input.is_action_pressed("valor_use") if InputMap.has_action("valor_use") else Input.is_physical_key_pressed(KEY_E)) and anim != RELOAD and anim != FIRE:
 		anim = RELOAD
 		frame = 0
 	elif frame >= n:
@@ -198,14 +200,18 @@ func _draw_flash() -> void:
 func on_frame() -> void:
 	var main_cam: Camera3D = p.main.cam
 	viewport.size = p.main.get_viewport().get_visible_rect().size
-	if base_fov == 0.0:
-		base_fov = main_cam.fov
-	# The zoom: the projection distance (400 normal); the weapon is drawn only at 400.
+	# The zoom: the projection distance (400 normal); the weapon is drawn only at 400. Unzoomed the
+	# view's field is main.gd's (the options' FOV): read it then, and narrow from it while zoomed.
 	var zoom := float(p.state.get("zoom", 400))
 	mesh.visible = zoom == 400.0
-	var fov := rad_to_deg(2.0 * atan(tan(deg_to_rad(base_fov) / 2.0) * 400.0 / maxf(zoom, 1.0)))
-	if p.state.has("zoom"):
-		main_cam.fov = fov
+	if zoom == 400.0:
+		if zoomed:
+			main_cam.fov = base_fov
+			zoomed = false
+		base_fov = main_cam.fov
+	elif p.state.has("zoom"):
+		zoomed = true
+		main_cam.fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(base_fov) / 2.0) * 400.0 / maxf(zoom, 1.0)))
 	cam.keep_aspect = main_cam.keep_aspect
 	cam.fov = base_fov
 	flash.queue_redraw()
