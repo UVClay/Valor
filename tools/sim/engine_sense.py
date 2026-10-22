@@ -93,11 +93,9 @@ def model_bone_point(eng, e, bone, off=None):
 
 
 def vector_normal_ss(v):
-    """VectorNormalSS: the vector scaled to length 4096 (rounded)."""
-    n = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
-    if n == 0:
-        return [0, 0, 0]
-    return [int(round(x * 4096 / n)) for x in v]
+    """VectorNormalSS (0x80016A70): the vector scaled to length 4096 by the GTE's table method."""
+    import engine_gte as gtm
+    return [s16(x) for x in gtm.vector_normal(v)]
 
 
 def sight_test(eng, e, t, rng, blockers=True):
