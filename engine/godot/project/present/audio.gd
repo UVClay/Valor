@@ -52,6 +52,25 @@ func setup(present) -> void:
 				music.play()
 
 
+## What this layer made goes when it does (a level change rebuilds it, and the game's exit): the
+## voices stopped, the music stopped and freed, the buses removed. (A stream still playing when the
+## game quits keeps its playback until an audio mix that never comes: a known leak at exit.)
+func _exit_tree() -> void:
+	for v in players:
+		v.stop()
+		v.stream = null
+	if music:
+		music.stop()
+		music.stream = null
+		remove_child(music)
+		music.free()
+		music = null
+	for i in VOICES:
+		var b := AudioServer.get_bus_index("Voice%d" % i)
+		if b >= 0:
+			AudioServer.remove_bus(b)
+
+
 ## The effects setting S: Sound Effects 0..6 x 42 (g_params+0xA; 168 at the default 4).
 func effects_s() -> int:
 	return clampi(Settings.effects_volume, 0, 6) * 42
