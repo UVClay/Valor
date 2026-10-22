@@ -331,15 +331,55 @@ def attachments_op(eng, e, ops, arg):
         if ops & 0x04000000:
             m.w32(B, (f | 1) & ~0x20)
             continue
+        from engine_grenade import grenade_spawn
         if ops & 0x20000000 and k == 2:
             if f & 1:
-                eng.note("grenade drop (grenade_spawn) not implemented")
-                m.w32(B, (f | 0x20) & ~1)
+                # dropped: falls from the hand, fuse 90
+                bone = m.s32(B + 8)
+                g = grenade_spawn(eng, e, 0x61282777, bone, bone, 0x5A, 0, None, 0, 0)
+                if g:
+                    m.w32(g + 0x21C, s32(0xFFFF0000))
+                    m.w32(g + 0x14, 0x08000451)
+                m.w32(B, (m.u32(B) | 0x20) & ~1)
             continue
-        if ops & 0x03000000:
+        if ops & 0x02000000:
             if f & 1 and m_hash(eng, B) == 0x61282777:
-                eng.note("grenade throw/lob (grenade_spawn) not implemented")
-                m.w32(B, (f | 0x20) & ~1)
+                # thrown at the player's middle: speed 30 + (2D distance - 700) / 16 (to 100),
+                # +5 from 1301 on; upward 30 (35 from 2001)
+                sol = m.u32(G_SOLDIER)
+                tgt = (m.s16(sol + 0x20E), s16(s32(m.s32(sol + 0x210) - (m.s32(sol + 0x2D4) >> 1)) >> 16),
+                       m.s16(sol + 0x216))
+                from engine_objects import dist2d_approx
+                d = max(dist2d_approx(m, e, sol) - 0x2BC, 0)
+                sp = min((d >> 4) + 0x1E, 0x64)
+                if d >= 0x515:
+                    sp += 5
+                bone = m.s32(B + 8)
+                g = grenade_spawn(eng, e, 0x61282777, bone, bone, 0x5A, sp, tgt, 0, 0)
+                if g:
+                    m.w32(g + 0x14, 0x08000451)
+                    m.w32(g + 0x21C, s32(0xFFDD0000 if d >= 0x7D1 else 0xFFE20000))
+                m.w32(B, (m.u32(B) | 0x20) & ~1)
+            continue
+        if ops & 0x01000000:
+            if f & 1 and m_hash(eng, B) == 0x61282777:
+                # lobbed toward the player: speed 50 + (2D distance - 700) / 16 (to 150), the yaw
+                # of the normalised horizontal offset
+                sol = m.u32(G_SOLDIER)
+                from engine_sense import vector_normal_ss
+                import combat_sim as cs
+                v = vector_normal_ss([s16(m.s16(sol + 0x20E) - m.s16(e + 0x20E)), 0,
+                                      s16(m.s16(sol + 0x216) - m.s16(e + 0x216))])
+                yaw = cs.ratan2(v[0], v[2])
+                from engine_objects import dist2d_approx
+                d = max(dist2d_approx(m, e, sol) - 0x2BC, 0)
+                sp = min((d >> 4) + 0x32, 0x96)
+                bone = m.s32(B + 8)
+                g = grenade_spawn(eng, e, 0x61282777, bone, bone, 0x5A, sp, None, 0, 0)
+                if g:
+                    m.w32(g + 0x22C, s32(yaw << 16))
+                    m.w32(g + 0x14, 0x08000451)
+                m.w32(B, (m.u32(B) | 0x20) & ~1)
             continue
         if not f & 0x20:
             if m.s32(B + 8) == 0:

@@ -367,7 +367,14 @@ ticks, then for 37 to end; then the fire loop 40, wait 50, → 209. The bits rea
 grenade, release, done; 0x20000000 (36) drop it; 0x1000000 the release from cover (98/100)
 (the hook `0x800523E4` makes the grenade: v1A's bits pick attachment 2, the grenade, and the
 action: 0x2000000 throw at the player, 0x1000000 lob from cover, 0x20000000 drop;
-enemy_types.md, Resolved items). Hit from the front while holding it
+enemy_types.md, Resolved items). Each makes the grenade with `grenade_spawn(soldier, model
+0x61282777, the attachment's bone (+8) for both points, fuse 90, speed, target)`, collide mask
+0x08000451, and hides the attachment (+0 | 0x20, & ~1); only an attachment shown (+0 bit 0)
+and, for throw and lob, holding that model, counts. With d = max(0, 2D distance to the player −
+700) (`dist2d_approx`): **throw**: speed 30 + d/16 (at most 100), + 5 when d ≥ 1301, aimed at
+the player's middle (x, y − eye/2, z), upward speed `+0x21C` −30 (−35 when d ≥ 2001); **lob**:
+speed 50 + d/16 (at most 150), no target, yaw = ratan2 of the normalised horizontal offset to
+the player; **drop** (attachment 2 only): speed 0, `+0x21C` = −1. Hit from the front while holding it
 (35:69): dying, or in part 0, 2 or 6 → drop it (36) and 12 (fleeing it via 9 → 116); else flinch
 (anim 31) and throw anyway. From behind (35:96) the health test is inverted (`> 10`): a healthy
 soldier drops it, a dying one throws (kept as found).
