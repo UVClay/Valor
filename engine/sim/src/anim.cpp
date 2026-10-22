@@ -615,6 +615,8 @@ void draw_pass(Engine& eng) {
         // the held model's brightness (+0x6C) toward 0x40 with flags B 0x400, else back to 0x80,
         // and its muzzle flash (inv +0x1D4)
         if (m.u32(e + 0x370) == 0x8007B8F4) player_draw_state(m, e);
+        // the mounted gun's draw (0x8005D8B0): its flash every drawing
+        if (m.u32(e + 0x370) == 0x8005D8B0) flash_countdown(m, U(m.u32(e + 0x388)));
         if (d && (*d)[2] != m.s32(e + 0x290) && (fa & 0x8000)) eng.note("out-of-sight counter differs from the original's");
         if ((fa & 0x8000) && m.s32(e + 0x290) <= 0 && m.u32(e + 0x298)) {
             auto en = eng.ents.find(e);

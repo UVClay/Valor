@@ -83,9 +83,17 @@ U find_type_group(Mem& m, I typ, I grp) {
 V3 model_bone_point(Engine& eng, U e, I bone, const V3* off) {
     Mem& m = eng.m;
     U inst = U(m.u32(e + 0x100));
-    if (!inst || !m.u32(inst + 0x84)) return {S16(m.s32(e + 0x20C) >> 16), S16(m.s32(e + 0x210) >> 16), S16(m.s32(e + 0x214) >> 16)};
-    U jp = U(m.u32(inst + 0x94));
-    V3 j = {m.s16(jp + 8 * bone), m.s16(jp + 8 * bone + 2), m.s16(jp + 8 * bone + 4)};
+    if (!inst) return {S16(m.s32(e + 0x20C) >> 16), S16(m.s32(e + 0x210) >> 16), S16(m.s32(e + 0x214) >> 16)};
+    V3 j;
+    if (!m.u32(inst + 0x84)) {
+        // an unanimated model: the index is a vertex of the instance's table (+0x2C), no offset
+        U vt = U(m.u32(inst + 0x2C));
+        j = {m.s16(vt + 8 * bone), m.s16(vt + 8 * bone + 2), m.s16(vt + 8 * bone + 4)};
+        off = nullptr;
+    } else {
+        U jp = U(m.u32(inst + 0x94));
+        j = {m.s16(jp + 8 * bone), m.s16(jp + 8 * bone + 2), m.s16(jp + 8 * bone + 4)};
+    }
     if (off && ((*off)[0] || (*off)[1] || (*off)[2])) {
         U qp = U(m.u32(inst + 0x88));
         if (!qp) qp = U(m.u32(inst + 0x8C));
@@ -405,9 +413,20 @@ I world_value(VM& vm, I op, I) {
         if (fact == 0x11) return hearing(eng, e);
         if (fact == 0xC) return tgt ? iabs(angle_to(eng, e, tgt)) : 0;
         if (fact == 0xF) return aimed_at(eng, e);
+        // no target: the fields of "entity" 0, low RAM (op_query does not check)
+        if (!tgt && (fact == 1 || (3 <= fact && fact <= 6))) {
+            static const U off[7] = {0, 0xF4, 0, 0x2D4, 0x290, 0x44, 0x48};
+            return m.s32(off[fact]);
+        }
+        if (!tgt && fact == 9) {
+            I d[3];
+            for (U k = 0; k < 3; k++) d[k] = S16(S32(m.s32(e + 0x20C + 4 * k) - m.s32(0x20C + 4 * k)) >> 16);
+            return dist_approx(d[0], d[1], d[2]);
+        }
         eng.note("query fact " + std::to_string(fact) + " not implemented");
         return 0;
     }
+    if (op == 0x2E) return 0;  // query fact 8 (the target itself) with none found
     eng.note("script world read op " + std::to_string(op) + " not implemented");
     return 0;
 }

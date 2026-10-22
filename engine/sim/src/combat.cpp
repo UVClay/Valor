@@ -662,10 +662,8 @@ void enemy_weapon(Engine& eng, U e) {
         m.w32(p + sp, E * 2 == 0 ? S32(a - (E << 16)) : S32(a + ((((rd() * 2 * E) >> 15) - E) << 16)));
     };
     auto shoot = [&](const V3* target) -> U {
-        if (m.s32(w + 4) == 0x1773) {
-            eng.note("enemy rocket (rocket_spawn) not implemented");
-            return 0;
-        }
+        if (m.s32(w + 4) == 0x1773)  // a Panzerfaust
+            return rocket_spawn(eng, e, m.s32(w + 8), m.s32(w + 0xC), target, 0, 0, 0, 0x13F1, 0x800, 0x10000, 0x08000451);
         U p = bullet_spawn(eng, e, m.s32(w + 8), m.s32(w + 0xC), target, obj + 0x1C, 0, 0, m.u8(tp + 0x64) << 16, 0, 0, 0x13F4, 0x800,
                            0, 0x08000401);
         if (p) pull_back_enemy(m, p, e);

@@ -156,6 +156,7 @@ I bullet_touch(Engine& eng, U e, U other);
 I projectile_hit_part(Engine& eng, U e, I part, U other, I opart);
 void rumble_set(Mem& m, I port, I a, I b, I c, I d);
 void gun_points(Engine& eng, U owner, I bone_a, I bone_b, U attach, U off_a, U off_b, V3& pa, V3& pb);
+U rocket_spawn(Engine& eng, U owner, I bone_a, I bone_b, const V3* target, U off_a, U off_b, I aimed, I etype, I fa, I fb, I mask);
 U projectile_create(Engine& eng, U owner, I etype, I model, I speed, I bone_a, I bone_b, const V3* a6, I a7, I dmg, I life, I extra,
                     U a11, U off_a, U off_b, I aimed, I fa, I fb, I mask);
 void parts_box(Mem& m, U e);
@@ -169,6 +170,14 @@ void ammo_hud_update(Engine& eng, U e);           // 0x800467EC: the clip and re
 void ammo_hud_init(Engine& eng, U e);             // 0x80046874: the icon quad, the two digit texts
 void hit_indicator(Engine& eng, U victim, U attacker);  // 0x80060FC4
 void hit_wedges(Engine& eng);                     // 0x80060B04, every drawn frame
+
+// The mounted gun (mounted.cpp; engine_mounted.py).
+constexpr U MOUNTED_GUN_THINK = 0x8005DA24;
+constexpr U MOUNTED_GUN_TOUCH = 0x8005E288;
+struct Record;
+U mounted_gun_spawn(Engine& eng, Record& rec, U model);
+void mounted_gun_think(Engine& eng, U e);
+I mounted_gun_touch(Engine& eng, U e, U o);
 
 // The alarm (alarm.cpp; engine_alarm.py).
 constexpr U ALARM_THINK = 0x8005EDF8;

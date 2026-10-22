@@ -49,6 +49,7 @@ add_library(valor_sim STATIC
     sim/src/grenade.cpp
     sim/src/texts.cpp
     sim/src/alarm.cpp
+    sim/src/mounted.cpp
     sim/src/views.cpp
     sim/src/combat.cpp
     sim/src/sense.cpp

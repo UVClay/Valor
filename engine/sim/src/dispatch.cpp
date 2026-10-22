@@ -25,6 +25,7 @@ bool run_think(Engine& eng, U fn, U e) {
         case EXPLOSION_THINK: explosion_think(eng, e); return true;
         case BURST_THINK: burst_think(eng, e); return true;
         case ALARM_THINK: alarm_think(eng, e); return true;
+        case MOUNTED_GUN_THINK: mounted_gun_think(eng, e); return true;
         default: return false;
     }
 }
@@ -38,6 +39,7 @@ bool run_touch(Engine& eng, U fn, U e, U o, I& r) {
         case 0x8007C030: r = player_touch(eng, e, o); return true;
         case BULLET_TOUCH: r = bullet_touch(eng, e, o); return true;
         case 0x8005D32C: r = destructible_touch(eng, e, o); return true;
+        case MOUNTED_GUN_TOUCH: r = mounted_gun_touch(eng, e, o); return true;
         case 0x800476C4: r = sphere_vs_object_planes(eng, e, o) != 0; return true;  // the death camera's
         default: return false;
     }

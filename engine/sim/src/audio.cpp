@@ -4,6 +4,8 @@
 
 namespace valor::sim {
 
+constexpr U G_KEYON = 0x80090FC8;  // g_keyon_pending: the key-ons queued for sound_update
+
 namespace {
 constexpr U G_VOICES = 0x8009115C;
 constexpr U G_ENABLED = 0x800910D0;
@@ -13,6 +15,7 @@ constexpr U G_PITCH = 0x8009163C;     // base pitch per sound and slot
 
 void Audio::adopt(I vb) {
     Mem& m = eng_.m;
+    keyon_ = m.u32(G_KEYON);  // the key-ons still queued (sounds started in the seed's frame)
     for (int v = 1; v < 24; v++) {
         if (m.u8(G_ENABLED + v) & 1) {
             U a = G_VOICES + 0x34 * v;
@@ -88,6 +91,7 @@ void Audio::start(I bank, I sound, int v, I pitch, I pspread) {
     if (sp) p += (lo >> 16) - pmod(eng_.rand.draw(FN("sound")), sp);
     p &= 0xFFFF;
     keyon_ |= I(1) << v;
+    m.w32(G_KEYON, keyon_);
     m.w8(G_ENABLED + v, 1);
     I samples = size * 8 / 16 * 28;
     double dur = double(samples) * 60.0 / (44100.0 * double(imax(p, 1)) / 4096.0);
@@ -135,6 +139,7 @@ void Audio::update() {
             }
         }
         keyon_ = 0;
+        m.w32(G_KEYON, 0);
     }
     for (int v = 1; v < 24; v++) {
         U a = G_VOICES + 0x34 * v;

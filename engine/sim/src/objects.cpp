@@ -91,6 +91,7 @@ U door_spawn(Engine& eng, Record& rec, U model) {
 
 U spawn_by_type(Engine& eng, I t, U model, Record& rec) {
     Mem& m = eng.m;
+    if (t == 0x1772) return mounted_gun_spawn(eng, rec, model);
     if (t == 0x1770 || t == 0x1778) {
         U e = eng.entity_create(t, 0, model, 0, -1, 0, 6, false, 0x157);
         if (!e) return 0;

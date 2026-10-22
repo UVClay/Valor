@@ -3,6 +3,7 @@
 #include "valor/sim/audio.h"
 #include "valor/sim/engine.h"
 #include "valor/sim/objects.h"
+#include "valor/sim/scripts.h"
 #include "valor/sim/simgte.h"
 
 namespace valor::sim {
@@ -553,7 +554,7 @@ void fire_gun(Engine& eng, U e, U inv, I fire) {
         m.w32(inv + 0x50, imin(r, 0x10000));
         rumble = 3;
     } else if (w == 2) {
-        eng.note("rocket_spawn not implemented");
+        shot = rocket_spawn(eng, e, bone_a, bone_b, nullptr, off_a, off_b, aimed, 0x13F1, 0x2000, 0, mask);
         rumble = 7;
     } else if (w == 4) {
         for (int i = 0; i < 6; i++) {
@@ -588,6 +589,36 @@ void fire_gun(Engine& eng, U e, U inv, I fire) {
     m.w32(inv + 0x44, d);
     m.w32(inv + 0x48, iabs(d));
     ammo_hud_update(eng, e);
+}
+
+// rocket_spawn (0x80045CA0): projectile_create(type, the model 0x9EED43D5, speed 200, the two
+// points, the target, damage 30.0, life 30, object extra 0xB64: its smoke trail); object +0 = the
+// trail (object +0x90, drawing: 0x8006E8D8 / 0x80070704 set it up), bullet_touch, flags A |
+// 0x04000000, B | 4, behaviour 0x130 (big bullets cheat on the player's: | 0xA40); its model
+// scripts (script_start 0, channel 1); the light (180, 160, 16), radius 500, and it is the latest
+// explosion (0x8009D650), lighting the world while it flies (objects.md).
+U rocket_spawn(Engine& eng, U owner, I bone_a, I bone_b, const V3* target, U off_a, U off_b, I aimed, I etype, I fa, I fb, I mask) {
+    Mem& m = eng.m;
+    U model = model_by_hash(eng, 0x9EED43D5);
+    U p = projectile_create(eng, owner, etype, model ? I(model) : -1, 0xC80000, bone_a, bone_b, target, 0x20, 0x1E0000, 0x1E,
+                            0xB64, 0, off_a, off_b, aimed, fa, fb, mask);
+    if (!p) return 0;
+    U o = U(m.u32(p + 0x388));
+    m.w32(o, o + 0x90);
+    m.w32(p + 0x37C, BULLET_TOUCH);
+    m.w32(p + 0xC, m.u32(p + 0xC) | 0x04000000);
+    m.w32(p + 0x10, m.u32(p + 0x10) | 4);
+    m.w16(o + 0x38, 0x130);
+    if ((m.u32(owner + 0xC) & 1) && (m.u32(G_CHEAT_FLAGS) & 0x20)) m.w16(o + 0x38, m.u16(o + 0x38) | 0xA40);
+    VM(eng, p).script_start(0, 1, 0);
+    constexpr U G_LIGHT = 0x800AA188;  // r, g, b, +4 radius, +8 radius^2
+    m.w8(G_LIGHT, 0xB4);
+    m.w8(G_LIGHT + 1, 0xA0);
+    m.w8(G_LIGHT + 2, 0x10);
+    m.w16(G_LIGHT + 4, 0x1F4);
+    m.w32(G_LIGHT + 8, 0x3D090);
+    m.w32(0x8009D650, p);
+    return p;
 }
 
 U bullet_spawn(Engine& eng, U owner, I bone_a, I bone_b, const V3* a3, U a4, U off_a, U off_b, I dmg, I spread, I aimed, I etype,
