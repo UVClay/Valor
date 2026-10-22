@@ -72,9 +72,11 @@ the count (World animations), and the alarm entity (`0x8005EDF8`) times itself w
 `game_frame` (`0x800616E4`), called by the level's main loop (`level_entry` `0x80064374` →
 `0x800640B4` → `0x800616D4`), once per drawn frame:
 
-1. Streaming (inferred from the calls): if no CD job is running, load a pending TSP chunk
-   (`0x8008C798`); copy streamed sound data (`SpuRead`).
-2. `0x8008A580`, `0x8008EAC8` (sound/streaming upkeep).
+1. Streaming: if no CD job is running and a chunk read is under way, its end (`0x8008C798`:
+   `tsp_parse`, the slot's instance, `g_chunk_loading` = -1); copy streamed music (`SpuRead`).
+2. `0x8008A580`: the deferred frees (`0x8008A4F8`'s list at `0x8009F888`: each entry's count
+   down, the block freed at 0; destructors free entity blocks and pose buffers two frames
+   late); `0x8008EAC8` (`char_pool_update`, the character slots' and pose buffers' countdowns).
 3. `input_poll` (`0x8004DE3C`).
 4. Paused (`g_paused`, `0x8009A5E0`): only `input_poll` once per tick due; the 1/3-second
    timer below is set to 0. No entity moves, but the frame is still drawn and waited for
