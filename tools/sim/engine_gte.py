@@ -74,10 +74,36 @@ def divide(h, sz3):
     return min(r, 0x1FFFF)
 
 
-# The recording's projection (settings.ini: aspect 21:9, fov 110; runtime defaults world_h 400,
-# base tan 120/400): every RTPS result scaled about the screen centre by (kx, ky).
-ASPECT, FOV, BASE_TAN = 21 / 9, 110.0, 120.0 / 400.0
+# The recording's projection (the runtime's "gte: projection aspect A, world FOV F deg horizontal"
+# line in the input log; the session: aspect 21:9, fov 110; runtime defaults world_h 400, base tan
+# 120/400): every RTPS result scaled about the screen centre by (kx, ky). 4:3 at the original FOV
+# is no scaling.
+def _projection():
+    import os
+    import re
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+    log = os.path.join(os.environ.get("ENG_INPUTS") or os.path.join(root, "build", "engine"), "orig.log")
+    try:
+        with open(log, errors="replace") as fh:
+            for _ in range(200):
+                mm = re.match(r"gte: projection aspect ([0-9.]+), world FOV ([0-9.]+) deg", fh.readline())
+                if mm:
+                    # the log rounds: the settings' ratios exactly
+                    a = float(mm[1])
+                    for r in (4 / 3, 16 / 9, 21 / 9):
+                        if abs(a - r) < 0.001:
+                            a = r
+                    return a, float(mm[2])
+    except OSError:
+        pass
+    return 21 / 9, 110.0
+
+
+ASPECT, FOV = _projection()
+BASE_TAN = 120.0 / 400.0
 _K = BASE_TAN / (math.tan(FOV * math.pi / 360.0) / ASPECT)
+if abs(_K - 1) < 0.001:
+    _K = 1.0            # the original FOV (fov = 0), printed rounded
 KX, KY = _K * ((4.0 / 3.0) / ASPECT), _K
 
 
