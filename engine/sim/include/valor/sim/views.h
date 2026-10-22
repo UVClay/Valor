@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "valor/sim/common.h"
@@ -74,12 +75,14 @@ inline uint8_t get<uint8_t>(const Mem& m, U a) { return uint8_t(m.u8(a)); }
     X(joints_addr, uint32_t, 0x094, "the joints, 8 bytes each")
 
 // The player's object (movement.md, soldier.md: the inventory and the view).
-#define VALOR_PLAYER_FIELDS(X)                               \
-    X(state, uint32_t, 0x000, "2 crouched, 0x20 aiming...") \
-    X(slot, int8_t, 0x054, "the weapon slot in hand")         \
-    X(weapon, uint8_t, 0x055, "its weapon (g_weapons index)") \
-    X(look_pitch, int32_t, 0x178, "4096 << 16 per turn")     \
-    X(look_yaw, int32_t, 0x184, "")
+#define VALOR_PLAYER_FIELDS(X)                                                             \
+    X(state, uint32_t, 0x000, "2 crouched, 0x20 aiming, 0x100 scoped...")                \
+    X(slot, int8_t, 0x054, "the weapon slot in hand")                                       \
+    X(weapon, uint8_t, 0x055, "its weapon (g_weapons index)")                               \
+    X(zoom, uint32_t, 0x0A4, "the projection distance: 400, more while zoomed (hud.md)")    \
+    X(look_pitch, int32_t, 0x178, "4096 << 16 per turn")                                   \
+    X(look_yaw, int32_t, 0x184, "")                                                        \
+    X(flash, int16_t, 0x1D6, "the muzzle flash: 1 the frame after a shot (combat.md)")
 
 // A view of one entity.
 struct Entity {
@@ -138,6 +141,39 @@ struct Camera {
     std::array<double, 3> look() const { return {look_x() / 65536.0, look_y() / 65536.0, look_z() / 65536.0}; }
 };
 
+// A sound voice (audio.md, Voices: g_voices 0x8009115C, 0x34 bytes; voices 1..23 effects).
+#define VALOR_VOICE_FIELDS(X)                                                              \
+    X(flags, uint32_t, 0x00, "1 not positional, 2 not heard by enemies")                 \
+    X(handle, uint32_t, 0x04, "the entity it follows (0: none)")                          \
+    X(sound, int32_t, 0x08, "the sound id (VAG index in its bank)")                       \
+    X(bank, uint16_t, 0x0C, "")                                                           \
+    X(loop, uint8_t, 0x0E, "restarted when it ends")                                      \
+    X(fade_out, uint8_t, 0x12, "fade-out frames left")                                    \
+    X(cls, uint8_t, 0x13, "the distance class 0..3 (falloff)")                            \
+    X(volume, int32_t, 0x14, "argument << 7, its high half 0..255")                       \
+    X(pitch, int32_t, 0x20, "16.16, 0x10000 the sample's rate")                          \
+    X(age, uint16_t, 0x28, "frames since it started")                                     \
+    X(x, int16_t, 0x2C, "the source, whole units (copied from the entity)")              \
+    X(y, int16_t, 0x2E, "")                                                               \
+    X(z, int16_t, 0x30, "")
+
+struct Voice {
+    const Mem* m = nullptr;
+    U a = 0;
+    int index = 0;
+    VALOR_VOICE_FIELDS(VALOR_VIEW_FIELD)
+
+    // g_voice_enabled (0x800910D0): 0 off, 1 on, 3 keyed off and still sounding.
+    int status() const { return m->u8(0x800910D0 + index); }
+};
+
+// The objectives (levels.md, Objectives: the list the pause menu shows).
+struct Objective {
+    uint32_t id = 0;
+    bool done = false;
+    std::string text;
+};
+
 #undef VALOR_VIEW_FIELD
 
 // The entity list from g_entities, in the game's order.
@@ -149,5 +185,12 @@ Entity camera(const Mem& m);
 Camera camera_view(const Mem& m);
 Player player(const Mem& m);
 uint32_t tick(const Mem& m);
+// The effect voices 1..23, as the sound driver keeps them.
+std::vector<Voice> voices(const Mem& m);
+std::vector<Objective> objectives(const Mem& m);
+// The level script started the music (level_set(1, 1): music_start's 0x8009CC74).
+bool music_started(const Mem& m);
+// A NUL-terminated string in the engine's memory.
+std::string string_at(const Mem& m, U a);
 
 }  // namespace valor::sim::view

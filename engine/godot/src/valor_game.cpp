@@ -48,6 +48,7 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("is_engine_running"), &ValorGame::is_engine_running);
     ClassDB::bind_method(D_METHOD("engine_tick", "buttons", "forward", "strafe", "turn", "pitch"), &ValorGame::engine_tick);
     ClassDB::bind_method(D_METHOD("get_engine_actors"), &ValorGame::get_engine_actors);
+    ClassDB::bind_method(D_METHOD("get_engine_voices"), &ValorGame::get_engine_voices);
     ClassDB::bind_method(D_METHOD("set_engine_replay", "log_path"), &ValorGame::set_engine_replay);
     ClassDB::bind_method(D_METHOD("build_engine_actor_mesh", "handle"), &ValorGame::build_engine_actor_mesh);
     ClassDB::bind_static_method("ValorGame", D_METHOD("to_godot", "x", "y", "z"), &ValorGame::to_godot);
@@ -403,6 +404,20 @@ Dictionary ValorGame::get_state() const {
         // the view in the aiming stances (movement.md).
         d["body_pitch"] = sol.a ? double(sol.pitch()) / 65536.0 : 0.0;
         d["body_yaw"] = sol.a ? double(sol.yaw()) / 65536.0 : 0.0;
+        // The scope and zoom (hud.md), the muzzle flash, the music, the objectives (the pause menu's).
+        d["scoped"] = p.a && (p.state() & 0x100);
+        d["zoom"] = p.a ? int64_t(p.zoom()) : 400;
+        d["flash"] = p.a ? int(p.flash()) : 0;
+        d["music"] = view::music_started(m);
+        Array objs;
+        for (const view::Objective& o : view::objectives(m)) {
+            Dictionary od;
+            od["id"] = int64_t(o.id);
+            od["done"] = o.done;
+            od["text"] = String(o.text.c_str());
+            objs.push_back(od);
+        }
+        d["objectives"] = objs;
         int alive = 0, dead = 0;
         for (const view::Entity& e : view::entities(m))
             if (e.type() == 0x1402 || e.type() == 0x1405) (e.dead() ? dead : alive)++;
@@ -487,6 +502,30 @@ bool ValorGame::set_engine_replay(const String& log_path) {
         return false;
     }
     return true;
+}
+
+Array ValorGame::get_engine_voices() const {
+    Array out;
+    if (!engine_) return out;
+    namespace view = valor::sim::view;
+    for (const view::Voice& v : view::voices(engine_->m)) {
+        Dictionary d;
+        d["voice"] = v.index;
+        d["status"] = v.status();
+        d["flags"] = int64_t(v.flags());
+        d["handle"] = int64_t(v.handle());
+        d["bank"] = int(v.bank());
+        d["sound"] = int(v.sound());
+        d["loop"] = int(v.loop());
+        d["cls"] = int(v.cls());
+        d["volume"] = int64_t(v.volume());
+        d["pitch"] = int64_t(v.pitch());
+        d["age"] = int(v.age());
+        d["fade_out"] = int(v.fade_out());
+        d["pos"] = Vector3(v.x(), v.y(), v.z());
+        out.push_back(d);
+    }
+    return out;
 }
 
 Dictionary ValorGame::get_engine_actors() const {

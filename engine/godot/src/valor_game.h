@@ -87,6 +87,10 @@ public:
     // The entities to draw, by handle: { handle: { model, skinned, type, dead, transform } }
     // (through the accessor layer, sim/views.h).
     Dictionary get_engine_actors() const;
+    // The engine's effect voices 1..23 (audio.md, Voices) through the accessor layer: { voice, status
+    // (0 off, 1 on, 3 releasing), flags, handle, bank, sound, loop, cls, volume, pitch, age, fade_out,
+    // pos (game units) }, for the presentation layer to play.
+    Array get_engine_voices() const;
     // Drive the engine with a recording's input (build/engine/orig.log) instead of the host's:
     // only the pad and the roles; everything else stays live. An empty path returns to the host's.
     bool set_engine_replay(const String& log_path);

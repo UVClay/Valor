@@ -57,4 +57,32 @@ Player player(const Mem& m) {
 
 uint32_t tick(const Mem& m) { return uint32_t(m.u32(G_TICK)); }
 
+std::vector<Voice> voices(const Mem& m) {
+    std::vector<Voice> out;
+    for (int v = 1; v < 24; v++) out.push_back({&m, U(0x8009115C + 0x34 * v), v});
+    return out;
+}
+
+std::vector<Objective> objectives(const Mem& m) {
+    // levels.md, Objectives: the count 0x80098620, done flags 0x800988DC, texts 0x80098904, ids
+    // 0x8009892C (10 slots).
+    std::vector<Objective> out;
+    int n = int(m.s32(0x80098620));
+    for (int i = 0; i < n && i < 10; i++)
+        out.push_back({uint32_t(m.u32(0x8009892C + 4 * i)), m.u32(0x800988DC + 4 * i) != 0, string_at(m, U(m.u32(0x80098904 + 4 * i)))});
+    return out;
+}
+
+bool music_started(const Mem& m) { return m.u32(0x8009CC74) != 0; }
+
+std::string string_at(const Mem& m, U a) {
+    std::string s;
+    for (U i = 0; a && i < 256; i++) {
+        int c = int(m.u8(a + i));
+        if (!c) break;
+        s.push_back(char(c));
+    }
+    return s;
+}
+
 }  // namespace valor::sim::view
