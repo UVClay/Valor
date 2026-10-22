@@ -441,6 +441,19 @@ def sensor(vm, vid):
     if vid == 0x67:
         return int(eng.action_held(0))
     if vid == 0x71:
-        eng.note("sensor 0x71 (the player looks at it) not implemented")
+        # the player looks at it: within 0x258 of the player's heading (angle_to) and a clear
+        # world_sweep from the player's eye to its eye: 1 (the sweep's -1 >> 31, logical); a hit's
+        # face record goes into its +0x318
+        e = vm.e
+        sol = m.u32(G_SOLDIER)
+        if abs(s16(angle_to(m, sol, e))) >= 0x258:
+            return 0
+        a = (m.s32(sol + 0x20C) >> 16, s32(m.s32(sol + 0x210) - m.s32(sol + 0x2D4)) >> 16, m.s32(sol + 0x214) >> 16)
+        b = (m.s32(e + 0x20C) >> 16, s32(m.s32(e + 0x210) - m.s32(e + 0x2D4)) >> 16, m.s32(e + 0x214) >> 16)
+        hit = eng.world.sweep(a, b)
+        if hit is None:
+            return 1
+        from engine_projectile import write_contact
+        write_contact(m, e, *hit)
         return 0
     return 0

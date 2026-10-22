@@ -76,7 +76,7 @@ A variable id is 9 bits:
 | 0x6E | A pointer to `0x8009817C` |
 | 0x6F | Height above the player (entity y - player y; y points down) |
 | 0x70 | The entity's own model id |
-| 0x71 | **The player is looking at it**: within ±600 (52.7°) of the player's heading (`angle_to`, `0x8003F858`), and a sweep from the player's eye to the entity's eye hits nothing (`world_sweep`, `0x8003EF5C`, -1 for no hit) |
+| 0x71 | **The player is looking at it**: 1 when within ±600 (52.7°) of the player's heading (`angle_to(player, entity)`, `0x8003F858`) and a sweep from the player's eye (y − eye height) to the entity's eye hits nothing (`world_sweep`, `0x8003EF5C`: its -1, shifted right 31 logically); else 0. A hit's face record is written into the entity's `+0x318` |
 | 0x72 | `g_params` (mission and level) |
 | 0x73 | `0x800939F8` |
 | 0x74 | Distance from the entity's home to the player |
