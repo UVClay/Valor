@@ -155,23 +155,24 @@ struct Compare {
 };
 
 // engine.py frames_of: the frames of the level's ticks from the frame-counter watch.
-// The ticks that end a frame (the tick counter's value at each drawing pass).
-std::set<I> frame_ends(const std::string& path) {
-    std::set<I> out;
+// The ticks that end a frame (the tick counter's value at each drawing pass) -> the vblanks of
+// those drawing passes.
+std::map<I, std::set<I>> frame_ends(const std::string& path) {
+    std::map<I, std::set<I>> out;
     std::ifstream f(path);
     std::string line;
     while (std::getline(f, line)) {
         long long vb;
         unsigned a, b;
-        if (std::sscanf(line.c_str(), "watch %lld fc+4: %X -> %X", &vb, &a, &b) == 3) out.insert(I(b));
+        if (std::sscanf(line.c_str(), "watch %lld fc+4: %X -> %X", &vb, &a, &b) == 3) out[I(b)].insert(I(vb));
     }
     return out;
 }
 
 // A dump of the recording near a start: seed/d{V}.bin with V from vb + 1 on, the first holding a
-// whole frame (its tick the last of a frame, or the start's own tick when that ran alone); vb + 1
-// if there is none (engine.py's pick_seed).
-I pick_seed(const std::string& inputs, I vb, I first_tick, const std::set<I>& ends) {
+// whole frame: the vblank after the drawing pass of the frame its tick ended (or the start's own
+// tick, vb + 1, when that ran alone); vb + 1 if there is none (engine.py's pick_seed).
+I pick_seed(const std::string& inputs, I vb, I first_tick, const std::map<I, std::set<I>>& ends) {
     for (I v = vb + 1; v <= vb + 60; v++) {
         std::ifstream f(inputs + "/seed/d" + std::to_string(v) + ".bin", std::ios::binary);
         if (!f) continue;
@@ -179,7 +180,8 @@ I pick_seed(const std::string& inputs, I vb, I first_tick, const std::set<I>& en
         f.seekg(G_TICK & 0x1FFFFF);
         if (!f.read(reinterpret_cast<char*>(w), 4)) continue;
         I t = I(w[0] | w[1] << 8 | w[2] << 16 | uint32_t(w[3]) << 24);
-        if (t >= first_tick && (ends.count(t) || (t == first_tick && v == vb + 1))) return v;
+        auto en = ends.find(t);
+        if (t >= first_tick && ((en != ends.end() && en->second.count(v - 1)) || (t == first_tick && v == vb + 1))) return v;
     }
     return vb + 1;
 }

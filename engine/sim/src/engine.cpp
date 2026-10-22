@@ -152,6 +152,8 @@ bool Engine::load(const std::string& seed_path, std::string* err) {
     gheap = std::make_unique<GameHeap>(*this);
     logic = std::make_unique<LevelLogic>(*this);
     tick_no = m.u32(G_TICK);
+    // the pad as the seed holds it, for ticks the recording has no pad line for
+    pad_now = m.u32(PAD_NOW) & 0xFFFF, pad_prev = m.u32(PAD_PREV) & 0xFFFF;
     logic->adopt();
     if (std::getenv("VALOR_VIEW_DUMPCHECK")) {
         // the view test on the dump's own state against its drawn flags

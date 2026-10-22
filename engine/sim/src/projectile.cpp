@@ -262,6 +262,19 @@ U projectile_create(Engine& eng, U owner, I etype, I model, I speed, I bone_a, I
     return p;
 }
 
+// world_sweep's face record into +0x318 (0x28 bytes): the point, the normal (+6: the face's d),
+// the three vertices (+0x10, +0x18, +0x20); the halfwords after the point and each vertex are left
+// (the original's are scratch and vertex padding nothing reads).
+void write_contact(Mem& m, U e, const I point[3], const I normal[3], const SweepFace& face) {
+    for (int k = 0; k < 3; k++) {
+        m.w16(e + 0x318 + 2 * k, point[k]);
+        m.w16(e + 0x320 + 2 * k, normal[k]);
+    }
+    m.w16(e + 0x326, face.d);
+    for (U j = 0; j < 3; j++)
+        for (U k = 0; k < 3; k++) m.w16(e + 0x328 + 8 * j + 2 * k, face.v[j][k]);
+}
+
 namespace {
 
 U pellet_spawn(Engine& eng, U owner, I bone_a, I bone_b, const V3* a3, U a4, U off_a, U off_b, I aimed, I etype, I fa, I fb, I mask) {
@@ -285,18 +298,6 @@ U pellet_spawn(Engine& eng, U owner, I bone_a, I bone_b, const V3* a3, U a4, U o
     return p;
 }
 
-// world_sweep's face record into +0x318 (0x28 bytes): the point, the normal (+6: the face's d),
-// the three vertices (+0x10, +0x18, +0x20); the halfwords after the point and each vertex are left
-// (the original's are scratch and vertex padding nothing reads).
-void write_contact(Mem& m, U e, const I point[3], const I normal[3], const SweepFace& face) {
-    for (int k = 0; k < 3; k++) {
-        m.w16(e + 0x318 + 2 * k, point[k]);
-        m.w16(e + 0x320 + 2 * k, normal[k]);
-    }
-    m.w16(e + 0x326, face.d);
-    for (U j = 0; j < 3; j++)
-        for (U k = 0; k < 3; k++) m.w16(e + 0x328 + 8 * j + 2 * k, face.v[j][k]);
-}
 
 // entity_move's floor part for the general case (0x8006C83C): see engine_projectile.py floor_step.
 I floor_step(Engine& eng, U e, I res, I ground0, I vy16, bool walled = false) {

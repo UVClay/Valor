@@ -524,15 +524,19 @@ original's every tick, as `engine.py cmp` does.
 | 1:3 (session) | 0 | 7,296 of 7,296 | 7,297 of 7,297 |
 | 2:1 (session) | 0 | 8,368 of 8,368 | 8,369 of 8,369 |
 | 2:2 (session) | 0 | 7,036 of 7,036 | 7,037 of 7,037 |
+| 1:1 (coverage tape) | 4 | 10,614 of 10,614 | 10,619 of 10,619 |
 | 3:1 (coverage tape) | 0 | 4,525 of 4,525 | 4,526 of 4,526 |
 | 3:3 (coverage tape) | 2 | 10,428 of 10,428 | 10,429 of 10,429 |
+| 3:4 (coverage tape) | 3 | 10,692 of 10,692 | 10,693 of 10,693 |
+| 4:3 (coverage tape) | 3 | 10,247 of 10,247 | 10,248 of 10,248 |
 | 5:1 (coverage tape) | 2 | 10,679 of 10,679 | 10,680 of 10,680 |
 | 5:4 (coverage tape) | 10 | 10,339 of 10,339 | 10,340 of 10,340 |
+| 7:1 (coverage tape) | 6 | 10,505 of 10,505 | 10,510 of 10,510 |
 | 9:4 (coverage tape) | 5 | 9,901 of 9,901 | 9,902 of 9,902 |
 
 All of it, every one, from the seed and from the disc (a disc run also compares tick 1, which the
-seed's dump already holds). Synced to the Python engine at a03e763, which is whole on the same
-eight. The restarts are the engine's own: after a death the level restarts in place
+seed's dump already holds). Synced to the Python engine at 02a91af, which is whole on the same
+twelve. The restarts are the engine's own: after a death the level restarts in place
 (`level_restart`: every entity but the soldier, the camera, the world and type 8 removed, their
 handles kept until the idle work frees them, and `level_start` built as from the disc), where the
 Python engine reseeds from the dump after each restart (`seed/r*.bin`). Every respawned entity is
@@ -546,7 +550,7 @@ checked this way:
 every tape `build/engine/in_m*l*`) from its seed and from the disc, in parallel (about 30 seconds
 for all 24), prints the table, and fails when any run falls below the counts it has reached
 (`engine/tools/suite_expect.txt`; `--update` raises them). The other tapes, first runs in the
-Python engine too, part where it does (1:1 at tick 2 on, 1:2 at 2045, 4:3 at 6247, ...).
+Python engine too, part where it does (1:2 at 2045, 3:2 at 2632, 7:2 at 8304, ...).
 
 The disc-built starts needed:
 - tick 0's recorded draws from the level's load on (`level_load` too, not only `level_start`: the

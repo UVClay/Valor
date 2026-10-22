@@ -58,6 +58,51 @@ void scripted_think(Engine& eng, U e) {
     vm.run_a();
 }
 
+// prop1771_spawn (0x80046B2C): entity_create(3, no object, the model, instance flags 0x15); flags
+// A 0x03008004, mask 0, B 0x211, the model's type; the record's cull counter (+0x5E), group
+// 0x800939D8, health (+0x5C); no collision (radius 0), drawn as a model, destructor 0x8006A37C;
+// variable 1 = the record's +0x34.
+U prop1771_spawn(Engine& eng, Record& rec, U model) {
+    Mem& m = eng.m;
+    U r = rec.addr;
+    U e = eng.entity_create(m.s32(model + 0xFC), 0, model, 0, 0, 0, 0, false, 0x15);
+    if (!e) return 0;
+    m.w32(e + 0xC, 0x03008004);
+    m.w32(e + 0x14, 0);
+    m.w32(e + 0x10, 0x211);
+    m.w32(e + 8, m.s32(model + 0xFC));
+    I cv = m.s16(r + 0x5E);
+    m.w32(e + 0x294, cv);
+    m.w32(e + 0x290, cv);
+    I g = m.u8(0x800939D8);
+    m.w8(0x800939D8, (g + 1) & 0xFF);
+    m.w32(e + 0x36C, PROP1771_THINK);
+    m.w32(e + 0x370, 0x8006A5B4);
+    m.w16(e + 0x2EC, 0);
+    m.w16(e + 0x2E8, 0);
+    m.w8(e + 0x35, g);
+    m.w32(e + 0x374, 0);
+    m.w32(e + 0x378, 0);
+    m.w32(e + 0x384, 0x8006A37C);
+    I hp = m.u8(r + 0x5C) << 16;
+    m.w32(e + 0xF0, hp);
+    m.w32(e + 0xF4, hp);
+    m.w32(e + 0x4C + 4, m.s16(r + 0x34));
+    return e;
+}
+
+// prop1771_think (0x80046A88): removed once variable 6 is below variable 2; otherwise its scripts
+// (channels only) and the spin from variables 3..5 (angular velocity, whole units).
+void prop1771_think(Engine& eng, U e) {
+    Mem& m = eng.m;
+    if (m.s32(e + 0x4C + 4 * 6) < m.s32(e + 0x4C + 4 * 2)) {
+        eng.remove(e, "prop done");
+        return;
+    }
+    VM(eng, e).run_a();
+    for (U k = 0; k < 3; k++) m.w32(e + 0x234 + 4 * k, S32(m.s32(e + 0x4C + 4 * (3 + k)) << 16));
+}
+
 // door_spawn (0x8005E648), type 0x1776 (engine_objects.py door_spawn, objects.md), and the
 // switches' spawn (0x8005E510, type 0x1775): the same but for 5 channels, no collision mask,
 // flags A 0x03008000, B 0x40213, their own group counter (0x80099ECA) and think (0x8005E4E4:
@@ -198,6 +243,7 @@ U obj1774_spawn(Engine& eng, Record& rec, U model) {
 
 U spawn_by_type(Engine& eng, I t, U model, Record& rec) {
     Mem& m = eng.m;
+    if (t == 0x1771) return prop1771_spawn(eng, rec, model);
     if (t == 0x1772) return mounted_gun_spawn(eng, rec, model);
     if (t == 0x1774) return obj1774_spawn(eng, rec, model);
     if (t == 0x1770 || t == 0x1778) {

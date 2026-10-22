@@ -433,7 +433,22 @@ I world_value(VM& vm, I op, I) {
 
 I sense_sensor(VM& vm, I vid) {
     if (vid == 0x67) return vm.eng.action_held(0) ? 1 : 0;
-    if (vid == 0x71) vm.eng.note("sensor 0x71 (the player looks at it) not implemented");
+    if (vid == 0x71) {
+        // the player looks at it: within 0x258 of the player's heading (angle_to) and a clear
+        // world_sweep from the player's eye to its eye: 1 (the sweep's -1 >> 31, logical); a
+        // hit's face record goes into its +0x318
+        Engine& eng = vm.eng;
+        Mem& m = eng.m;
+        U e = vm.e, sol = U(m.u32(G_SOLDIER));
+        if (iabs(S16(angle_to(eng, sol, e))) >= 0x258) return 0;
+        I a[3] = {m.s32(sol + 0x20C) >> 16, S32(m.s32(sol + 0x210) - m.s32(sol + 0x2D4)) >> 16, m.s32(sol + 0x214) >> 16};
+        I b[3] = {m.s32(e + 0x20C) >> 16, S32(m.s32(e + 0x210) - m.s32(e + 0x2D4)) >> 16, m.s32(e + 0x214) >> 16};
+        I point[3], normal[3];
+        SweepFace face;
+        if (!eng.world.sweep(a, b, point, normal, &face)) return 1;
+        write_contact(m, e, point, normal, face);
+        return 0;
+    }
     return 0;
 }
 

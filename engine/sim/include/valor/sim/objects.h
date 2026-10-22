@@ -9,6 +9,7 @@
 #include "valor/sim/common.h"
 #include "valor/sim/level.h"
 #include "valor/sim/simgte.h"
+#include "valor/world.h"
 
 namespace valor::sim {
 
@@ -34,12 +35,15 @@ U record_spawn_entity(Engine& eng, Record& rec);  // 0 when refused (queued)
 constexpr U G_LADDER_HELD = 0x8009A5B8;
 constexpr U LADDER_THINK = 0x800611D0;
 constexpr U SCRIPTED_THINK = 0x8005E61C;
-constexpr U SWITCH_THINK = 0x8005E4E4;  // the switches': the same as scripted_think
+constexpr U SWITCH_THINK = 0x8005E4E4;
+constexpr U PROP1771_THINK = 0x80046A88;  // the switches': the same as scripted_think
 constexpr U SMOKE_THINK = 0x80074A38;  // the smoke emitter's: drawing only
 constexpr U FLASH_THINK = 0x8004FC14;
 void scripted_think(Engine& eng, U e);
 U door_spawn(Engine& eng, Record& rec, U model);
-U switch_spawn(Engine& eng, Record& rec, U model);  // type 0x1775 (0x8005E510)
+U switch_spawn(Engine& eng, Record& rec, U model);
+U prop1771_spawn(Engine& eng, Record& rec, U model);  // 1:1's spinning prop (0x80046B2C)
+void prop1771_think(Engine& eng, U e);  // type 0x1775 (0x8005E510)
 U ladder_spawn(Engine& eng, U pair, U r);
 void ladder_think(Engine& eng, U e);
 void ladder_release(Engine& eng);
@@ -206,6 +210,7 @@ void flash_think(Engine& eng, U p);
 // model_bone_point (0x8008DABC): a bone's joint (+ its rotation times off) into the world.
 V3 model_bone_point(Engine& eng, U e, I bone, const V3* off);
 I angle_to(Engine& eng, U e, U target);
+void write_contact(Mem& m, U e, const I point[3], const I normal[3], const SweepFace& face);
 
 // engine_combat.py
 I call_touch(Engine& eng, U fn, U e, U other);

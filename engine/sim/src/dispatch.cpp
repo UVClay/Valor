@@ -23,6 +23,7 @@ bool run_think(Engine& eng, U fn, U e) {
         case LADDER_THINK: ladder_think(eng, e); return true;
         case SCRIPTED_THINK:
         case SWITCH_THINK: scripted_think(eng, e); return true;
+        case PROP1771_THINK: prop1771_think(eng, e); return true;
         case SMOKE_THINK: return true;  // the emitter's particles: drawing only
         case FLASH_THINK: flash_think(eng, e); return true;
         case EXPLOSION_THINK: explosion_think(eng, e); return true;

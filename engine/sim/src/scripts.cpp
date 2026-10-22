@@ -566,6 +566,8 @@ void VM::effect(const char* name, const I* a, int) {
         }
     } else if (n == "hit_part_reset")
         hit_parts_set(m, e, 0xFFFFFFFF, -1, -1, -1);
+    else if (n == "leave_ground")
+        m.w32(e + 0x284, 0);  // op 0x12 (0x8005908C): entity_leave_ground (0x80075118)
     else if (n == "remove_self") {
         eng.remove(e, "remove_self");
         m.w32(0x80099EC0, 1);

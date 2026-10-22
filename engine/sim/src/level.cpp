@@ -132,8 +132,8 @@ bool SVal::truthy() const {
 
 LevelLogic::LevelLogic(Engine& eng) : eng_(eng), m_(eng.m) {}
 
-void LevelLogic::adopt(bool init) {
-    for (U e : m_.entities()) bind(e, init);
+void LevelLogic::adopt() {
+    for (U e : m_.entities()) bind(e);
     auto it = eng_.ents.find(U(m_.u32(G_SOLDIER)));
     player = it == eng_.ents.end() ? nullptr : it->second;
     head = m_.u32(G_HEAD), tail = m_.u32(G_TAIL);
@@ -157,7 +157,7 @@ void LevelLogic::adopt(bool init) {
     ladder_held = U(m_.u32(0x8009A5B8));
 }
 
-Ent* LevelLogic::bind(U e, bool init) {
+Ent* LevelLogic::bind(U e) {
     U pair = U(m_.u32(e + 0x1C));
     Record* rec = nullptr;
     if (pair) {
@@ -177,13 +177,7 @@ Ent* LevelLogic::bind(U e, bool init) {
     ent->type = m_.s32(e + 8);
     ent->rec = rec;
     ent->addr = e;
-    // lv.Ent.__init__'s assignments through engine_level's properties
-    if (init) {
-        m_.w32(e + 0x40, 0);
-        m_.w32(e + 0x394, 0);
-        m_.w32(e + 0x398, 0xFFFF);
-        m_.w32(e + 0x39C, 0);
-    }
+    // (its zone words and +0x40 as its memory holds them: entity_create's, or the seed's)
     ent->serial = ++serial_;
     eng_.ents[e] = ent;
     handles[ent->handle] = ent;

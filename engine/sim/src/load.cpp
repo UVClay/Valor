@@ -2142,8 +2142,7 @@ bool Engine::load_disc(const std::vector<uint8_t>& game, LevelBuild& out, std::s
     tick_no = m.u32(G_TICK);
     logic = std::make_unique<LevelLogic>(*this);
     ents.clear();
-    // the entities as the load's own logic left them (bound there, their raised events kept)
-    logic->adopt(false);
+    logic->adopt();
     if (!world.load(*this, data_dir, input_log("timing.log"), mission_n, level_n)) {
         *err = "the level's collision";
         return false;

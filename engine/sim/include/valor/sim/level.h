@@ -108,8 +108,8 @@ struct SVal {
 class LevelLogic {
 public:
     explicit LevelLogic(Engine& eng);
-    void adopt(bool init = true);
-    Ent* bind(U e, bool init = true);
+    void adopt();
+    Ent* bind(U e);
     Ent* spawn(Record& rec);
     void record_spawn(U pair);
     void removed(Ent* ent, const std::string& why);
