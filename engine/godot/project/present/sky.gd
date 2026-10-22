@@ -25,13 +25,18 @@ func setup(present) -> void:
 	sky_rgb = info.sky_rgb
 	var has_sky: bool = sky_rgb[0] != 0 or sky_rgb[1] != 0 or sky_rgb[2] != 0
 	var height: int = info.star_height
+	# The world clears to the fog colour; with a sky the gradient is the background instead (and a
+	# level without one goes back to the clear colour: main.gd's environment outlives the levels).
+	for c in p.main.get_children():
+		if c is WorldEnvironment:
+			if has_sky:
+				c.environment.background_mode = Environment.BG_CANVAS
+				c.environment.background_canvas_max_layer = -1
+			else:
+				c.environment.background_mode = Environment.BG_COLOR
+				c.environment.background_color = info.fog_color if int(info.fog_near) > 0 else Color.BLACK
 	if not has_sky and height == 0:
 		return
-	# The world clears to the fog colour; with a sky the gradient is the background instead.
-	for c in p.main.get_children():
-		if c is WorldEnvironment and has_sky:
-			c.environment.background_mode = Environment.BG_CANVAS
-			c.environment.background_canvas_max_layer = -1
 	var layer := CanvasLayer.new()
 	layer.layer = -1
 	p.add_child(layer)
@@ -100,6 +105,12 @@ func strips() -> Array:
 
 
 func _draw() -> void:
+	var t0 := Time.get_ticks_usec()
+	_draw_sky()
+	p._perf("frame sky draw", t0)
+
+
+func _draw_sky() -> void:
 	var size := get_viewport_rect().size
 	var line := size.y / 240.0
 	if sky_rgb.size() == 3:

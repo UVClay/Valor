@@ -14,6 +14,8 @@ var mesh_done: Mesh
 var image: Image
 var texture: ImageTexture
 var on := false
+var last := PackedByteArray()
+var shown := false
 
 
 func setup(present) -> void:
@@ -34,6 +36,7 @@ func on_tick() -> void:
 		return
 	if world.mesh != mesh_done:
 		on = augment(world)
+		shown = false
 	if not on:
 		return
 	var cam: Camera3D = p.main.cam
@@ -43,6 +46,10 @@ func on_tick() -> void:
 		print("Valor pvs: tick %d, %d of %d leaves drawn, camera %s" % [int(p.state.get("tick", 0)), vis.count(255), leaves, Vector3(e.x, -e.y, -e.z)])
 	if p.args.has("pvs-none"):
 		vis.fill(0)  # a test: nothing drawn
+	if vis == last and not p.main.materials.is_empty() and shown:
+		return  # the camera's leaf masks didn't change: the texture stands
+	last = vis
+	shown = true
 	vis.resize(image.get_width() * image.get_height())
 	image.set_data(image.get_width(), image.get_height(), false, Image.FORMAT_R8, vis)
 	texture.update(image)

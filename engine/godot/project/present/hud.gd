@@ -182,6 +182,12 @@ func _draw_additive() -> void:
 # ---------------------------------------------------------------- drawing
 
 func _draw() -> void:
+	var t0 := Time.get_ticks_usec()
+	_draw_hud()
+	p._perf("frame hud draw", t0)
+
+
+func _draw_hud() -> void:
 	var size := get_viewport_rect().size
 	var s: Dictionary = p.state
 	var health: float = float(s.get("health", 128.0))

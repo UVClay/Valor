@@ -76,14 +76,53 @@ card has left-x turn, right-x strafe). `main.gd` adds the pad to the keyboard's 
 - From the engine when it keeps them: the text list (level messages, pickups, ammo digits), the hit
   wedges, looping sounds (re-triggered voices start again).
 
-## Stubbed
+## Level changes
 
-- **Weapon brightness** in dark places: the flag is the script variable 0x8A, never set (docs).
-- **The crosshair's movement** (the reticle sits at its rest point); footsteps (not documented).
-- **Without the engine** (a walk) the weapon is the level's first and plays its animations from
-  input (left mouse fire, the Use binding reloads), and there are no sounds but the music.
-- **PVS culling**: the world is one mesh (main.gd's); per-chunk meshes belong with the streaming
-  work there.
+The layer follows main.gd's level: when the level (mission, level) or main.gd's world mesh changes
+(next_level, start_level from the front end), everything it built goes and it is built again from
+the new level's files (`present.gd` `_attach`); `--test-reattach=TICK` does that once for a test.
+On exit it frees what it made and removes its audio buses. One leak is left: a stream still
+playing when the game quits (the music) keeps its playback, which Godot frees only on a later
+audio mix (2 objects: AudioStreamWAV and its playback).
 
-`--test-press=MASK@TICK[,...]` presses PS1 buttons for two ticks (0x40 fires, 0x20 switches), for
-screenshots; `--show-objectives`; `--audio-log` and `--fx-log` print what plays and what's drawn.
+## Frame time (a 1:3 live run, the session's input, 2560 x 1440, `--perf`)
+
+In the container (software OpenGL), so the frame itself (about 40 ms, the rasteriser) isn't a
+GPU's; what the CPU spends is:
+
+| Per | What | Average | Worst |
+|---|---|---|---|
+| tick | main.gd's tick: the engine, the actors' meshes | 1.7..2.4 ms | 25 ms (level streaming, first sights) |
+| tick | re-skinning one character (main.gd rebuilds every skinned actor's mesh each tick; 3 at a time here) | 31 µs | 43 µs |
+| tick | present/: audio (the voice table) 90 µs, effects 75, PVS 52, view model 36 (2.3 ms when it builds a new pose: cached after), get_state 15, HUD 12 | 0.3 ms | 2.3 ms |
+| frame | present/: HUD draw 130 µs, sky draw 83 µs (in sky levels), the rest under 10 | 0.2 ms | 0.25 ms |
+| frame | draws: 43..59 draw calls, about 17,000 triangles, 57..190 objects | | |
+
+So the presentation costs about 0.3 ms a tick and 0.2 ms a frame. Fixed in this pass: the PVS
+texture is uploaded only when the camera's leaf changes. Left for the main worker (engine/README,
+Coordination): skinning on the GPU instead of a new mesh per actor per tick, cheap now (31 µs
+each) but it grows with the actors on screen; the 25 ms spikes in main.gd's tick.
+
+## What's left in presentation
+
+- **The pause menu's objectives screen**: Tab shows the list; the game's own pause panels
+  (`menu_boxes`) are the shell's (main worker).
+- **Weapon brightness** in dark places: its flag (script variable 0x8A) is never set (docs).
+- **Footsteps**: not documented (no footstep sound call was found in audio.md).
+- **The burst streaks' corners** (`0x8006FBF0`) and **the drops' size** (`0x800729C0`):
+  approximated, not traced.
+- **The sky**: the stars' colour stepping (`stars_init`'s pointer arithmetic) is inferred; the
+  `func_80089174` gradient mode (`g_params` 2 / 3) isn't drawn.
+- **The flash and billboards' rotation** use one of eight turns at random, not the game's frame
+  counter (`g_update_stamp`).
+- **The death camera, the fades' colour ramp** (the game cuts; hud.md) and **the scope's zoom
+  easing**: from the engine's state, as they come.
+- **Without the engine** (a walk) the weapon is the level's first and plays from input; no sounds
+  but the music.
+- **The leak at exit** above.
+- **Not presentation, noticed**: the engine's live replay of the session drifts from the recording
+  within a few hundred ticks (main worker), so recomp side-by-sides need scripted runs.
+
+`--test-press=MASK@TICK[:TICKS][,...]` presses PS1 buttons (0x40 fires, 0x20 switches, 0x2 aims),
+`--test-turn=UNITS@TICK:TICKS` turns, for screenshots; `--show-objectives`; `--audio-log`, `--fx-log`
+print what plays and what's drawn; `--perf` times the parts and prints them at exit.

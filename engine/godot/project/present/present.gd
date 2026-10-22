@@ -10,7 +10,7 @@ extends Node
 ## --crosshair=SIZE (an always-on crosshair on the aim line, 0: none, the original's look),
 ## --square-stick (stretch a round stick to the DualShock's square range), --modern-sticks (the
 ## left stick strafes and the right one turns, instead of the original's left-turns, right-strafes),
-## --test-message=TEXT (a level message at the start, to see the text list), --test-press=MASK@TICK[:TICKS][,...]
+## --perf (time the parts, printed at exit), --test-message=TEXT (a level message at the start, to see the text list), --test-press=MASK@TICK[:TICKS][,...]
 ## (press PS1 buttons for 2 ticks, or TICKS, from that tick: 0x40 fires, 0x80 reloads, 0x20 switches), --debug-text (keep
 ## main.gd's state line).
 
@@ -32,6 +32,9 @@ var view_model: Node
 var audio: Node
 var effects: Node3D
 var pvs: Node
+var attached_level := Vector2i(-1, -1)
+var attached_world: Node
+var reattached := false  # --test-reattach=TICK: build the layer again once, as a level change does
 
 
 func _ready() -> void:
@@ -40,6 +43,7 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else ""
+	perf = args.has("perf")
 	set_process(false)
 	set_physics_process(false)
 	get_tree().node_added.connect(_on_node_added)
@@ -53,9 +57,30 @@ func _on_node_added(_n: Node) -> void:
 		call_deferred("_attach")
 
 
+## A new level (main.gd's next_level or start_level: another world, other files): everything
+## the layer built for the last one goes, and it is built again for this one.
+func _detach() -> void:
+	for c in get_children():
+		remove_child(c)
+		c.queue_free()
+	if effects:
+		effects.get_parent().remove_child(effects)
+		effects.queue_free()
+	sky = null
+	view_model = null
+	hud = null
+	audio = null
+	effects = null
+	pvs = null
+	assets = null
+
+
 func _attach() -> void:
+	_detach()
 	game = main.game
 	var info: Dictionary = game.get_level_info()
+	attached_level = Vector2i(int(info.mission), int(info.level))
+	attached_world = main.get("world")
 	var data: String = args.get("data", ProjectSettings.globalize_path("res://").path_join("../../../extracted/moh/DATA").simplify_path())
 	assets = ValorAssets.new()
 	if not assets.load(data, int(info.mission), int(info.level), not args.has("german")):
@@ -68,6 +93,9 @@ func _attach() -> void:
 	if not args.has("no-sky"):
 		sky = preload("res://present/sky.gd").new()
 		sky.setup(self)
+		if sky.get_parent() == null:  # no sky in this level
+			sky.free()
+			sky = null
 	if not args.has("no-viewmodel"):
 		view_model = preload("res://present/view_model.gd").new()
 		add_child(view_model)
@@ -107,33 +135,95 @@ func weapon_model(w: int) -> int:
 
 
 func _physics_process(_delta: float) -> void:
+	var info: Dictionary = game.get_level_info()
+	if Vector2i(int(info.mission), int(info.level)) != attached_level or main.get("world") != attached_world \
+			or (args.has("test-reattach") and int(state.get("tick", 0)) == int(args["test-reattach"]) and tick > 0 and not reattached):
+		reattached = true
+		_attach()
+		return
+	var t0 := Time.get_ticks_usec()
 	prev_state = state
 	state = game.get_state()
+	_perf("get_state", t0)
 	tick += 1
 	var h: int = int(state.get("weapon_model", 0))
 	if h == 0:
 		h = weapon_model(current_weapon())
 	weapon_hash = h
 	events = derive_events()
-	if view_model:
-		view_model.on_tick()
-	if hud:
-		hud.on_tick()
-	if audio:
-		audio.on_tick()
-	if effects:
-		effects.on_tick()
-	if pvs:
-		pvs.on_tick()
+	for part in [view_model, hud, audio, effects, pvs]:
+		if part:
+			var t := Time.get_ticks_usec()
+			part.on_tick()
+			_perf("tick " + part.get_script().resource_path.get_file(), t)
+	if perf and tick % 30 == 0 and game.is_engine_running():
+		# what main.gd's update_engine_actors spends re-skinning every skinned actor each tick
+		var ta := Time.get_ticks_usec()
+		var actors: Dictionary = game.get_engine_actors()
+		_perf("(sample) get_engine_actors", ta)
+		var n := 0
+		var tb := Time.get_ticks_usec()
+		for hnd in actors:
+			if actors[hnd].skinned:
+				game.build_engine_actor_mesh(hnd)
+				n += 1
+		if n:
+			_perf_add("(sample) rebuild a skinned actor mesh", float(Time.get_ticks_usec() - tb) / n)
+			_perf_add("(sample) skinned actors", float(n))
+	if perf:
+		# main.gd's tick (the engine, the actors' meshes) is the rest of the physics time
+		var total := Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1e6
+		_perf_add("main.gd tick and the engine", total - float(Time.get_ticks_usec() - t0))
 
 
 func _process(_delta: float) -> void:
+	var t0 := Time.get_ticks_usec()
 	if view_model:
 		view_model.on_frame()
 	if hud:
 		hud.queue_redraw()
 	if sky:
 		sky.queue_redraw()
+	_perf("frame present", t0)
+	if perf:
+		frames += 1
+		_perf_add("frame (Performance.TIME_PROCESS)", Performance.get_monitor(Performance.TIME_PROCESS) * 1e6)
+		_perf_add("frame setup CPU (RenderingServer)", RenderingServer.get_frame_setup_time_cpu() * 1000.0)
+		_perf_add("draw calls", float(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)))
+		_perf_add("objects drawn", float(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)))
+		_perf_add("primitives drawn", float(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)))
+		_perf_add("frame time", 1e6 / maxf(Engine.get_frames_per_second(), 1.0))
+
+
+# ---------------------------------------------------------------- --perf: where the time goes
+
+var perf := false
+var perf_sum := {}
+var perf_max := {}
+var perf_n := {}
+var frames := 0
+
+
+func _perf(name: String, since: int) -> void:
+	if perf:
+		_perf_add(name, float(Time.get_ticks_usec() - since))
+
+
+func _perf_add(name: String, us: float) -> void:
+	perf_sum[name] = perf_sum.get(name, 0.0) + us
+	perf_max[name] = maxf(perf_max.get(name, 0.0), us)
+	perf_n[name] = perf_n.get(name, 0) + 1
+
+
+func _exit_tree() -> void:
+	_detach()
+	if not perf:
+		return
+	print("Valor perf: %d frames, %d ticks; average and worst microseconds per call:" % [frames, tick])
+	var names := perf_sum.keys()
+	names.sort_custom(func(a, b): return perf_sum[a] > perf_sum[b])
+	for n in names:
+		print("Valor perf:   %-34s %9.0f avg %9.0f max  x%d" % [n, perf_sum[n] / perf_n[n], perf_max[n], perf_n[n]])
 
 
 ## What happened this tick, read from the change of the core's state (the core doesn't report its

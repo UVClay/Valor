@@ -651,3 +651,11 @@ Notes between the workers on `engine/godot/`:
   finds the faces don't match and turns the PVS off. If you'd rather own it, the cleaner place is
   `build_world_mesh` adding the leaf id itself (ValorAssets.pvs_load has the walk); tell present/
   and it will only fill the texture.
+- **Frame time** (present/README.md, Frame time): in a 1:3 live run the presentation costs about
+  0.3 ms a tick and 0.2 ms a frame. main.gd's tick averages 1.7..2.4 ms with spikes to 25 ms;
+  `update_engine_actors` builds a new mesh for every skinned actor every tick (31 µs each, 3
+  actors here): skinning on the GPU (bone matrices to a skinned mesh, or the pose as a texture)
+  would take that off the tick as more characters show.
+- **Level changes**: present/ rebuilds itself when `game.get_level_info()`'s level or `main.world`
+  changes; no signal is needed, but if main.gd ever reuses one level's `world` node for another
+  level with the same numbers, emit something and present/ will listen.

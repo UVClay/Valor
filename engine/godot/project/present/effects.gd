@@ -133,7 +133,9 @@ func on_tick() -> void:
 
 ## Every frame: billboards face the camera as it is now.
 func _process(_delta: float) -> void:
+	var t := Time.get_ticks_usec()
 	place()
+	p._perf("frame effects place", t)
 
 
 func place() -> void:
