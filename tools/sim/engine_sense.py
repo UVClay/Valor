@@ -355,7 +355,7 @@ def _world_value(vm, op, var):
         fact = op & 0xFF
         tgt = vm._query_target
         b = m.u32(e + 0x38C)
-        crouch = m.u32(m.u32(G_SOLDIER) + 0x388) & 2
+        crouch = m.u32(m.u32(m.u32(G_SOLDIER) + 0x388)) & 2     # the view object's first word
         if fact in (0xB, 0x10, 0x12):
             if not tgt:
                 return 0

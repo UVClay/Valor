@@ -52,6 +52,7 @@ seeds = []
 "0x80090A30" = "hook_frame_idle_job"
 "0x80090AEC" = "hook_idle_round"
 "0x80090B80" = "hook_frame_wait"
+"0x8003EF5C" = "hook_world_sweep"
 # Builds the view frustum's planes from the camera (culls rooms and objects): widened to the
 # widescreen/FOV projection.
 "0x8008D0CC" = "hook_view_frustum"

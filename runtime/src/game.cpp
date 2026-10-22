@@ -130,6 +130,20 @@ extern "C" void hook_frame_wait(Cpu *c, RecompFn body) {
     body(c);
 }
 
+// 0x8003EF5C world_sweep(from, to, out normal, out point, ...): VALOR_TRACE_SWEEP logs each call
+// "sweep TICK CALLER: from x y z to x y z -> face, point x y z" (whole units), to check a
+// reimplementation's sweeps (docs/re/levels.md, Sweeping a segment).
+extern "C" void hook_world_sweep(Cpu *c, RecompFn body) {
+    static bool on = getenv("VALOR_TRACE_SWEEP") != nullptr;
+    uint32_t a = c->r[4], b = c->r[5], pt = c->r[7], ra = c->r[31];
+    body(c);
+    if (!on || shadow_active()) return;
+    auto w = [&](uint32_t p) { return int32_t(r32(p)) >> 16; };
+    auto h = [&](uint32_t p) { return int16_t(r32(p & ~3u) >> (8 * (p & 2))); };
+    log("sweep %u %08X: %d %d %d to %d %d %d -> %d, %d %d %d", r32(0x8009A5DC), ra, w(a), w(a + 4), w(a + 8),
+        w(b), w(b + 4), w(b + 8), int32_t(c->r[2]), h(pt), h(pt + 2), h(pt + 4));
+}
+
 // 0x80015A9C SpuGetAllKeysStatus(out): what the SPU reports for each voice at the start of
 // sound_update (0 off, 1 on, 3 keyed off and releasing), "keys TICK: 24 bytes hex" under
 // VALOR_TRACE_INPUT: when the hardware finishes a sample is real time, an input for an engine
