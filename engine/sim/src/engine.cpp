@@ -710,8 +710,8 @@ void Engine::chunk_stream() {
 }
 
 // One frame of live play: the vblanks since the last (the 20-vblank timer), the character pools,
-// one tick on the input the host set, the draw pass and the idle work (a fixed round: the job
-// state machine three times, then the loop's message/spawn turn).
+// one tick on the input the host set, the draw pass and the idle work while the frame waits for
+// its vblank.
 void Engine::live_frame(I vblanks) {
     vblank += vblanks;
     m.w32(G_VBL_TIMER, m.s32(G_VBL_TIMER) + vblanks);
@@ -721,8 +721,10 @@ void Engine::live_frame(I vblanks) {
     char_pool_update(*this);
     tick(true);
     draw_pass(*this);
-    for (int k = 0; k < 3; k++) idle_job(m.s32(0x800AB8E8));
-    idle_loop();
+    // frame_wait_vblank (0x80090B80) at 30 Hz, one tick a frame: one idle job, then, the frame's
+    // work having run past its first vblank, idle jobs until the second: 189 more, the 1:3
+    // session's median for such frames (2:1 204, 2:2 498; objects.md, The frame and the tick)
+    for (int k = 0; k < 1 + 189; k++) idle_job(m.s32(0x800AB8E8));
     audio->update();
 }
 

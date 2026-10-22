@@ -110,6 +110,11 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
   is Cross: fire; Q is Circle: switch weapons);
 - `rand` is PsyQ's on the seed in memory;
 - an entity counts as drawn when the original's view test passes (below);
+- the idle work while a frame waits for its vblank is the original's (`frame_wait_vblank`), at
+  30 Hz with one tick a frame: one idle job, then idle jobs until the second vblank. That's 189
+  more, the 1:3 session's median for frames whose work ran past their first vblank (2:1's is 204,
+  2:2's 498; a tenth of 1:3's frames ran fewer than 78). The jobs run messages, spawn retries,
+  removed handles and chunk streaming;
 - chunks stream as the original streams them: entering a streaming record (class 0x4D078F23)
   runs `chunk_stream`, and so do the idle jobs 2 and 3. The record's chunks that aren't loaded
   replace the slots it doesn't list, one read at a time. The slot being read is left out of
@@ -414,8 +419,7 @@ in the recordings: the pad words and the control roles' values per tick.
 
 ## What's next
 
-1. **Live play's own rules**: the idle work's real schedule (the time left in the vblank wait),
-   and the player's death and restart (`level_start`
+1. **Live play's own rules**: the player's death and restart (`level_start`
    again on the built state).
 3. **Presentation**: the first-person weapon, pickups and effects (tracers, explosions' particle
    systems), sounds and music from the engine's voice table, the HUD.
