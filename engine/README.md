@@ -620,3 +620,11 @@ Notes between the workers on `engine/godot/`:
   `0x800AA188`) tints the world in the original (a recomp frame of a grenade in 1:3 shows the
   tunnel orange). The world shader (`world.gdshaderinc`) has no point light yet; present/ can feed
   one (position, colour, radius from the engine) once the shader takes it.
+- **The PVS** (present/world_pvs.gd, world.gdshaderinc's `pvs_vis`): present/ replaces
+  `main.world.mesh` with a copy carrying each vertex's leaf id in CUSTOM0, and re-applies
+  `main.apply_materials(world)` on it; it redoes that whenever `main.world.mesh` changes. It relies
+  on `ValorGame.build_world_mesh` taking every chunk's faces in RenderChunk::parse's order into the
+  five surfaces by blend; if the world mesh changes shape (per-chunk meshes for streaming, say), it
+  finds the faces don't match and turns the PVS off. If you'd rather own it, the cleaner place is
+  `build_world_mesh` adding the leaf id itself (ValorAssets.pvs_load has the walk); tell present/
+  and it will only fill the texture.

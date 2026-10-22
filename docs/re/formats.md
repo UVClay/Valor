@@ -378,10 +378,14 @@ offset it has seen.
 | +0x18 | Child 0 (offset from the node table; -1: none) | Offset of the first face (from the face table) |
 | +0x1C, +0x20 | Children 1, 2 | |
 
-**The PVS** (the viewer's two "Unknown" fields). Each frame `0x8008CBE4` finds, in every loaded
-chunk, the leaf whose box holds the camera, taking the one with the smallest `max y` when boxes
-overlap (`0x8008C9F0`). The camera leaf's B becomes `[0x800AA178]`, and its A is ORed into
-`[0x800AA17C]`. `tsp_walk` then draws a node only if `A & [0x800AA178]` and `B & [0x800AA17C]`
+**The PVS** (the viewer's two "Unknown" fields). Each frame `0x8008CBE4` asks every loaded chunk
+(not the one loading) for the camera's leaf (`0x8008C9F0`, recursive, children 1, 0, 2): a node is
+entered when the camera is within its x and z, its bottom (`max y`, y down) is at or below the
+camera, and its top (`min y`) is not below the best leaf's bottom so far (`0x8008C964`); a leaf
+whose bottom is higher than the best so far becomes the best, its B the chunk's answer and its A
+ORed into `[0x800AA17C]`. So the camera's leaf is the box under it with the highest floor, not one
+holding it (in 1:3 the leaves near the start lie below the eye). The chunks' answers are ORed into
+`[0x800AA178]`. `tsp_walk` then draws a node only if `A & [0x800AA178]` and `B & [0x800AA17C]`
 are **both** non-zero. Visibility therefore doesn't depend on the view direction, and the masks
 are compared crosswise (*inferred*: 32 + 32 cell groups). Each file has 1..100 distinct mask
 pairs (`fmt_tsp.py`).

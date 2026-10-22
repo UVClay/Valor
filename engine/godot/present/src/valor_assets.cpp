@@ -8,6 +8,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <functional>
 
 #include "adpcm.h"
 #include "valor/anim.h"
@@ -68,6 +69,9 @@ void ValorAssets::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_anim_frames", "hash", "anim"), &ValorAssets::get_anim_frames);
     ClassDB::bind_method(D_METHOD("build_model_mesh", "hash", "anim", "frame"), &ValorAssets::build_model_mesh);
     ClassDB::bind_method(D_METHOD("get_texture_pages"), &ValorAssets::get_texture_pages);
+    ClassDB::bind_method(D_METHOD("pvs_load"), &ValorAssets::pvs_load);
+    ClassDB::bind_method(D_METHOD("pvs_leaf_ids", "surface"), &ValorAssets::pvs_leaf_ids);
+    ClassDB::bind_method(D_METHOD("pvs_visibility", "camera"), &ValorAssets::pvs_visibility);
     ClassDB::bind_method(D_METHOD("get_model_list_faces", "hash"), &ValorAssets::get_model_list_faces);
     ClassDB::bind_method(D_METHOD("bone_point", "hash", "anim", "frame", "bone", "offset"), &ValorAssets::bone_point);
     ClassDB::bind_method(D_METHOD("stick_roles", "rx", "ry", "lx", "ly"), &ValorAssets::stick_roles);
@@ -343,4 +347,122 @@ Dictionary ValorAssets::get_model_list_faces(int64_t hash) const {
         return d;
     }
     return d;
+}
+
+int ValorAssets::pvs_load() {
+    pvs_chunks_.clear(), pvs_leaf_path_.clear(), pvs_leaves_ = 0;
+    for (auto& f : pvs_face_leaf_) f.clear();
+    for (int n = 1;; n++) {
+        char rel[96];
+        std::snprintf(rel, sizeof rel, "/MSN%d/LVL%d/TSP0/%d_%d_C%d.TSP", mission_, level_, mission_, level_, n);
+        std::vector<uint8_t> d;
+        if (!valor::read_file(data_dir_ + rel, d)) break;
+        uint32_t node_off = rd32(d, 0x08), face_off = rd32(d, 0x10);
+        PvsChunk ch;
+        std::map<uint32_t, int> index;  // node offset -> node index
+        auto node_at = [&](uint32_t off) -> int {
+            auto it = index.find(off);
+            if (it != index.end()) return it->second;
+            size_t p = node_off + size_t(off);
+            PvsNode nd;
+            for (int k = 0; k < 3; k++) nd.min[k] = int16_t(rd16(d, p + 2 * k)), nd.max[k] = int16_t(rd16(d, p + 6 + 2 * k));
+            nd.a = rd32(d, p + 0x10), nd.b = rd32(d, p + 0x14);
+            nd.leaf = rd32(d, p + 0xC) != 0;
+            int i = int(ch.nodes.size());
+            ch.nodes.push_back(nd);
+            index[off] = i;
+            return i;
+        };
+        // The walk RenderChunk::parse makes (depth first, children in order, each node once), so
+        // the faces come in the world mesh's order; each leaf remembers its path from the root.
+        int chunk = int(pvs_chunks_.size());
+        std::vector<std::pair<uint32_t, std::vector<std::pair<int, int>>>> stack = {{0u, {}}};
+        std::vector<bool> seen;
+        while (!stack.empty()) {
+            auto [off, path] = stack.back();
+            stack.pop_back();
+            size_t p = node_off + size_t(off);
+            if (p + 0x1C > d.size()) break;
+            if (seen.size() <= off) seen.resize(off + 1);
+            if (seen[off]) continue;
+            seen[off] = true;
+            int ni = node_at(off);
+            path.push_back({chunk, ni});
+            uint32_t count = rd32(d, p + 0xC);
+            if (count) {
+                int leaf = pvs_leaves_++;
+                ch.nodes[size_t(ni)].leaf_id = leaf;
+                pvs_leaf_path_.push_back(path);
+                size_t f = face_off + size_t(rd32(d, p + 0x18));
+                for (uint32_t k = 0; k < count; k++, f += 16) {
+                    uint16_t tpage = rd16(d, f + 12);
+                    int surf = (tpage & 0x4000) ? 1 + ((tpage >> 5) & 3) : 0;
+                    for (int c = 0; c < 3; c++) pvs_face_leaf_[surf].push_back(float(leaf));
+                }
+            } else {
+                if (p + 0x24 > d.size()) break;
+                for (int c = 2; c >= 0; c--) {
+                    uint32_t child = rd32(d, p + 0x18 + 4 * c);
+                    if (child != 0xFFFFFFFF) {
+                        ch.nodes[size_t(ni)].child[c] = node_at(child);
+                        stack.push_back({child, path});
+                    }
+                }
+            }
+        }
+        pvs_chunks_.push_back(std::move(ch));
+    }
+    return pvs_leaves_;
+}
+
+PackedFloat32Array ValorAssets::pvs_leaf_ids(int surface) const {
+    PackedFloat32Array out;
+    if (surface < 0 || surface >= 5) return out;
+    out.resize(int64_t(pvs_face_leaf_[surface].size()));
+    if (!pvs_face_leaf_[surface].empty()) memcpy(out.ptrw(), pvs_face_leaf_[surface].data(), pvs_face_leaf_[surface].size() * sizeof(float));
+    return out;
+}
+
+PackedByteArray ValorAssets::pvs_visibility(Vector3 camera) {
+    int32_t c[3] = {int32_t(camera.x), int32_t(camera.y), int32_t(camera.z)};
+    uint32_t cam_a = 0, cam_b = 0;
+    for (const PvsChunk& ch : pvs_chunks_) {
+        if (ch.nodes.empty()) continue;
+        // pvs_leaf_find: into boxes holding the point, children 1, 0, 2; a leaf lower (smaller max y)
+        // than the best so far takes over: its B the chunk's answer, its A ORed in
+        int16_t best = 0x7FFF;
+        uint32_t b = 0;
+        // func_8008C964: x and z within the box, the box's bottom (max y, y down) at or below the
+        // point, and its top (min y) not below the best leaf's bottom so far
+        auto inside = [&](const PvsNode& n) {
+            return c[0] >= n.min[0] && c[0] <= n.max[0] && c[2] >= n.min[2] && c[2] <= n.max[2] && n.max[1] >= c[1] &&
+                   best >= n.min[1];
+        };
+        std::function<void(int)> find = [&](int i) {
+            const PvsNode& n = ch.nodes[size_t(i)];
+            if (!inside(n)) return;
+            if (n.leaf) {
+                if (n.max[1] < best) best = n.max[1], b = n.b, cam_a |= n.a;
+                return;
+            }
+            for (int k : {1, 0, 2})
+                if (n.child[k] >= 0) find(n.child[k]);
+        };
+        find(0);
+        cam_b |= b;
+    }
+    PackedByteArray vis;
+    vis.resize(pvs_leaves_);
+    for (int leaf = 0; leaf < pvs_leaves_; leaf++) {
+        bool ok = true;
+        for (auto [ci, ni] : pvs_leaf_path_[size_t(leaf)]) {
+            const PvsNode& n = pvs_chunks_[size_t(ci)].nodes[size_t(ni)];
+            if (!(n.a & cam_b) || !(n.b & cam_a)) {
+                ok = false;
+                break;
+            }
+        }
+        vis.set(leaf, ok ? 255 : 0);
+    }
+    return vis;
 }

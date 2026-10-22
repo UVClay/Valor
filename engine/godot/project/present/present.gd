@@ -5,7 +5,7 @@ extends Node
 ## here changes the rules. docs/re: hud.md, audio.md, formats.md (Sky), animation.md (the player's
 ## weapon models).
 ##
-## User arguments (after `--`): --no-hud, --no-viewmodel, --no-sky, --no-effects, --no-audio, --no-music,
+## User arguments (after `--`): --no-hud, --no-viewmodel, --no-sky, --no-effects, --no-pvs, --no-audio, --no-music,
 ## --ambience-only (the B-mix music), --german (the 0 TAF: German soldiers' voices),
 ## --crosshair=SIZE (an always-on crosshair on the aim line, 0: none, the original's look),
 ## --square-stick (stretch a round stick to the DualShock's square range), --modern-sticks (the
@@ -31,6 +31,7 @@ var sky: Control
 var view_model: Node
 var audio: Node
 var effects: Node3D
+var pvs: Node
 
 
 func _ready() -> void:
@@ -81,6 +82,10 @@ func _attach() -> void:
 	if not args.has("no-effects"):
 		effects = preload("res://present/effects.gd").new()
 		effects.setup(self)
+	if not args.has("no-pvs"):
+		pvs = preload("res://present/world_pvs.gd").new()
+		add_child(pvs)
+		pvs.setup(self)
 	if not args.has("no-audio"):
 		audio = preload("res://present/audio.gd").new()
 		add_child(audio)
@@ -118,6 +123,8 @@ func _physics_process(_delta: float) -> void:
 		audio.on_tick()
 	if effects:
 		effects.on_tick()
+	if pvs:
+		pvs.on_tick()
 
 
 func _process(_delta: float) -> void:

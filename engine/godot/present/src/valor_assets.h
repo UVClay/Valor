@@ -73,6 +73,17 @@ public:
     // colors: PackedColorArray (0..255 as is), tris: PackedInt32Array }. Empty for an unknown model.
     Dictionary get_model_list_faces(int64_t hash) const;
 
+    // The PVS (formats.md, The render tree): the world's leaves in the order ValorGame's world mesh
+    // takes its faces (every chunk's tree walked as RenderChunk::parse walks it), each face's leaf
+    // as a per-vertex id for a surface (opaque, semi0..3: the world mesh's), and from a camera
+    // point (game units) every leaf's visibility as tsp_walk decides it: the camera's leaf in each
+    // chunk (pvs_leaf_find: of the boxes over the point, x and z holding it and the bottom below it, the lowest-bottomed; its B ORed over the
+    // chunks, its A ORed too), then a node drawn only if its A & that B and its B & that A, and a
+    // leaf only if every node above it was. pvs_load returns the leaf count (0: no TSPs).
+    int pvs_load();
+    PackedFloat32Array pvs_leaf_ids(int surface) const;
+    PackedByteArray pvs_visibility(Vector3 camera);
+
     // The texture pages the meshes built so far use, one layer per page and CLUT.
     Ref<Texture2DArray> get_texture_pages();
 
@@ -93,6 +104,20 @@ private:
     valor::Vram vram_;
     valor::Models models_;
     valor::Controls controls_;
+    struct PvsNode {
+        int16_t min[3], max[3];
+        uint32_t a = 0, b = 0;
+        int child[3]{-1, -1, -1};  // node indices in the chunk; leaves have none
+        bool leaf = false;
+        int leaf_id = -1;
+    };
+    struct PvsChunk {
+        std::vector<PvsNode> nodes;  // [0] the root
+    };
+    std::vector<PvsChunk> pvs_chunks_;
+    std::vector<std::vector<std::pair<int, int>>> pvs_leaf_path_;  // per leaf: (chunk, node) from the root
+    std::vector<float> pvs_face_leaf_[5];                          // per surface: a leaf id per vertex
+    int pvs_leaves_ = 0;
     std::vector<std::vector<uint8_t>> banks_;  // each VAB's body
     std::vector<std::vector<uint32_t>> bank_offsets_;  // per bank: VAG byte offsets, then the end
     std::map<uint64_t, Ref<AudioStreamWAV>> sounds_;
