@@ -45,26 +45,21 @@ def model_find(eng, h):
 
 
 def instance_set(eng, inst, h, flags):
-    """func_8006B1C4 -> model_instance_init: a model on an attachment (only the fields the logic
-    reads: +4 the flags, +8 the model; the pose buffers are drawing only)."""
+    """func_8006B1C4 -> model_instance_init (engine_heap.py): a model on an attachment, its block
+    from the heap as the flags ask."""
     m = eng.m
     model = model_find(eng, h)
     if not model:
         m.w32(inst, 0)
         return 0
-    m.w32(inst + 4, flags)
-    m.w32(inst + 8, model)
-    m.w32(inst + 0x2C, m.u32(model + 0x88))      # the model's static vertices
-    return 1
+    from engine_heap import instance_init
+    return instance_init(eng, inst, model, flags, 0)
 
 
-def instance_release(eng, inst):
-    """func_8006B234 (no entity): its +4 bit 8 cleared, the pose buffer let go."""
-    m = eng.m
-    f = m.u32(inst + 4)
-    if f & 8:
-        m.w32(inst + 4, f & ~8)
-    m.w32(inst, 0)
+def instance_release(eng, inst, delay=0):
+    """func_8006B234 (no entity): its +4 bit 8 given back, the block freed now or later."""
+    from engine_heap import instance_release as release
+    release(eng, inst, 0, delay)
 
 
 def swap_model(eng, B, h):
@@ -409,7 +404,9 @@ def pickup_spawn(eng, rec, kind_hash, model_hash, owner):
     if not model:
         eng.note("pickup model missing", f"{model_hash:08X}")
         return None
-    p = eng.entity_create(0x65, obj_size=m.u16(t + 8), model=model, parts=0)
+    p = eng.entity_create(0x65, obj_size=m.u16(t + 8), model=model, iflags=0x157)
+    if not p:
+        return None
     m.w32(p + 8, 0x65)
     m.w32(p + 0x36C, PICKUP_THINK)
     m.w32(p + 0xC, 0x47028200)

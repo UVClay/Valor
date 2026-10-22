@@ -177,7 +177,7 @@ def spawn_by_type(eng, t, model, rec):
     if t in (0x1770, 0x1778):
         # destructible_spawn (0x8005D678); the record's own y is snapped to the floor when within
         # 55 units (the record is changed: the placement after it uses it)
-        e = eng.entity_create(t, model=model, list_n=6)
+        e = eng.entity_create(t, model=model, list_n=6, iflags=0x157)
         r = rec.addr
         cull_v = m.s16(r + 0x5E)
         m.w32(e + 0x294, cull_v)
@@ -271,7 +271,10 @@ def pickup_spawn(eng, rec):
 def level_explosion(eng, sub, sub_obj, kind):
     """Built-in 6, lvl_explosion (0x80052F14), at the entity or its record's position (kept in
     0x800AB920): 1 and 6 sparks with smoke (1: and half the time a sound 0..3), 3 a burst of
-    sparks; the explosions proper (0, 2, 4, 5, 7, 8) not yet."""
+    sparks; 0 and 5 an explosion (4, 4, 60; scale 1.0, var 0x1000, damage 0x40000, reach 7)
+    and a burst of sparks, 0 also its sound; 7 and 8 a small explosion (6, 10, 15; 0x3000,
+    0x200, 0x20000, 5) with sparks and smoke, 7 also its sound. (2, the record's entity, and 4,
+    the large one with its screen flash, not yet.)"""
     m = eng.m
     from engine_projectile import particles_spawn
     e = sub.addr if sub is not None and getattr(sub, "addr", 0) else 0
@@ -283,7 +286,22 @@ def level_explosion(eng, sub, sub_obj, kind):
         for k in range(3):
             m.w32(0x800AB920 + 4 * k, pos[k])
     rd = lambda: eng.rand.draw(0x80052F14)
-    if kind == 3:
+    from engine_explosion import explosion_spawn, explosion_sound
+    rec = m.u32(sub_obj + 4) if sub_obj else 0
+    if kind in (0, 5):
+        explosion_spawn(eng, e, 4, 4, 0x3C, 0x10000, 0x1000, 0x40000, 7, rec)
+        particles_spawn(eng, pos, 5, ((rd() * 5) >> 15) + 0xF, 0x28, 0x19, 0x50, 0x1E, 0x3FF, 0x3F, 0x3E0, 0xFF, 1,
+                        0x17FFF, 0, 0)
+        if kind == 0:
+            explosion_sound(eng, e)
+    elif kind in (7, 8):
+        explosion_spawn(eng, e, 6, 0xA, 0xF, 0x3000, 0x200, 0x20000, 5, rec)
+        n = ((rd() * 3) >> 15) + 2
+        smoke = ((rd() * 4) >> 15) + 6
+        particles_spawn(eng, pos, 1, n, 0x1E, 0x19, 0xF, 0x64, 0x3F4, 0xE0, 0x3E0, 0xFE, 0xF, 0x10000, 1, smoke)
+        if kind == 7:
+            explosion_sound(eng, e)
+    elif kind == 3:
         particles_spawn(eng, pos, 5, ((rd() * 5) >> 15) + 0xF, 0x28, 0x19, 0xF, 0x64, 0x3F4, 0xE0, 0x3E0, 0xFE, 0xF,
                         0x17FFF, 0, 0)
     elif kind in (1, 6):

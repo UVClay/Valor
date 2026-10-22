@@ -102,7 +102,25 @@ height is the model's halfword at `+0xA2`; reading `+0xA0` as a halfword gives 0
   soldiers and dogs exist at once**, whatever the level (`0x80097FEC`, the soldier cap, is 5 in
   every dump; levels.md). Checked in the four `mid_*` dumps: soldiers at slot addresses only,
   the slot states matching the live ones.
-- Everything else comes from the general heap (`0x80036DA0`, freed by `0x80036E44`).
+- Everything else comes from the general heap (`0x80036DA0`, calloc; freed by `0x80036E44`;
+  levels.md, The heap): one block of `0x3CC` (+`0xB0` for an instance, flags & 5) + the object +
+  `0x48` per hit part (flags & 2 with a model: the model's count `+0xBE`, else the argument) +
+  `0x1C` per plane slot + `0x78` per script channel. `model_instance_init` then takes the
+  instance's own block (malloc, not cleared) when its size is not 0: by the instance flags,
+  vertices (`+0x8C` × 8 unless 2), colours and normals' table (unless the model has `+0x14`;
+  flags 0x40, 0x100), `+0x8E` × 8 unless 4, `0x1000` of scratch unless 0x10, `0xB0` per hit part
+  when model 0x42A7A5EF is loaded, and 24 bytes per bone for an animated model. Flags 0x157
+  (pickups, destructibles, doors, mounted guns) and 0x147 (projectiles with a model, the
+  player's weapon: the scratch too) are the usual ones; 0x156 for a soldier's attachment swap.
+  When either block can't be had the entity isn't made (`entity_create` returns 0 and every
+  spawner gives up): **a full heap silently drops explosions, particles and effects** (2:2 tick
+  5379: a level `explosion(5)` with the heap's largest free block under its 0x6F0 bytes makes
+  nothing, neither entity nor particles). The destructors give the blocks back: `0x8006A318`
+  the brain now and the entity two frames late (the deferred frees, objects.md); `0x8006A37C`,
+  `0x8007BA00` and `0x8007192C` first the instance's block (two frames late; its parts'
+  instances likewise); the projectile's `0x80044BE4` as `0x8006A318` for a tracer (behaviour
+  0x80) else as `0x8006A37C`, once. The engine runs this allocator on the seed's heap, and its
+  blocks match the original's address, size and serial (1:3 tick 203, 2:2 tick 3479).
 
 ### Spawning and activation
 

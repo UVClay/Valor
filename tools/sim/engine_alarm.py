@@ -34,6 +34,8 @@ def alarm_spawn(eng, sound, bank, delay, rnd, volume, vspread, pitch, pspread, n
     sound of 25, not done.)"""
     m = eng.m
     e = eng.entity_create(0x20, obj_size=0x2C)
+    if not e:
+        return 0
     m.w32(e + 8, 0x20)
     m.w32(e + 0x36C, ALARM_THINK)
     m.w32(e + 0x384, ALARM_DESTROY)

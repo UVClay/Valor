@@ -47,6 +47,8 @@ def explosion_spawn(eng, src, fireballs, puffs, spread, scale, var0, damage, rea
     explosion (0x8009D650)."""
     m = eng.m
     e = eng.entity_create(0x31, obj_size=(fireballs + puffs + 1) * 0x3C + 0x64, parts=1)
+    if not e:
+        return 0
     m.w32(e + 8, 0x31)
     m.w32(e + 0x294, 0xB4)
     m.w32(e + 0x290, 0xB4)
@@ -326,6 +328,8 @@ def burst(eng, e):
     linked at the front; the streaks are drawing only."""
     m = eng.m
     p = eng.entity_create(0x23, obj_size=5 * 0x48 + 0x30)
+    if not p:
+        return 0
     o = m.u32(p + 0x388)
     m.w32(o + 4, 3)
     m.w32(o, 10)

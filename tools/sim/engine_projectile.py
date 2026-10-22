@@ -229,9 +229,13 @@ def projectile_create(eng, owner, etype, model, speed, bone_a, bone_b, a6, a7, d
     if model != -1:
         # entity_create(1, ..., the model, 0x147, 2): an instance, model_instance_init (its parts)
         p = eng.entity_create(etype, obj_size=extra + 0x90, parts=2, instance=True)
-        eng.model_swap(p, model, 0x147)
+        if p and not eng.model_swap(p, model, 0x147):
+            eng.free(p)
+            p = 0
     else:
         p = eng.entity_create(etype, obj_size=extra + 0x90, parts=2)
+    if not p:
+        return None
     o = m.u32(p + 0x388)
     m.w32(p + 0x36C, PROJECTILE_THINK)
     m.w32(p + 0x370, PROJECTILE_DRAW)
@@ -857,6 +861,8 @@ def impact_effect_spawn(eng, pos, vec, c0, c1, n, life):
     points (RotMatrix of random angles applied to vec) are drawing only and not computed."""
     m = eng.m
     p = eng.entity_create(0x23, obj_size=0x130)
+    if not p:
+        return 0
     o = m.u32(p + 0x388)
     m.w8(o + 1, life)
     m.w8(o, n)
@@ -911,6 +917,8 @@ def particles_spawn(eng, pos, spread, n, vel_xz, vel_y, col, col_rand, a7, a8, a
     m = eng.m
     size = n * 0x34 + 0x64 + (smoke_n * 0x34 if smoke_on else 0)
     p = eng.entity_create(0x31, obj_size=size)
+    if not p:
+        return 0
     o = m.u32(p + 0x388)
     rd = lambda: eng.rand.draw(0x80073BA8)
     m.w32(p + 8, 0x31)
@@ -1058,6 +1066,8 @@ def casing_spawn(eng, owner, pos, pitch):
     if m.u32(G_CASINGS) >= 5:
         return None
     p = eng.entity_create(0x66, obj_size=0xC, instance=True)
+    if not p:
+        return None
     o = m.u32(p + 0x388)
     m.w32(p + 8, 0x66)
     m.w32(p + 0xC, 0x07020000)

@@ -160,9 +160,8 @@ class Engine:
         self.rand = Rand(feed, level)
         self.stats = Counter()
         self.notes = defaultdict(list)       # things the engine did not do, by kind, with ticks
-        self.heap_next = HEAP
-        self.free_blocks = defaultdict(list)
-        self.block_size = {}
+        from engine_heap import Heap
+        self.heap = Heap(self.m)             # the game's own heap, as the seed has it
         self.ents = {}                       # address -> Ent (level logic's view)
         self.world = Collision(self)
         from engine_audio import Audio
@@ -204,22 +203,14 @@ class Engine:
 
     # -- memory blocks
     def alloc(self, n):
-        n = (n + 15) & ~15
-        if self.free_blocks[n]:
-            a = self.free_blocks[n].pop()
-        else:
-            a = self.heap_next
-            self.heap_next += n
-            if self.heap_next >= 0x80000000 + Mem.SIZE:
-                raise MemoryError("engine heap full")
-        self.block_size[a] = n
-        self.m.zero(a, n)
+        """calloc on the game's heap (engine_heap.py): 0 when it is full, as the original."""
+        a = self.heap.calloc(n)
+        if not a:
+            self.note("heap full", f"{n} bytes")
         return a
 
     def free(self, a):
-        n = self.block_size.pop(a, None)
-        if n:
-            self.free_blocks[n].append(a)
+        self.heap.free(a)
 
     # -- the entity list (entities.md, Lists and handles)
     def entities(self):
@@ -307,14 +298,17 @@ class Engine:
 
     # -- creating and removing (entities.md, Creating, activating and removing entities)
     def entity_create(self, etype, obj_size=0, model=0, addr=None, parts=None, channels=0, list_n=0,
-                      instance=False):
+                      instance=False, iflags=None):
         """entity_create (0x8006B5B8): the entity, its object, the animation instance, the hit
-        parts, the script channels' blocks; a handle; the defaults (0x8006B350)."""
+        parts, the script channels' blocks; a handle; the defaults (0x8006B350); with instance
+        flags, model_instance_init's block (engine_heap.py). 0 when the heap refuses."""
         m = self.m
         nparts = (m.u16(model + 0xBE) if model else 0) if parts is None else parts
         inst_size = 0xB0 if model or instance else 0
         size = 0x3CC + obj_size + inst_size + 0x48 * nparts + 2 * 0x3C * channels + 0x1C * list_n
         e = addr if addr is not None else self.alloc(size)
+        if not e:
+            return 0
         if addr is not None:
             m.zero(e, 0x3CC)
         p = e + 0x3CC
@@ -349,7 +343,13 @@ class Engine:
         m.w32(e + 0x39C, 0)
         self.entity_defaults(e)
         m.w32(e + 8, etype)
-        if model:
+        if model and iflags is not None:
+            from engine_heap import instance_init
+            if not instance_init(self, m.u32(e + 0x100), model, iflags, e):
+                self.free(e)
+                self.note("heap full", f"instance of {etype:X}")
+                return 0
+        elif model:
             self.instance_init(e, model)
         self.stats[f"created {etype:X}"] += 1
         return e
@@ -425,73 +425,15 @@ class Engine:
         m.w32(e + 0x2D4, m.u32(model + 0xA0))
 
     def model_swap(self, e, model, flags):
-        """func_8006B234 + func_8006B1C4 -> model_instance_init (0x8006A96C) on a live entity (the
-        player's weapon change): the instance rebuilt for the new model with fresh pose buffers
-        (frame 0's quaternions in +0x8C and +0x90, none current), the root offset (+0x98..), the
-        static vertices (+0x2C), no animation; the entity's eye height, scale, part count and
-        parts from the model's templates (animation.md, The instance)."""
-        m = self.m
-        inst = m.u32(e + 0x100)
-        m.w32(inst + 0x6C, 0x80)
-        m.w32(inst + 0x68, 0)
-        m.w32(inst + 4, flags)
-        m.w32(inst + 8, model)
-        tbl = m.u32(model + 8)
-        nb = m.u8(m.u32(tbl + 4) + 1) if tbl else 0
-        buf = self.alloc(max(0x18 * nb, 0x10))
-        m.w32(inst, buf)
-        if tbl:
-            m.w16(inst + 0x70, m.u16(tbl))
-            m.w32(inst + 0x78, tbl + 4)
-            m.w16(inst + 0x72, nb)
-            m.w32(inst + 0x74, tbl)
-            m.w32(inst + 0x7C, m.u32(model + 0x38))
-            m.w32(inst + 0x80, m.u32(model + 0x84))
-            m.w32(inst + 0x90, buf)
-            m.w32(inst + 0x8C, buf + 8 * nb)
-            m.w32(inst + 0x94, buf + 16 * nb)
-            m.w32(inst + 0x84, m.u32(model + 0x9C))
-            first = m.u32(tbl + 4)
-            m.copy(buf + 8 * nb, m.u32(first + 0x10), 8 * nb)
-            m.copy(buf, m.u32(first + 0x10), 8 * nb)
-            m.w32(inst + 0x88, 0)
-            w = m.u32(first + 4)
-            m.w16(inst + 0x98, s32(w << 22) >> 22)
-            m.w16(inst + 0x9A, s32(w << 11) >> 21)
-            m.w16(inst + 0x9C, s32(w << 1) >> 22)
-        else:
-            for o in (0x74, 0x7C, 0x84, 0x88, 0x90, 0x78, 0x80, 0x8C, 0x94):
-                m.w32(inst + o, 0)
-            m.w16(inst + 0x70, 0)
-            m.w16(inst + 0x72, 0)
-        m.w16(inst + 0x3C, m.u16(model + 0x8C))
-        if flags & 2:
-            m.w32(inst + 0x2C, m.u32(model + 0x88))
-        m.w16(inst + 0x42, m.u16(model + 0x8E))
-        m.w16(inst + 0x5C, -1)
-        m.w16(inst + 0x5E, 0)
-        m.w32(inst + 0x54, 0)
-        m.w32(inst + 0x58, 0)
-        m.w32(e + 0x2D4, m.u32(model + 0xA0))
-        for k in range(3):
-            m.w32(e + 0x270 + 4 * k, m.u32(model + 0xA4 + 4 * k))
-        n = m.u16(model + 0xBE)
-        m.w16(e + 0x36, n)
-        pp, tp = m.u32(e + 0x304), m.u32(model + 0xC0)
-        for i in range(n):
-            q, t = pp + 0x48 * i, tp + 0x48 * i
-            m.w32(q + 4, m.u32(t + 4))
-            m.w32(q + 8, m.u32(t + 0xC))
-            m.w32(q + 0xC, m.u32(t + 0xC))
-            m.w16(q + 0x1C, m.u16(t + 0x1C))
-            m.w16(q + 0x1E, m.u16(t + 0x1E))
-            for o in (0x34, 0x30, 0x38, 0x10, 0x14):
-                v = m.u32(t + o)
-                m.w32(q + o, s32(v * 2) if flags & 0x200 and o in (0x30, 0x34, 0x38) else v)
-            for o in (0x40, 0x42, 0x44):
-                m.w16(q + o, m.u16(t + o))
-            m.w32(q + 0x18, inst)
-            m.w32(q + 0x3C, 0)
+        """func_8006B234 + func_8006B1C4 -> model_instance_init (0x8006A96C) on an entity: the old
+        block freed now, the instance rebuilt for the model with a new one (engine_heap.py)."""
+        from engine_heap import instance_init, instance_release
+        inst = self.m.u32(e + 0x100)
+        instance_release(self, inst, e, 0)
+        if not instance_init(self, inst, model, flags, e):
+            self.note("heap full", f"model swap of {self.m.s32(e + 8):X}")
+            return 0
+        return 1
 
     def remove(self, e, why=""):
         """entity_remove (0x8006B8F0): flagged, the record's state and messages, unlinked, the
@@ -510,8 +452,36 @@ class Engine:
             d(e)
         if ent is not None:
             self.logic.removed(ent, why)
-        if e >= HEAP:
-            self.free(e)
+        self.destroy_blocks(e)
+
+    def destroy_blocks(self, e):
+        """What the destructors (+0x384) give back to the heap: 0x8006A318 the brain now and the
+        entity two frames late; 0x8006A37C, 0x8007BA00 and 0x8007192C the instance's block (two
+        frames late) first; the projectile's (0x80044BE4) as a tracer's (behaviour 0x80) or with
+        its instance; the alarm's ends in 0x8006A318. Characters live in their pool."""
+        m = self.m
+        t = m.s32(e + 8)
+        if t in (0x1402, 0x1405):
+            return
+        d = m.u32(e + 0x384)
+        if d == 0x80044BE4:
+            o = m.u32(e + 0x388)
+            if m.s32(o + 0x2C):
+                return
+            m.w32(o + 0x2C, 1)
+            d = 0x8006A318 if m.u16(o + 0x38) & 0x80 else 0x8006A37C
+        if d == 0x8005F008:
+            d = 0x8006A318
+        instance = d in (0x8006A37C, 0x8007BA00, 0x8007192C)
+        if instance and m.u32(e + 0x100):
+            from engine_heap import instance_release
+            instance_release(self, m.u32(e + 0x100), e, 2)
+        if d == 0x8006A318 or instance:
+            if m.u32(e + 0x38C):
+                self.free(m.u32(e + 0x38C))
+            self.heap.free_later(e, 2)
+        else:
+            self.note("destructor not freeing", f"{d:08X} (type {t:X})")
 
     # -- input (engine_feed.py)
     def action_pressed(self, a, port=0):
@@ -736,6 +706,8 @@ class Engine:
             self.vblank_prev = vb
             self.vblank = vb
             self.chunks_at(vb)
+            # game_frame: the blocks freed late counted down (0x8008A580), the character pools
+            self.heap.frame()
             from engine_enemy import char_pool_update
             char_pool_update(self)
             if not ticks:
