@@ -167,14 +167,21 @@ def player_update(eng, e):
         if not weapon_flags(m, m.u8(G_SLOT_WEAPON + slot)) & 1:
             if m.s16(inv + 0x66 + 2 * slot) == 0 and m.s32(inv + 0x48) <= 0 and m.s16(inv + 0x56 + 2 * slot) != 0:
                 weapon_reload(eng, e, inv)
+        # inv+0x38 counts 4 ticks of the hit parts at kind 8 (radius and damage 0), then back to
+        # their defaults; started by a channel-0 script of class bit 8 at its animation's frame 0
+        from engine_effects import hit_parts_set
         c = m.s32(inv + 0x38)
         if c:
-            m.w32(inv + 0x38, c - 1)
-            eng.note("player melee part (inv+0x38) not implemented")
+            c -= 1
+            m.w32(inv + 0x38, c)
+            if c == 0:
+                hit_parts_set(m, e, 0xFFFF, -1, -1, -1)
+            else:
+                hit_parts_set(m, e, 0xFFFF, 8, 0, 0)
         elif m.u32(m.u32(e + 0x114)) & 8 if m.u32(e + 0x114) else False:
             if m.s16(m.u32(e + 0x100) + 0x5E) == 0:
                 m.w32(inv + 0x38, 4)
-                eng.note("player melee part (0x8004C64C) not implemented")
+                hit_parts_set(m, e, 0xFFFF, 8, 0, 0)
         if m.u16(inv + 0x154):
             if m.u32(inv) & 2:
                 m.w16(inv + 0x154, 0)

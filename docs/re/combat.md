@@ -552,7 +552,7 @@ Hit parts also matter for:
 | `0x80039CA8` | Shots fired (`fire_gun`, `throw_weapon`) | |
 | `0x80039CAC` | Shots that hit (once per bullet) | `inv+0x148` |
 | `0x80039CB0` | Times the player was wounded (`0x80080304`) | `inv+0x144` |
-| `0x80039CB4` | Melee hits? (`0x8008034C`, attack parts 5/6/9) | `inv+0x14C` |
+| `0x80039CB4` | Melee attacks (`stat_melee` `0x8008034C`: op 0C on the player setting a part to kind 5, 6 or 9, which also sets flags A 0x10000000; any other kind clears it) | `inv+0x14C` |
 | `0x80039CB8` | Kills (`0x80080240`); also per weapon at `g_weapons[w]+0x30`, carried to the next level with the ammo | `inv+0x142` |
 | `0x80039CC0` | Head hits (part 0, the helmet) | |
 | `0x80039CC4` | Torso hits (parts 3, 4, 7, 8) | |

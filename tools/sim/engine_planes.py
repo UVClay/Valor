@@ -261,14 +261,23 @@ def destructible_touch(eng, e, o):
         return 0
     if fa & 4 and t != 0x31:
         return impact_material(eng, e)
+    dmg = m.s32(o + 0xF8)
     if fa & 1:
+        # the player's melee part (kind 5): facing it (its forward column . (player - object) < 0)
+        # and the part's radius + the object's within the horizontal distance: the part's damage
         pp = m.u32(o + 0x304)
         if m.s32(pp + 8) != 5:
             return 0
-        eng.note("destructible hit by the player's melee not implemented")
-        return 0
+        dx = s16(m.s16(o + 0x20E) - m.s16(e + 0x20E))
+        dz = s16(m.s16(o + 0x216) - m.s16(e + 0x216))
+        if s32(m.s16(o + 0x344) * dx + m.s16(o + 0x350) * dz) >= 0:
+            return 0
+        r = s32(m.s32(pp + 0x34) + m.u16(e + 0x2E8))
+        if s32(r * r) - s32(dx * dx + dz * dz) <= 0:
+            return 0
+        dmg = m.s32(pp + 0x10)
     from engine_combat import apply_damage
-    apply_damage(eng, e, m.s32(o + 0xF8), o)
+    apply_damage(eng, e, dmg, o)
     ent = eng.ents.get(e)
     eng.logic.run_message(ent, 0, 1, "destructible hit")
     fe = m.u32(e + 0xC)

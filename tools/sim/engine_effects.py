@@ -234,7 +234,12 @@ def hit_part(vm, mask, kind, radius, damage):
     hit_parts_set(m, e, mask & 0xFFFFFFFF, s32(kind), s32(radius), s32(damage << 16))
     if m.s32(e + 8) == 1:
         if kind in (9, 5, 6):
-            vm.eng.note("stat_melee not implemented")
+            # stat_melee (0x8008034C): flags A | 0x10000000, the melee statistic (0x80039CB4) and
+            # the view object's count (+0x14C)
+            m.w32(e + 0xC, m.u32(e + 0xC) | 0x10000000)
+            m.w32(0x80039CB4, m.u32(0x80039CB4) + 1)
+            inv = m.u32(e + 0x388)
+            m.w32(inv + 0x14C, m.u32(inv + 0x14C) + 1)
         else:
             m.w32(e + 0xC, m.u32(e + 0xC) & 0xEFFFFFFF)
 

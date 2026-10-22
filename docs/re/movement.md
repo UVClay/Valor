@@ -435,6 +435,11 @@ offsets (`+0x24C..+0x254`) halve. Checked on monkey runs of 2:4 and 3:2 (every f
 exact, 225 and 8, with analog strafing into walls and a hit on a ladder).
 Crouching cancels the flinch. Also a camera shake.
 
+Just before the flinch, `player_update` keeps a 4-tick hit-part window in `inv+0x38`: while it
+counts down every hit part is set to kind 8 with radius and damage 0 (`0x8004C64C(soldier,
+0xFFFF, 8, 0, 0)`), at 0 back to the defaults (`-1, -1, -1`); it is started (4, and the parts
+set) when the soldier's channel-0 script's class has bit 8 and its animation is at frame 0.
+
 ## Use
 
 Action 5 (Square, the same button as reload by default), pressed (`player_use`,

@@ -357,7 +357,10 @@ catalogue.md), 0x1776 doors in 1:1, 2:1..2:3, 3:1, 4:1, 4:2, 5:1, 5:2, 5:4, 7:2,
   bullet flies on.
 - **`destructible_touch`** (`0x8005D32C`, the object touched by another): a projectile from a
   flags-A-4 owner (enemies' rounds) only makes the material sound; the player's melee part
-  (kind 5, in front, within reach) or a projectile does its damage (`+0xF8`), and so does an
+  (its first hit part at kind 5: the player facing the object, i.e. the player's forward column
+  (`+0x344`, `+0x350`) · (player − object) on x, z < 0, and (the part's radius `+0x34` + the
+  object's `+0x2E8`)² above dx² + dz²) does the part's damage (`+0x10`), a projectile its own
+  (`+0xF8`), and so does an
   explosion (type 0x31, no sound); then message 1 to the object's level script at once, and at
   its death (once, flags A 0x100000) the counter `0x80039D10` and a drop (`0x800838AC`) when the
   record's `+0x68` is set; the sound by the model: wood 0x23 (0x69960D1C, 0x4D682091,
