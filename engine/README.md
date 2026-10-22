@@ -560,7 +560,7 @@ original's every tick, as `engine.py cmp` does.
 | 9:4 (coverage tape) | 5 | 9,901 of 9,901 | 9,902 of 9,902 |
 
 All of it, every one, from the seed and from the disc (a disc run also compares tick 1, which the
-seed's dump already holds). Synced to the Python engine at 3337d69, which is whole on the same
+seed's dump already holds). Synced to the Python engine at 61451c1, which is whole on the same
 fourteen. The restarts are the engine's own: after a death the level restarts in place
 (`level_restart`: every entity but the soldier, the camera, the world and type 8 removed, their
 handles kept until the idle work frees them, and `level_start` built as from the disc), where the

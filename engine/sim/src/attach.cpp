@@ -353,7 +353,7 @@ void attachments_op(Engine& eng, U e, I ops, I arg) {
                 // lobbed toward the player: speed 50 + (2D distance - 700) / 16 (to 150), the yaw of
                 // the normalised horizontal offset
                 U sol = U(m.u32(G_SOLDIER));
-                V3 v = normal_ss({S16(m.s16(sol + 0x20E) - m.s16(e + 0x20E)), 0, S16(m.s16(sol + 0x216) - m.s16(e + 0x216))});
+                V3 v = normal_ss(eng.gte, {S16(m.s16(sol + 0x20E) - m.s16(e + 0x20E)), 0, S16(m.s16(sol + 0x216) - m.s16(e + 0x216))});
                 I yaw = eng.gte.ratan2(int32_t(v[0]), int32_t(v[2]));
                 I d = imax(dist2d_approx(m, e, sol) - 0x2BC, 0);
                 I sp = imin((d >> 4) + 0x32, 0x96);

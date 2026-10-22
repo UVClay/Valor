@@ -28,11 +28,10 @@ M3 ent_m3(Mem& m, U e) {
     return M;
 }
 
-V3 vector_normal_ss(const V3& v) {
-    double n = std::sqrt(double(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]));
-    if (n == 0) return {0, 0, 0};
-    V3 o;
-    for (int k = 0; k < 3; k++) o[k] = I(std::nearbyint(double(v[k]) * 4096.0 / n));
+// VectorNormalSS (0x80016A70): to length 4096 by the GTE's table method
+V3 vector_normal_ss(const Gte& g, const V3& v) {
+    V3 o = vnormal(g, v);
+    for (int k = 0; k < 3; k++) o[k] = S16(o[k]);
     return o;
 }
 
@@ -129,7 +128,7 @@ I sight_test(Engine& eng, U e, U t, I rng, bool blockers) {
     I dist = dist_approx(d[0], d[1], d[2]);
     if (!(dist < rng && ang < m.s16(b + 0xB4))) return 0;
     if (blockers) {
-        V3 u = vector_normal_ss(d);
+        V3 u = vector_normal_ss(eng.gte, d);
         for (U o : m.entities()) {
             if (!(m.u32(o + 0x10) & 0x4000) || (m.u32(o + 0xC) & 0x20080000)) continue;
             V3 v;
@@ -275,7 +274,7 @@ I probe(Engine& eng, U e, I how, I r) {
 // within |rng|) that is not `exclude`, free (its holder's handle dead; with exclude -1 any), of a
 // kind in mask (mask -1: any), with the soldier nearer to it than the player and the player within
 // 10000 of it, and the player in front of it ((player - node) . direction, y left out, >> 12, at
-V3 normal_ss(const V3& v) { return vector_normal_ss(v); }
+V3 normal_ss(const Gte& g, const V3& v) { return vector_normal_ss(g, v); }
 
 // least 101); mask 8 waives the last two tests but the 10000. -1 if none.
 I compute_node(Engine& eng, U e, I rng, I exclude, I mask) {
