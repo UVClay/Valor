@@ -376,7 +376,9 @@ U pickup_spawn(Engine& eng, PickupRec& rec, U kind_hash, U model_hash, U) {
         eng.note("pickup model missing");
         return 0;
     }
-    U p = eng.entity_create(0x65, m.u16(t + 8), model, 0, 0);
+    // entity_create(3, ...): room for the model's hit parts, which the pickup then drops (+0x36 0)
+    U p = eng.entity_create(0x65, m.u16(t + 8), model, 0, -1);
+    m.w16(p + 0x36, 0);
     m.w32(p + 8, 0x65);
     m.w32(p + 0x36C, PICKUP_THINK);
     m.w32(p + 0xC, 0x47028200);

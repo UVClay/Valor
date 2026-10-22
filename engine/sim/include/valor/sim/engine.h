@@ -104,6 +104,8 @@ public:
     // While the level is built from the disc (load.cpp), the original's heap: model_swap releases
     // the old pose buffer and allocates the new one exactly (model_instance_init).
     std::function<void(U e, U model, I flags)> swap_hook;
+    // The game's heap at run time, once the state was built from the disc (load.h).
+    std::unique_ptr<class GameHeap> gheap;
     std::map<I, size_t> idle_used_;  // the idle records consumed, by tick
     // Live play (no recording): see start_live and live_frame; in_view answers the draw pass's
     // question (is the entity drawn this frame) for the host's camera.

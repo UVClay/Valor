@@ -4,6 +4,7 @@
 #include <fstream>
 
 #include "valor/sim/audio.h"
+#include "valor/sim/load.h"
 #include "valor/sim/objects.h"
 #include "valor/sim/views.h"
 
@@ -120,6 +121,16 @@ void Engine::note(const std::string& kind, const std::string& detail) {
 }
 
 U Engine::alloc(I n) {
+    if (gheap) {
+        U a = gheap->calloc(n);
+        if (!a) {
+            std::fprintf(stderr, "the game's heap is full (%lld bytes asked) at tick %lld\n", (long long)n, (long long)tick_no);
+            for (auto& [k, v] : stats)
+                if (k.find("destructor") != std::string::npos || k.rfind("created", 0) == 0) std::fprintf(stderr, "  %s: %lld\n", k.c_str(), (long long)v);
+            std::abort();
+        }
+        return a;
+    }
     n = (n + 15) & ~I(15);
     U a;
     auto& fb = free_blocks_[n];
@@ -140,6 +151,10 @@ U Engine::alloc(I n) {
 }
 
 void Engine::free(U a) {
+    if (gheap) {
+        gheap->free(a);
+        return;
+    }
     auto it = block_size_.find(a);
     if (it == block_size_.end()) return;
     I n = it->second;
@@ -339,6 +354,10 @@ void Engine::model_swap(U e, U model, I flags) {
         swap_hook(e, model, flags);
         return;
     }
+    if (gheap) {
+        gheap->model_swap(e, model, flags);
+        return;
+    }
     U inst = U(m.u32(e + 0x100));
     m.w32(inst + 0x6C, 0x80);
     m.w32(inst + 0x68, 0);
@@ -411,7 +430,10 @@ void Engine::remove(U e, const std::string& why) {
     m.w32(G_REMOVED + 4 * (h & 0xFFFF), 1);
     run_destroy(*this, m.s32(e + 8), e);
     if (ent) logic->removed(ent, why);
-    if (e >= HEAP) free(e);
+    if (gheap)
+        gheap->destroy(e);
+    else if (e >= HEAP)
+        free(e);
 }
 
 bool Engine::action_pressed(int a, int port) const {
@@ -595,6 +617,7 @@ void Engine::live_frame(I vblanks) {
     vblank += vblanks;
     m.w32(G_VBL_TIMER, m.s32(G_VBL_TIMER) + vblanks);
     vblank_prev = vblank;
+    if (gheap) gheap->frame();
     char_pool_update(*this);
     tick(true);
     draw_pass(*this);
@@ -610,6 +633,7 @@ void Engine::run(I to, const std::function<void(const StateLine&)>& line) {
         vblank_prev = vb;
         vblank = vb;
         world.at(vb);
+        if (gheap) gheap->frame();
         char_pool_update(*this);
         // a paused frame (no tick due): the timer reset, then the draw and the idle work all
         // the same (game_frame, objects.md)

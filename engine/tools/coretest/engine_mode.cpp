@@ -8,6 +8,7 @@
 // VALOR_TRACE_INPUT / RAND / idle work), orig.jsonl (its state trace), frames.log, timing.log,
 // drawn.log and seed/dV.bin.
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -191,6 +192,7 @@ int run_engine(int argc, char** argv) {
     std::string out_path;
     I seed_arg = 0;
     bool disc = false;
+    std::vector<std::pair<std::string, std::string>> heaps;
     std::map<std::string, std::string> dumps;
     for (int i = 3; i < argc; i++) {
         if (!std::strcmp(argv[i], "--to") && i + 1 < argc) to = std::atoll(argv[++i]);
@@ -198,6 +200,14 @@ int run_engine(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--out") && i + 1 < argc) out_path = argv[++i];
         else if (!std::strcmp(argv[i], "--seed") && i + 1 < argc) seed_arg = std::atoll(argv[++i]);
         else if (!std::strcmp(argv[i], "--disc")) disc = true;
+        else if (!std::strcmp(argv[i], "--heap") && i + 1 < argc) {
+            // --heap TICK:DUMP: the game's heap at the end of TICK's frame against a dump's, block
+            // by block (address, size, allocation serial)
+            std::string a = argv[++i];
+            size_t c = a.find(':');
+            heaps.push_back({a.substr(0, c), a.substr(c + 1)});
+            dumps[a.substr(0, c)] = "build/gd/heap_" + a.substr(0, c) + ".bin";
+        }
         else if (!std::strcmp(argv[i], "--dump") && i + 1 < argc) {
             std::string a = argv[++i];
             size_t c = a.find(':');
@@ -307,5 +317,28 @@ int run_engine(int argc, char** argv) {
             std::printf(" ]\n");
         }
     cmp.report();
+    for (auto& [t, path] : heaps) {
+        auto blocks = [](const std::string& f) {
+            std::vector<std::array<long long, 3>> out;
+            std::ifstream in(f, std::ios::binary);
+            std::vector<uint8_t> d((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            auto w = [&](size_t o) { return uint32_t(d[o] | d[o + 1] << 8 | d[o + 2] << 16 | uint32_t(d[o + 3]) << 24); };
+            for (uint32_t a = 0x800D17F0; a < 0x80200000 && d.size() >= 0x200000;) {
+                size_t o = a & 0x1FFFFF;
+                uint32_t sz = w(o), nx = w(o + 4), fl = w(o + 8), ck = w(o + 0xC);
+                if (uint32_t(sz + nx + fl + ck) != 0xB562439F || !sz) break;
+                out.push_back({a, sz * 16, (fl & 0x80000000) ? (fl >> 16) & 0x7FFF : -1});
+                a += sz * 16;
+            }
+            return out;
+        };
+        auto a = blocks("build/gd/heap_" + t + ".bin"), b = blocks(path);
+        size_t same = 0;
+        for (auto& x : a)
+            for (auto& y : b)
+                if (x == y) same++;
+        std::printf("heap at tick %s: %zu blocks built, %zu in %s, %zu identical (address, size, serial)\n", t.c_str(), a.size(),
+                    b.size(), path.c_str(), same);
+    }
     return 0;
 }

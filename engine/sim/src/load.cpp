@@ -1968,6 +1968,83 @@ void Loader::voice_stop(I v) {
 
 }  // namespace
 
+// ---------------------------------------------------------------- the game's heap at run time
+
+struct GameHeap::Impl {
+    LevelBuild lb;
+    Loader ld;
+    explicit Impl(Engine& eng) : ld{eng, eng.m, Heap{eng.m}, lb, eng.mission_n, eng.level_n, {}} {}
+};
+
+GameHeap::GameHeap(Engine& eng) : impl_(std::make_unique<Impl>(eng)) {}
+GameHeap::~GameHeap() = default;
+
+U GameHeap::calloc(I size) { return impl_->ld.heap.calloc(size, 1); }
+void GameHeap::free(U p) { impl_->ld.heap.free(p); }
+
+void GameHeap::free_later(U p, I frames) {
+    Mem& m = impl_->ld.m;
+    if (frames == 0) {
+        free(p);
+        return;
+    }
+    I n = m.s32(0x8009F888);
+    m.w32(0x8009F88C + 8 * n, p);
+    m.w32(0x8009F890 + 8 * n, frames);
+    m.w32(0x8009F888, n + 1);
+}
+
+// 0x8008A580: each entry counted down; at 0 freed, the last entry moved into its place (and not
+// looked at again this frame).
+void GameHeap::frame() {
+    Mem& m = impl_->ld.m;
+    for (I i = 0; i < m.s32(0x8009F888); i++) {
+        U e = U(0x8009F88C + 8 * i);
+        I c = m.s32(e + 4) - 1;
+        m.w32(e + 4, c);
+        if (c > 0) continue;
+        free(U(m.u32(e)));
+        I n = m.s32(0x8009F888) - 1;
+        m.w32(e, m.u32(0x8009F88C + 8 * n));
+        m.w32(0x8009F888, n);
+        m.w32(e + 4, m.u32(0x8009F890 + 8 * n));
+    }
+}
+
+void GameHeap::model_swap(U e, U model, I flags) {
+    Loader& ld = impl_->ld;
+    U inst = U(ld.m.u32(e + 0x100));
+    ld.instance_release(inst, e, 0);
+    ld.instance_init(inst, model, flags, e);
+}
+
+void GameHeap::destroy(U e) {
+    Loader& ld = impl_->ld;
+    Mem& m = ld.m;
+    I t = m.s32(e + 8);
+    if (t == 0x1402 || t == 0x1405) return;  // the character pool's (enemy_destroy, dog_destroy)
+    U d = U(m.u32(e + 0x384));
+    if (d == 0x80044BE4) {
+        // the projectile's (0x80044BE4): once (obj+0x2C); 0x8006A318 for a tracer (behaviour
+        // 0x80), else 0x8006A37C
+        U o = U(m.u32(e + 0x388));
+        if (m.s32(o + 0x2C)) return;
+        m.w32(o + 0x2C, 1);
+        d = (m.u16(o + 0x38) & 0x80) ? 0x8006A318 : 0x8006A37C;
+    }
+    bool instance = d == 0x8006A37C || d == 0x8007BA00 || d == 0x8007192C;
+    if (instance && m.u32(e + 0x100)) ld.instance_release(U(m.u32(e + 0x100)), e, 2);
+    if (d == 0x8006A318 || instance) {
+        // 0x8006A318: the brain freed now, the entity two frames late
+        if (m.u32(e + 0x38C)) free(U(m.u32(e + 0x38C)));
+        free_later(e, 2);
+    } else {
+        char buf[64];
+        std::snprintf(buf, sizeof buf, "destructor %08X (type %llX) not freeing", d, (unsigned long long)t);
+        ld.eng.note(buf);
+    }
+}
+
 std::vector<uint8_t> game_defaults(int mission, int level, int ammo) {
     std::vector<uint8_t> g(0x780, 0);
     auto w32 = [&](size_t o, U v) {
@@ -2041,6 +2118,7 @@ bool Engine::load_disc(const std::vector<uint8_t>& game, LevelBuild& out, std::s
     ld.note("clear_colour_set (the draw environments' clear colour): drawing only");
     ld.level_start();
     out.rand_calls = ld.rand_calls;
+    gheap = std::make_unique<GameHeap>(*this);
     tick_no = m.u32(G_TICK);
     logic = std::make_unique<LevelLogic>(*this);
     ents.clear();

@@ -5,6 +5,7 @@
 // the profile, mission and level, options, carried ammunition).
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,31 @@ struct Heap {
     U malloc(I size, I tag = 0, I flags = 0);
     U calloc(I size, I count);
     void free(U p);
+};
+
+class Engine;
+
+// The game's heap at run time, for an engine whose state was built from the disc
+// (Engine::load_disc): the engine's allocations go through the exe's allocator, entity blocks and
+// pose buffers are freed two frames late as the destructors ask (0x8008A4F8, counted down by
+// 0x8008A580 at each frame's start), and model swaps allocate the pose buffers exactly
+// (model_instance_init, 0x8006A96C).
+class GameHeap {
+public:
+    explicit GameHeap(Engine& eng);
+    ~GameHeap();
+    U calloc(I size);
+    void free(U p);
+    void free_later(U p, I frames);  // 0x8008A4F8 (frames 0: now)
+    void frame();                    // 0x8008A580
+    void model_swap(U e, U model, I flags);
+    // The removal's part of the destructors (+0x384) for an entity on the heap: its instance's
+    // pose buffers and its brain released, its block freed two frames late.
+    void destroy(U e);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 struct LevelBuild {

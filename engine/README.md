@@ -349,6 +349,21 @@ d337b74: 5,632, as the seed run then). RAM differs from the seed run by a consta
 the timer and `rand`'s seed come a tick late from the seed: 0 identical (821 from the seed dump),
 first difference at tick 2 for both.
 
+### The game's heap at run time
+
+From the disc the engine keeps using the exe's allocator (`GameHeap`, load.h) after the start:
+- entities, brains and projectiles' models are allocated through it;
+- model swaps allocate pose buffers exactly as `model_instance_init` does;
+- the destructors' frees are emulated: brains are freed at once, while entity blocks and pose
+  buffers are freed two frames late (`0x8008A4F8`, counted down at each frame's start by
+  `0x8008A580`).
+
+`coretest --engine 1:3 --disc --heap TICK:DUMP` compares the heap block by block with the
+original's RAM. All eight dumps of the session match on every block's address, size and
+allocation serial (ticks 207, 4675, 5000, 5300, 5600, 5823, 6402, 6943: 32 to 62 blocks each).
+It took one fix: a pickup's entity block has room for its model's hit parts, which it then
+drops.
+
 ### Clean types for the host (`sim/include/valor/sim/views.h`)
 
 The host doesn't see offsets. The accessor layer is thin read-only views over `Mem`: `Entity`,
@@ -366,8 +381,6 @@ in the recordings: the pad words and the control roles' values per tick.
    the idle work's real schedule (the time left in the vblank wait), chunk streaming by the
    player's position instead of every chunk, and the player's death and restart (`level_start`
    again on the built state).
-2. **The engine's allocations on the game's heap at run time**, as the disc build already does
-   (spawned entities still come from the engine's own bump heap above 2 MB).
 3. **Presentation**: the first-person weapon, pickups and effects (tracers, explosions' particle
    systems), sounds and music from the engine's voice table, the HUD.
 4. **2:2 from the disc**: a dump from before its tick 1 (the capture's earlier vblank), so its
