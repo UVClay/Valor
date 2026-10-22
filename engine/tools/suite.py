@@ -6,8 +6,8 @@ tick with the original's state trace.
     engine/tools/suite.py [--coretest build/gd/cmake/coretest] [-j N] [--only 1:3,5:4] [--seed-only]
 
 The recordings: the session (build/engine: 1:3, 2:1, 2:2) and every coverage tape
-build/engine/in_m{M}l{L}. Prints a row per recording (ticks, identical from the seed, from the
-disc, the first difference) and checks them against engine/tools/suite_expect.txt (the identical
+build/engine/in_m{M}l{L}. Prints a row per recording (ticks identical of those compared, from
+the seed and from the disc, and the first difference) and checks them against engine/tools/suite_expect.txt (the identical
 counts the engine has reached): exit 1 when any run falls below it. --update rewrites that file
 with this run's counts where they rose.
 """
@@ -81,29 +81,27 @@ def main():
         res = dict(zip(jobs, ex.map(lambda j: run(a.coretest, j[0], j[1], j[2] == "disc"), jobs)))
     exp = load_expect()
     failed = []
-    print(f"{'recording':<10} {'ticks':>6}  {'from the seed':>15}  {'from the disc':>15}  first difference")
+    print(f"{'recording':<10} {'from the seed':>22}  {'from the disc':>22}  first difference")
     for lv, inp in recs:
         cells, first = [], []
-        ticks = None
         for mode in ["seed", "disc"]:
             if mode not in modes:
-                cells.append(f"{'-':>15}")
+                cells.append(f"{'-':>22}")
                 continue
             n, same, fd = res[(lv, inp, mode)]
             if n is None:
-                cells.append(f"{'fails':>15}")
+                cells.append(f"{'fails':>22}")
                 first.append(f"{mode}: {fd}")
                 failed.append((lv, mode, "no result"))
                 continue
-            ticks = n
             mark = "whole" if same == n else f"{same * 100 // n}%"
-            cells.append(f"{same:>7,} {mark:>7}")
+            cells.append(f"{f'{same:,}/{n:,}':>15} {mark:>6}")
             if fd >= 0:
                 first.append(f"{mode} {fd}")
             want = exp.get((lv, mode))
             if want is not None and same < want:
                 failed.append((lv, mode, f"{same} < {want}"))
-        print(f"{lv:<10} {ticks if ticks is not None else '-':>6}  {cells[0]}  {cells[1]}  {', '.join(first)}")
+        print(f"{lv:<10} {cells[0]}  {cells[1]}  {', '.join(first)}")
     if a.update:
         for (lv, _, mode), (n, same, _) in res.items():
             if same is not None and same > exp.get((lv, mode), -1):

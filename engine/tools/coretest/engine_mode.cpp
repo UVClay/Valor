@@ -207,7 +207,11 @@ std::vector<std::pair<I, std::vector<I>>> frames_of(const std::string& path, con
             out.push_back({vb, ticks});
         }
     }
-    if (!out.empty() && total == want.size()) {
+    // (ticks before the first logged frame, as 1:3's first: the caller gives them their own frame)
+    size_t unlogged = 0;
+    if (!out.empty())
+        for (I t : want) unlogged += t < out.front().second.front();
+    if (!out.empty() && total + unlogged == want.size()) {
         // frames with no tick between the level's first and last (paused): the frame counter
         // (fc+0) moved, the tick counter did not
         std::set<I> ticked;
@@ -401,7 +405,7 @@ int run_engine(int argc, char** argv) {
     });
     std::printf("ran to tick %lld\n", (long long)eng.tick_no);
     for (auto& [k, v] : eng.stats)
-        if (k.rfind("think", 0) == 0 || k.find("not") != std::string::npos || k.rfind("view test", 0) == 0) {
+        if (k.rfind("think", 0) == 0 || k.find("not") != std::string::npos || k.rfind("view test", 0) == 0 || k == "level restarts") {
             std::printf("  %s: %lld [", k.c_str(), (long long)v);
             for (auto& [t, d] : eng.notes[k]) std::printf(" (%lld %s)", (long long)t, d.c_str());
             std::printf(" ]\n");

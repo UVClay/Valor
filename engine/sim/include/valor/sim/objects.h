@@ -34,10 +34,12 @@ U record_spawn_entity(Engine& eng, Record& rec);  // 0 when refused (queued)
 constexpr U G_LADDER_HELD = 0x8009A5B8;
 constexpr U LADDER_THINK = 0x800611D0;
 constexpr U SCRIPTED_THINK = 0x8005E61C;
+constexpr U SWITCH_THINK = 0x8005E4E4;  // the switches': the same as scripted_think
 constexpr U SMOKE_THINK = 0x80074A38;  // the smoke emitter's: drawing only
 constexpr U FLASH_THINK = 0x8004FC14;
 void scripted_think(Engine& eng, U e);
 U door_spawn(Engine& eng, Record& rec, U model);
+U switch_spawn(Engine& eng, Record& rec, U model);  // type 0x1775 (0x8005E510)
 U ladder_spawn(Engine& eng, U pair, U r);
 void ladder_think(Engine& eng, U e);
 void ladder_release(Engine& eng);

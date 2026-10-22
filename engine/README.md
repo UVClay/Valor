@@ -519,35 +519,43 @@ and role values, the random draws by function, the frame structure, the CD's chu
 models the renderer drew, the idle work). `coretest --engine` compares its state trace with the
 original's every tick, as `engine.py cmp` does.
 
-| Recording | Ticks | Restarts | From its seed dump | From the disc files |
-|---|---|---|---|---|
-| 1:3 (session) | 7,296 | 0 | 7,296 (all of it) | 7,296 of 7,297 (a pickup a tick early at 6951) |
-| 2:1 (session) | 8,368 | 0 | 8,368 (all of it) | 8,369 of 8,369 (all of it) |
-| 2:2 (session) | 7,036 | 0 | 7,036 (all of it) | 0 (no dump before tick 1: the timer and seed a tick late) |
-| 3:1 (coverage tape) | 4,525 | 0 | 4,525 (all of it) | 4,526 of 4,526 (all of it) |
-| 5:4 (coverage tape) | 10,339 | 10 | 10,339 (all of it) | 10,318 of 10,340 (a soldier's start animation, to the first restart) |
-| 9:4 (coverage tape) | 9,901 | 5 | 9,901 (all of it) | 362 of 9,902 (the same at its start) |
+| Recording | Restarts | From its seed dump | From the disc files |
+|---|---|---|---|
+| 1:3 (session) | 0 | 7,296 of 7,296 | 7,297 of 7,297 |
+| 2:1 (session) | 0 | 8,368 of 8,368 | 8,369 of 8,369 |
+| 2:2 (session) | 0 | 7,036 of 7,036 | 7,037 of 7,037 |
+| 3:1 (coverage tape) | 0 | 4,525 of 4,525 | 4,526 of 4,526 |
+| 3:3 (coverage tape) | 2 | 10,428 of 10,428 | 10,429 of 10,429 |
+| 5:1 (coverage tape) | 2 | 10,679 of 10,679 | 10,680 of 10,680 |
+| 5:4 (coverage tape) | 10 | 10,339 of 10,339 | 10,340 of 10,340 |
+| 9:4 (coverage tape) | 5 | 9,901 of 9,901 | 9,902 of 9,902 |
 
-Synced to the Python engine at 14e3a34; the Python engine is whole on all six too. The restarts
-are the engine's own: after a death the level restarts in place (`level_restart`: every entity
-but the soldier, the camera, the world and type 8 removed, their handles kept until the idle
-work frees them, and `level_start` built as from the disc), where the Python engine reseeds
-from the dump after each restart (`seed/r*.bin`). Every respawned entity is checked this way:
+All of it, every one, from the seed and from the disc (a disc run also compares tick 1, which the
+seed's dump already holds). Synced to the Python engine at a03e763, which is whole on the same
+eight. The restarts are the engine's own: after a death the level restarts in place
+(`level_restart`: every entity but the soldier, the camera, the world and type 8 removed, their
+handles kept until the idle work frees them, and `level_start` built as from the disc), where the
+Python engine reseeds from the dump after each restart (`seed/r*.bin`). Every respawned entity is
+checked this way:
 - soldiers and dogs with `model_instance_init`'s flags and hit parts (0x85 / 0x5, 0x285 / 0x205
   with auto aim, which doubles the parts' radii);
 - the mounted gun (`mounted.cpp`) and 9:4's V2 (`obj1774_spawn`, `0x800905C0`: its object of two
   particle systems, the 0x3CC-byte block it takes from the heap).
 
-The disc-built starts of 5:4 and 9:4 part at tick 1, on one soldier's first animation (0 against
-209 and 1). Its scripts pick it with rand at the level's start, and the engine's script draws there
-don't line up with the recording's yet:
-- the recording keys the shell's own draws to the level's tick 0. Their code sits at the same
-  addresses as LEVEL's, so the build now takes only the draws from the level's load on: the seed
-  less the load's vblanks, `0x8009A5C0`;
-- what still differs is one draw around a script call (op 0x38) in the soldier's first channel.
+**The regression test**, `engine/tools/suite.py`, runs every recording (the session's three and
+every tape `build/engine/in_m*l*`) from its seed and from the disc, in parallel (about 30 seconds
+for all 24), prints the table, and fails when any run falls below the counts it has reached
+(`engine/tools/suite_expect.txt`; `--update` raises them). The other tapes, first runs in the
+Python engine too, part where it does (1:1 at tick 2 on, 1:2 at 2045, 4:3 at 6247, ...).
 
-5:4 rejoins at its first restart and stays identical; 9:4 doesn't, as its first restart comes
-much later.
+The disc-built starts needed:
+- tick 0's recorded draws from the level's load on (`level_load` too, not only `level_start`: the
+  soldiers' first script picks in 5:4 and 9:4), less the shell's own, whose code sits at the same
+  addresses: the draws from the dump's vblank less the load's vblanks (`0x8009A5C0`);
+- the load's entities as its own logic left them (2:2's soldier: an event the level script
+  raised at the start, which the engine's adopt had cleared);
+- the start's spawns on the exact heap (2:2's soldier's 0x140-byte brain);
+- the dump before the first tick (below), and the frames' timer counted from its vblank.
 The right column compares with the Python engine's latest traces (`build/engine/eng_*.jsonl`).
 Each run parts from it only after both have parted from the original. The trace now also
 carries the on-screen text list and the hit wedges' timers (`texts`, `hud`), which agree
@@ -647,14 +655,15 @@ recording, as it takes the rest of its inputs:
 - the vblanks the load took: the vblank timer's 20-vblank message counts them;
 - `rand`'s seed at entry: the dump's seed, stepped back over the build's own draws.
 
-From the disc: **7,296 of 7,297 ticks identical** (the extra one is the disc run's first frame).
-The one difference is tick 6951, where a pickup (type 0x65) exists one tick early, then the runs
-agree again (at d337b74: 5,632, as the seed run then). RAM differs from the seed run by a constant 35,996 words at ticks
-1000..1003: the unbuilt library and HUD state above, which nothing in the logic reads.
+From the disc: **whole**, 7,297 of 7,297 ticks (the extra one is the disc run's first tick). RAM
+differs from the seed run by a constant 35,996 words at ticks 1000..1003: the unbuilt library and
+HUD state above, which nothing in the logic reads.
 
-2:1 from the disc is whole: 8,369 of 8,369. 2:2 has no dump from before its tick 1, so
-the timer and `rand`'s seed come a tick late from the seed: 0 identical (7,036 from the seed dump),
-first difference at tick 2 for both.
+The save data, `rand`'s seed and the timer come from the last dump before the level's first tick
+(`d1713`; `d20494` and `d40734` for 2:1 and 2:2, captured again from the session's replay:
+`valor-gd --replay ... --dump-ram V:PATH`, identical to the old dumps where they overlap). 2:2's
+first tick ran over two vblanks, so its dump is two before the seed's. Without such a dump the
+seed itself stands in, a tick late.
 
 ### The view test
 
@@ -719,9 +728,7 @@ in the recordings: the pad words and the control roles' values per tick.
    (controls, audio) and the pause menu; the war room's medal case.
 3. **Presentation**: the first-person weapon, pickups and effects (tracers, explosions' particle
    systems), sounds and music from the engine's voice table, the HUD.
-4. **2:2 from the disc**: a dump from before its tick 1 (the capture's earlier vblank), so its
-   timer and seed come in on time.
-5. Keep syncing the Python engine's commits as small diffs (each with the Python engine's numbers).
+4. Keep syncing the Python engine's commits as small diffs (each with the Python engine's numbers).
 
 ## Coordination
 

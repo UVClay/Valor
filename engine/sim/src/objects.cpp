@@ -58,22 +58,26 @@ void scripted_think(Engine& eng, U e) {
     vm.run_a();
 }
 
-// door_spawn (0x8005E648), type 0x1776 (engine_objects.py door_spawn, objects.md).
-U door_spawn(Engine& eng, Record& rec, U model) {
+// door_spawn (0x8005E648), type 0x1776 (engine_objects.py door_spawn, objects.md), and the
+// switches' spawn (0x8005E510, type 0x1775): the same but for 5 channels, no collision mask,
+// flags A 0x03008000, B 0x40213, their own group counter (0x80099ECA) and think (0x8005E4E4:
+// script_run_b, script_run_a, as scripted_think).
+static U scripted_spawn(Engine& eng, Record& rec, U model, bool sw) {
     Mem& m = eng.m;
     U r = rec.addr;
-    U e = eng.entity_create(m.s32(model + 0xFC), 0, 0, 0, m.u16(model + 0xBE), 0xA, 6, true);
+    U e = eng.entity_create(m.s32(model + 0xFC), 0, 0, 0, m.u16(model + 0xBE), sw ? 5 : 0xA, 6, true);
     eng.model_swap(e, model, 0x157);
-    m.w32(e + 0x14, 0x88214051);
-    m.w32(e + 0xC, 0x03008400);
-    m.w32(e + 0x10, 0x44030);
+    m.w32(e + 0x14, sw ? 0 : 0x88214051);
+    m.w32(e + 0xC, sw ? 0x03008000 : 0x03008400);
+    m.w32(e + 0x10, sw ? 0x40213 : 0x44030);
     m.w32(e + 8, m.s32(model + 0xFC));
     I cv = m.s16(r + 0x5E);
-    I g = m.u8(0x80099ECB);
+    U gc = sw ? 0x80099ECA : 0x80099ECB;
+    I g = m.u8(gc);
     m.w32(e + 0x294, cv);
     m.w32(e + 0x290, cv);
-    m.w8(0x80099ECB, (g + 1) & 0xFF);
-    m.w32(e + 0x36C, SCRIPTED_THINK);
+    m.w8(gc, (g + 1) & 0xFF);
+    m.w32(e + 0x36C, sw ? SWITCH_THINK : SCRIPTED_THINK);
     m.w32(e + 0x370, 0x8006A5B4);
     m.w32(e + 0x384, 0x8006A37C);
     m.w16(e + 0x2EC, 0);
@@ -90,6 +94,9 @@ U door_spawn(Engine& eng, Record& rec, U model) {
     m.w16(e + 0x36, 0);
     return e;
 }
+
+U door_spawn(Engine& eng, Record& rec, U model) { return scripted_spawn(eng, rec, model, false); }
+U switch_spawn(Engine& eng, Record& rec, U model) { return scripted_spawn(eng, rec, model, true); }
 
 // obj1774_spawn (0x800905C0), the V2 of 9:4 (objects.md, 0x1774): entity_create(3, object
 // 0x1344, the model, instance flags 0x15, no parts, 5 channels, a list of 6); a 0x3CC-byte block
@@ -240,6 +247,7 @@ U spawn_by_type(Engine& eng, I t, U model, Record& rec) {
         return e;
     }
     if (t == 0x1776) return door_spawn(eng, rec, model);
+    if (t == 0x1775) return switch_spawn(eng, rec, model);
     bool known = false;
     for (I k : KNOWN_SPAWNERS) known |= k == t;
     if (t == 0x1777 || t == 0x1779 || t == 0x177A || !known) return object_spawn(eng, rec, model);

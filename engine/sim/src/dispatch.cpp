@@ -21,7 +21,8 @@ bool run_think(Engine& eng, U fn, U e) {
         case PARTICLES_THINK: particles_think(eng, e); return true;
         case 0x80082E88: return true;  // the pickup's think is empty
         case LADDER_THINK: ladder_think(eng, e); return true;
-        case SCRIPTED_THINK: scripted_think(eng, e); return true;
+        case SCRIPTED_THINK:
+        case SWITCH_THINK: scripted_think(eng, e); return true;
         case SMOKE_THINK: return true;  // the emitter's particles: drawing only
         case FLASH_THINK: flash_think(eng, e); return true;
         case EXPLOSION_THINK: explosion_think(eng, e); return true;
