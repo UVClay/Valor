@@ -295,6 +295,23 @@ At tick 371 one of 1:3's first soldiers has been shot dead and the next is in th
 headless. With `--replay --aimbot` the player kills the first soldier at tick 370, and by tick
 1,200 has fired 42 rounds while the soldiers have shot the player down to 45.0 health.
 
+**GPU skinning.** The engine's characters are skinned by Godot on the GPU. The game's skinning is
+rigid (each vertex follows one bone: `R_b v + joint_b`, `skin_vertices`), so a character's model
+becomes one mesh in its bones' own space, each vertex bound to its bone at weight 1
+(`build_skin_mesh`, cached per model). A `Skeleton3D` of one parentless bone per model bone and a
+`Skin` of identity binds come with it (`setup_skeleton`). Each tick `pose_skeleton` sets every bone
+from the engine's pose: the quaternion's matrix in Godot's axes and the joint. Before, main.gd
+rebuilt every character's mesh every tick. `--cpu-skinning` keeps that path.
+- `--skin-check` compares the two at `--shot-tick`, corner for corner. At 1:3's tick 372 the three
+  soldiers (762, 546 and 762 corners) differ by at most 1.71 game units: the fixed-point path
+  truncates each axis by up to one unit, √3 = 1.73.
+- `--tick-log=MS` prints the ticks slower than MS, split into the engine, the actors' update and
+  the rest. In the 1:3 replay the engine's tick takes about 0.1 ms. Over 7,000 headless ticks only
+  the soldiers' first appearance passes 2 ms (3.2 ms: their meshes and skeletons built). With
+  software rendering at 1280×720 the worst tick was 6.5 ms (6.4 on the CPU path).
+- The 25 ms spikes present/README measured (2560×1440, `--perf`, the tick less its parts) didn't
+  show up here.
+
 The level's records' models are drawn at their records: objects with their static meshes, soldiers
 and dogs skinned from poses the core builds every tick (a walk or their first animation, looping:
 the scripts that choose animations aren't ported). The characters' textures aren't right yet: their

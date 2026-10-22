@@ -3,6 +3,7 @@
 #pragma once
 
 #include <godot_cpp/classes/array_mesh.hpp>
+#include <godot_cpp/classes/skin.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/classes/texture2d_array.hpp>
 #include <godot_cpp/variant/color.hpp>
@@ -126,6 +127,14 @@ public:
     bool set_engine_replay(const String& log_path);
     // An entity's mesh as its pose shows it now (skinned models re-skinned from the core's pose).
     Ref<ArrayMesh> build_engine_actor_mesh(int64_t handle);
+    // GPU skinning for the engine's characters (the skinning is rigid: each vertex follows one
+    // bone, R_b v + joint_b): the model's mesh once, in its bones' own space with each vertex's
+    // bone at weight 1 (cached per model); a skeleton of one parentless bone per model bone with
+    // its Skin (identity binds); each tick every bone set from the engine's pose (C++, no
+    // per-bone script).
+    Ref<ArrayMesh> build_skin_mesh(int64_t model_hash);
+    Ref<Skin> setup_skeleton(int64_t model_hash, Object* skeleton);
+    bool pose_skeleton(int64_t handle, Object* skeleton);
 
 protected:
     static void _bind_methods();
@@ -161,6 +170,7 @@ private:
     bool start_engine_with(const std::vector<uint8_t>& game, bool auto_advance);
     std::string repo_root() const;
     void sync_engine_level();
+    std::map<uint32_t, Ref<ArrayMesh>> skin_meshes_;  // build_skin_mesh's, by model hash
     Ref<ArrayMesh> mesh_of(const valor::Model& m, const std::vector<valor::Quat>* pose,
                            const std::vector<std::array<int16_t, 3>>* joints);
 };

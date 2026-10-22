@@ -58,6 +58,7 @@ var world: MeshInstance3D
 var end_every := 0  # --end-every=TICKS (with --engine): end each level after so many ticks
 var engine_meshes := {}  # entity handle -> MeshInstance3D
 var engine_xf := {}  # entity handle -> [the previous tick's transform, this tick's]: blended per frame
+var engine_skel := {}  # entity handle -> [its Skeleton3D, its model]: skinned on the GPU
 var skip_to := 0  # --skip=TICKS: run the engine up to this tick at once (50 ticks a frame)
 var shot_tick := 0  # --shot-tick=T: the screenshot once the core reaches tick T
 var camtrace: FileAccess = null  # --camtrace=FILE: the camera per drawn frame (smoothness checks)
@@ -356,7 +357,12 @@ func play_level(save: PackedByteArray) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+var tick_t0 := 0
+var tick_engine_us := 0
+
+
 func _physics_process(_delta: float) -> void:
+	tick_t0 = Time.get_ticks_usec()
 	if shell_mode and (game.is_level_over() or quit_level):
 		# the level's end (or the pause menu's QUIT: level_exit(2), exit code 1, no carry) goes
 		# back to the front end
@@ -417,7 +423,9 @@ func _physics_process(_delta: float) -> void:
 					buttons |= PAD_CROSS
 		if end_every > 0 and int(game.get_state().tick) >= end_every:
 			game.debug_end_level()
+		var te := Time.get_ticks_usec()
 		game.engine_tick(buttons, fwd, strafe, turn, pitch_role)
+		tick_engine_us = Time.get_ticks_usec() - te
 		if args.has("pause-at") and int(game.get_state().tick) == int(args["pause-at"]):
 			call_deferred("pause")  # a test: the pause menu at that tick (--options: its options)
 	else:
@@ -440,7 +448,13 @@ func _physics_process(_delta: float) -> void:
 	if engine_mode:
 		if game.take_level_change() and not shell_mode:
 			next_level()
+		var ta := Time.get_ticks_usec()
 		update_engine_actors()
+		if args.has("tick-log"):  # a test: the slow ticks, where their time went
+			var total := Time.get_ticks_usec() - tick_t0
+			if total > int(float(args["tick-log"]) * 1000.0):
+				print("Valor tick %d: %.1f ms (engine %.1f, actors %.1f, the rest %.1f)" % [int(game.get_state().tick), total / 1000.0,
+					tick_engine_us / 1000.0, (Time.get_ticks_usec() - ta) / 1000.0, (total - tick_engine_us - (Time.get_ticks_usec() - ta)) / 1000.0])
 
 
 ## --aimbot: [found, turn role] toward the nearest living soldier or dog within 1500 units.
@@ -475,6 +489,7 @@ func next_level() -> void:
 		engine_meshes[h].queue_free()
 	engine_meshes.clear()
 	engine_xf.clear()
+	engine_skel.clear()
 	for mat in materials.values():
 		mat.set_shader_parameter("fog_near", float(level_info.fog_near))
 		var fog: Color = level_info.fog_color
@@ -494,6 +509,10 @@ func update_engine_actors() -> void:
 			engine_meshes[h].queue_free()
 			engine_meshes.erase(h)
 			engine_xf.erase(h)
+			engine_skel.erase(h)
+	# Skinned characters on the GPU: their model's mesh once and a skeleton posed each tick from the
+	# engine (--cpu-skinning: a new mesh per character per tick, as before)
+	var gpu := not args.has("cpu-skinning")
 	for h in actors:
 		var a: Dictionary = actors[h]
 		var mi: MeshInstance3D = engine_meshes.get(h)
@@ -501,8 +520,26 @@ func update_engine_actors() -> void:
 			mi = MeshInstance3D.new()
 			add_child(mi)
 			engine_meshes[h] = mi
-			mi.mesh = game.build_engine_actor_mesh(h)
-			apply_materials(mi)
+			if not (a.skinned and gpu):
+				mi.mesh = game.build_engine_actor_mesh(h)
+				apply_materials(mi)
+		if a.skinned and gpu:
+			var sk = engine_skel.get(h)
+			if sk == null or sk[1] != a.model:  # new, or its model swapped
+				if sk != null:
+					sk[0].queue_free()
+				var skel := Skeleton3D.new()
+				skel.name = "skeleton"
+				mi.add_child(skel)
+				mi.skin = game.setup_skeleton(a.model, skel)
+				mi.mesh = game.build_skin_mesh(a.model)
+				mi.skeleton = NodePath("skeleton")
+				apply_materials(mi)
+				sk = [skel, a.model]
+				engine_skel[h] = sk
+			game.pose_skeleton(h, sk[0])
+			if args.has("skin-check") and int(game.get_state().tick) == shot_tick:
+				skin_check(h, sk[0])
 		elif a.skinned:
 			mi.mesh = game.build_engine_actor_mesh(h)
 			apply_materials(mi)
@@ -512,6 +549,25 @@ func update_engine_actors() -> void:
 	var pages := game.get_texture_pages()
 	for mat in materials.values():
 		mat.set_shader_parameter("pages", pages)
+
+
+## A test (--skin-check, at --shot-tick): the GPU path's bind vertices moved by their bones' poses
+## against the CPU path's skinned mesh, corner for corner; the largest gap in game units.
+func skin_check(h: int, skel: Skeleton3D) -> void:
+	var cpu: ArrayMesh = game.build_engine_actor_mesh(h)
+	var gpu: ArrayMesh = engine_meshes[h].mesh
+	var worst := 0.0
+	var n := 0
+	for si in mini(cpu.get_surface_count(), gpu.get_surface_count()):
+		var cv: PackedVector3Array = cpu.surface_get_arrays(si)[Mesh.ARRAY_VERTEX]
+		var ga := gpu.surface_get_arrays(si)
+		var gv: PackedVector3Array = ga[Mesh.ARRAY_VERTEX]
+		var gb: PackedInt32Array = ga[Mesh.ARRAY_BONES]
+		for k in mini(cv.size(), gv.size()):
+			var p: Vector3 = skel.get_bone_pose(gb[4 * k]) * gv[k]
+			worst = maxf(worst, (p - cv[k]).length() * ValorGame.kUnitsPerMetre)
+			n += 1
+	print("Valor skin check: actor %d, %d corners, the largest gap %.2f game units" % [h, n, worst])
 
 
 func _process(_delta: float) -> void:

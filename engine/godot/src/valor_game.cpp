@@ -13,6 +13,7 @@
 #include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/mesh.hpp>
+#include <godot_cpp/classes/skeleton3d.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
@@ -68,6 +69,9 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_engine_effects"), &ValorGame::get_engine_effects);
     ClassDB::bind_method(D_METHOD("set_engine_replay", "log_path"), &ValorGame::set_engine_replay);
     ClassDB::bind_method(D_METHOD("build_engine_actor_mesh", "handle"), &ValorGame::build_engine_actor_mesh);
+    ClassDB::bind_method(D_METHOD("build_skin_mesh", "model_hash"), &ValorGame::build_skin_mesh);
+    ClassDB::bind_method(D_METHOD("setup_skeleton", "model_hash", "skeleton"), &ValorGame::setup_skeleton);
+    ClassDB::bind_method(D_METHOD("pose_skeleton", "handle", "skeleton"), &ValorGame::pose_skeleton);
     ClassDB::bind_static_method("ValorGame", D_METHOD("to_godot", "x", "y", "z"), &ValorGame::to_godot);
     BIND_CONSTANT(kUnitsPerMetre);
 }
@@ -149,6 +153,8 @@ struct Surface {
     PackedVector3Array v;
     PackedColorArray c;
     PackedVector2Array uv, uv2;
+    PackedInt32Array bones;      // 4 per vertex (skinned meshes)
+    PackedFloat32Array weights;  // 4 per vertex
 };
 
 void add_surfaces(Ref<ArrayMesh>& mesh, Surface (&surf)[5]) {
@@ -161,6 +167,10 @@ void add_surfaces(Ref<ArrayMesh>& mesh, Surface (&surf)[5]) {
         arrays[Mesh::ARRAY_COLOR] = surf[i].c;
         arrays[Mesh::ARRAY_TEX_UV] = surf[i].uv;
         arrays[Mesh::ARRAY_TEX_UV2] = surf[i].uv2;
+        if (!surf[i].bones.is_empty()) {
+            arrays[Mesh::ARRAY_BONES] = surf[i].bones;
+            arrays[Mesh::ARRAY_WEIGHTS] = surf[i].weights;
+        }
         mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, arrays);
         mesh->surface_set_name(mesh->get_surface_count() - 1, names[i]);
     }
@@ -581,6 +591,7 @@ void ValorGame::sync_engine_level() {
         page_images_.clear();
         actors_.clear();
         level_changed_ = true;
+        skin_meshes_.clear();
     } else
         error_ = String(("the next level: " + err).c_str());
 }
@@ -787,6 +798,85 @@ Dictionary ValorGame::get_engine_actors() const {
         out[int64_t(e.handle())] = d;
     }
     return out;
+}
+
+// The model's faces in its bones' own space (the vertices before R_b v + joint_b), each corner
+// bound to its bone at weight 1: Godot's skinning then places them on the GPU.
+Ref<ArrayMesh> ValorGame::build_skin_mesh(int64_t model_hash) {
+    auto it = skin_meshes_.find(uint32_t(model_hash));
+    if (it != skin_meshes_.end()) return it->second;
+    Ref<ArrayMesh> mesh;
+    mesh.instantiate();
+    const valor::Model* m = models_.by_hash(uint32_t(model_hash));
+    if (!m || !m->skinned()) return mesh;
+    Surface surf[5];
+    const valor::LevelInfo& info = session_.info();
+    for (const valor::SkinFace& f : m->faces) {
+        bool ok = true;
+        for (int k = 0; k < 3; k++) ok &= f.bone[k] < m->bone_vertices.size() && f.vertex[k] < m->bone_vertices[f.bone[k]].size();
+        if (!ok) continue;
+        Surface& s = surf[semi(f.tpage) ? 1 + blend_mode(f.tpage) : 0];
+        float l = float(layer(f.tpage, f.clut));
+        for (int k = 0; k < 3; k++) {
+            const auto& v = m->bone_vertices[f.bone[k]][f.vertex[k]];
+            valor::RenderVertex rv{0, 0, 0, f.rgb[k][0], f.rgb[k][1], f.rgb[k][2]};
+            uint8_t col[3];
+            render_.lit_colour(info, rv, col);
+            s.v.push_back(to_godot(v[0], v[1], v[2]));
+            s.c.push_back(Color(col[0] / 255.0f, col[1] / 255.0f, col[2] / 255.0f));
+            s.uv.push_back(Vector2(f.uv[k][0] / 256.0f, f.uv[k][1] / 256.0f));
+            s.uv2.push_back(Vector2(l, float(valor::LevelRender::light_index(info, rv) + 1)));
+            s.bones.append_array(PackedInt32Array({int32_t(f.bone[k]), 0, 0, 0}));
+            s.weights.append_array(PackedFloat32Array({1.0f, 0.0f, 0.0f, 0.0f}));
+        }
+    }
+    add_surfaces(mesh, surf);
+    skin_meshes_[uint32_t(model_hash)] = mesh;
+    return mesh;
+}
+
+Ref<Skin> ValorGame::setup_skeleton(int64_t model_hash, Object* skeleton) {
+    Ref<Skin> skin;
+    skin.instantiate();
+    Skeleton3D* sk = Object::cast_to<Skeleton3D>(skeleton);
+    const valor::Model* m = models_.by_hash(uint32_t(model_hash));
+    if (!sk || !m) return skin;
+    sk->clear_bones();
+    int n = int(m->bone_vertices.size());
+    skin->set_bind_count(n);
+    for (int b = 0; b < n; b++) {
+        sk->add_bone(String("b") + String::num_int64(b));
+        skin->set_bind_bone(b, b);
+        skin->set_bind_pose(b, Transform3D());
+    }
+    return skin;
+}
+
+// Each bone: its quaternion's matrix in Godot's axes (C R C, C = diag(1, -1, -1)) and its joint,
+// as skin_vertices places the bone's vertices.
+bool ValorGame::pose_skeleton(int64_t handle, Object* skeleton) {
+    Skeleton3D* sk = Object::cast_to<Skeleton3D>(skeleton);
+    if (!engine_ || !sk) return false;
+    namespace view = valor::sim::view;
+    for (const view::Entity& e : view::entities(engine_->m)) {
+        if (int64_t(e.handle()) != handle) continue;
+        view::Instance in = view::instance(e);
+        auto quats = in.quaternions();
+        auto joints = in.joints();
+        const float c[3] = {1, -1, -1};
+        int n = sk->get_bone_count();
+        for (int b = 0; b < n; b++) {
+            int16_t r[3][3] = {{0x1000, 0, 0}, {0, 0x1000, 0}, {0, 0, 0x1000}};
+            if (size_t(b) < quats.size()) valor::quat_matrix(quats[size_t(b)].data(), r);
+            Basis basis;
+            for (int row = 0; row < 3; row++)
+                for (int col = 0; col < 3; col++) basis[row][col] = real_t(c[row] * c[col] * r[row][col] / 4096.0);
+            std::array<int16_t, 3> j = size_t(b) < joints.size() ? joints[size_t(b)] : std::array<int16_t, 3>{0, 0, 0};
+            sk->set_bone_pose(b, Transform3D(basis, to_godot(j[0], j[1], j[2])));
+        }
+        return true;
+    }
+    return false;
 }
 
 Ref<ArrayMesh> ValorGame::build_engine_actor_mesh(int64_t handle) {
