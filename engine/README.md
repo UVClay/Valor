@@ -199,8 +199,9 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
   animation ends there is a 50-tick delay and a 15-tick fade, then flag 2. The level then
   restarts in place (`level_restart`): every entity but the soldier, the camera, the world and
   type 8 is removed, and `level_start` runs again on the running state, without reloading files.
-  `coretest --live 1:3 --replay`: the player dies at tick 2613, the crouched death animation
-  plays (20 frames), and the level restarts at 2701 at full health with its statistics zeroed.
+  `coretest --live 1:3 --replay`: the player dies at tick 2096 (2613 before the soldiers threw
+  grenades), the crouched death animation plays (var 2 = 30), and the level restarts at 2184 at
+  full health with its statistics zeroed.
   (The doc's "the camera runs script 0xF" is the soldier: `a0` is still the soldier at the
   call.) Godot draws the death camera's own eye and look point;
 - the campaign plays through. A level's end (flags 4 or 8, as the level script's `level_set(3, 1)`
