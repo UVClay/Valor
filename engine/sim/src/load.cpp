@@ -2,6 +2,8 @@
 // the order is theirs, so the heap hands out the same addresses.
 #include "valor/sim/load.h"
 
+#include "valor/sim/campaign.h"
+
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -2056,38 +2058,21 @@ void GameHeap::destroy(U e) {
 }
 
 std::vector<uint8_t> game_defaults(int mission, int level, int ammo) {
-    std::vector<uint8_t> g(0x780, 0);
-    auto w32 = [&](size_t o, U v) {
-        for (int k = 0; k < 4; k++) g[o + k] = uint8_t(v >> (8 * k));
-    };
-    auto w16 = [&](size_t o, I v) { g[o] = uint8_t(v), g[o + 1] = uint8_t(v >> 8); };
-    std::memcpy(&g[0], "MOH", 4);
-    std::memcpy(&g[4], "noname", 7);
-    std::memcpy(&g[0x77C], "MOH", 4);
-    w32(0x78, 0x7F);
-    w32(0x7C, 0x1F);
-    w32(0x80, 4);
-    w32(0x88, 4);
-    w32(0x94, U(mission - 1));
-    w32(0x98, U(level - 1));
-    w32(0x9C, 5);
-    for (size_t p : {0xDCu, 0xF0u}) w32(p + 4, 1), w32(p + 8, 1);  // auto aim, vibration
-    w32(0x108, 1);
-    w32(0x10C, 1);
-    g[0x113] = 1;
-    g[0x128] = 1;
-    for (int ms = 0; ms < 10; ms++)
-        for (int r = 0; r < 4; r++) {
-            size_t row = 0x18C + size_t(ms) * 0x98 + size_t(r) * 0x24;
-            for (int k = 0; k < 13; k++) w16(row + 2 * size_t(k), -1);
-            w16(row + 0x1A, -1);
-            if (r == 0) w32(row + 0x1C, 0x800000);
-        }
-    size_t row = 0x18C + size_t(mission - 1) * 0x98 + size_t(level - 1) * 0x24;
-    for (int k = 0; k < 13; k++) w16(row + 2 * size_t(k), ammo);
-    w32(row + 0x1C, 0x800000);
-    w32(row + 0x20, 1);
-    return g;
+    // a fresh campaign (Campaign: game_defaults, new_game) started at the level as level_begin does
+    Campaign c;
+    int slot = 0;
+    for (int k = 0; k < 8; k++)
+        if (Campaign::slot_mission(k) == mission - 1) slot = k;
+    int idx = (slot == 7 && level == 4) ? 2 : level - 1;
+    size_t row = c.row(slot, idx);
+    for (int k = 0; k < 13; k++) c.game[row + 2 * size_t(k)] = uint8_t(ammo), c.game[row + 2 * size_t(k) + 1] = uint8_t(ammo >> 8);
+    c.game[row + 0x1C] = 0, c.game[row + 0x1D] = 0, c.game[row + 0x1E] = 0x80, c.game[row + 0x1F] = 0;  // 128.0
+    c.game[row + 0x20] = 1;
+    c.slot_level[size_t(slot)] = idx;
+    c.game[0xAC] = uint8_t(idx);
+    int m, l;
+    c.level_begin(slot, idx, &m, &l);
+    return c.game;
 }
 
 bool Engine::load_disc(const std::vector<uint8_t>& game, LevelBuild& out, std::string* err) {

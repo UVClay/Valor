@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "valor/gte.h"
+#include "valor/sim/campaign.h"
 #include "valor/sim/common.h"
 #include "valor/sim/feed.h"
 #include "valor/sim/level.h"
@@ -130,6 +131,13 @@ public:
     bool level_transition();
     I level_changes = 0;
     bool campaign_done = false;
+    // With auto_advance off (a host with its own shell), the level's end stops the engine with
+    // level_over and its results; the host commits them to its Campaign and calls load_next.
+    bool auto_advance = true, level_over = false;
+    struct LevelResults results;
+    LevelResults level_results();
+    std::vector<uint8_t> save_data() const;  // g_game as the level has it
+    bool load_next(const std::vector<uint8_t>& game, std::string* err);
     void remove(U e, const std::string& why = "");
 
     // -- input

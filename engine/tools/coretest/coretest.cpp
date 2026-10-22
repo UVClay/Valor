@@ -119,13 +119,15 @@ int run_pad(int argc, char** argv);   // pad_mode.cpp: coretest PAD.txt (export_
 int run_pose(int argc, char** argv);  // pose_mode.cpp: coretest --pose M:L DUMP...
 int run_engine(int argc, char** argv);
 int run_build(int argc, char** argv);
-int run_live(int argc, char** argv);  // live_mode.cpp: coretest --live M:L (no recording)  // build_mode.cpp: coretest --build M:L --against DUMP  // engine_mode.cpp: coretest --engine M:L (the whole engine)
+int run_live(int argc, char** argv);
+int run_campaign(int argc, char** argv);  // campaign_mode.cpp: coretest --campaign  // live_mode.cpp: coretest --live M:L (no recording)  // build_mode.cpp: coretest --build M:L --against DUMP  // engine_mode.cpp: coretest --engine M:L (the whole engine)
 
 int main(int argc, char** argv) {
     if (argc >= 2 && !std::strcmp(argv[1], "--pose")) return run_pose(argc, argv);
     if (argc >= 2 && !std::strcmp(argv[1], "--engine")) return run_engine(argc, argv);
     if (argc >= 2 && !std::strcmp(argv[1], "--build")) return run_build(argc, argv);
     if (argc >= 2 && !std::strcmp(argv[1], "--live")) return run_live(argc, argv);
+    if (argc >= 2 && !std::strcmp(argv[1], "--campaign")) return run_campaign(argc, argv);
     if (argc >= 2) {
         std::ifstream probe(argv[1]);
         std::string magic;
