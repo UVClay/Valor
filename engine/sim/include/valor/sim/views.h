@@ -82,6 +82,11 @@ inline uint8_t get<uint8_t>(const Mem& m, U a) { return uint8_t(m.u8(a)); }
     X(zoom, uint32_t, 0x0A4, "the projection distance: 400, more while zoomed (hud.md)")    \
     X(look_pitch, int32_t, 0x178, "4096 << 16 per turn")                                   \
     X(look_yaw, int32_t, 0x184, "")                                                        \
+    X(crosshair_x, int16_t, 0x190, "the crosshair on screen (512 x 240): 256, 131 at rest")    \
+    X(crosshair_y, int16_t, 0x192, "")                                                     \
+    X(reticle_dx, int16_t, 0x194, "the aim point's projection less the crosshair, kept")  \
+    X(reticle_dy, int16_t, 0x196, "")                                                      \
+    X(stance, int32_t, 0x1C8, "0..9 (movement.md, player_stance)")                       \
     X(flash, int16_t, 0x1D6, "the muzzle flash: 1 the frame after a shot (combat.md)")
 
 // A view of one entity.

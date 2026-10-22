@@ -420,6 +420,12 @@ Dictionary ValorGame::get_state() const {
         d["scoped"] = p.a && (p.state() & 0x100);
         d["zoom"] = p.a ? int64_t(p.zoom()) : 400;
         d["flash"] = p.a ? int(p.flash()) : 0;
+        // the crosshair and the reticle (hud.md, Aim reticle): the stance, the crosshair, the kept
+        // difference to the aim point's projection
+        d["stance"] = p.a ? int(p.stance()) : 0;
+        d["crosshair"] = p.a ? Vector2(p.crosshair_x(), p.crosshair_y()) : Vector2(256, 131);
+        d["reticle_offset"] = p.a ? Vector2(p.reticle_dx(), p.reticle_dy()) : Vector2();
+        d["player_flags"] = p.a ? int64_t(p.state()) : 0;
         d["music"] = view::music_started(m);
         Array objs;
         for (const view::Objective& o : view::objectives(m)) {
