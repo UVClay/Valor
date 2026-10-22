@@ -39,8 +39,8 @@
 7:1 seed 10505
 7:2 disc 8760
 7:2 seed 8755
-7:3 disc 2530
-7:3 seed 2529
+7:3 disc 10444
+7:3 seed 10443
 9:1 disc 1887
 9:1 seed 1886
 9:2 disc 2238

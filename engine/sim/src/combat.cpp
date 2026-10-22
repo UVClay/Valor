@@ -669,6 +669,12 @@ void enemy_weapon(Engine& eng, U e) {
         if (p) pull_back_enemy(m, p, e);
         return p;
     };
+    bool rocket = m.s32(w + 4) == 0x1773;
+    auto rocket_flight = [&](U p, I speed) {
+        m.w32(p + 0x200, speed);
+        U o = U(m.u32(p + 0x388));
+        m.w16(o + 0x3A, (m.u16(o + 0x3A) * 2) & 0xFFFF);
+    };
     auto middle = [&]() -> V3 {
         return {m.s16(player + 0x20E), S16(S32(m.s32(player + 0x210) - (m.s32(player + 0x2D4) >> 1)) >> 16), m.s16(player + 0x216)};
     };
@@ -679,7 +685,19 @@ void enemy_weapon(Engine& eng, U e) {
     } else if (state == 2) {
         V3 mid = middle();
         U p = shoot(&mid);
-        if (p) {
+        if (p && rocket) {
+            // a Panzerfaust round aimed at the player: the spread both ways (no crouch case),
+            // speed 130, life doubled, its sound (class 3)
+            spread(p, 0x228);
+            spread(p, 0x22C);
+            rocket_flight(p, 0x820000);
+            I snd = m.s32(w + 0x28);
+            if (snd >= 0) {
+                I bank = m.s32(w + 0x2C);
+                if (bank < 0) bank = m.u16(m.u32(m.u32(e + 0x100) + 8) + 0xC8);
+                eng.audio->play(S16(bank), snd, e, 0x10000, 0, 0x10000, 0x1800, 0, 0, 3, 0);
+            }
+        } else if (p) {
             if (crouched) {
                 I a = m.s32(p + 0x228);
                 I d = E == 0 ? (E >> 1) : ((-E) >> 1) + ((rd() * E) >> 15);
@@ -705,12 +723,17 @@ void enemy_weapon(Engine& eng, U e) {
             I v = m.u8(w + 0x10) + (m.s32(w + 0x14) ? (rd() * m.s32(w + 0x14)) >> 15 : 0);
             m.w8(obj + 0x14, v);
             if (iabs(angle_to(eng, e, player)) < 0x15E || state == 3 || state == 4) {
-                if (state == 3)
-                    shoot(nullptr);
-                else {
+                if (state == 3) {
+                    U p = shoot(nullptr);
+                    if (p && rocket) rocket_flight(p, 0x960000);
+                } else {
                     V3 mid = middle();
                     U p = shoot(&mid);
-                    if (p) {
+                    if (p && rocket) {
+                        spread(p, 0x228);
+                        spread(p, 0x22C);
+                        rocket_flight(p, 0x960000);
+                    } else if (p) {
                         if (crouched) {
                             m.w32(p + 0x228, S32(m.s32(p + 0x228) + ((((rd() * 0x28) >> 15) - 0x14) << 16)));
                             m.w32(p + 0x22C, S32(m.s32(p + 0x22C) + ((((rd() * 0xB4) >> 15) - 0x5A) << 16)));

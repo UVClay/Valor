@@ -1191,7 +1191,14 @@ I projectile_hit_part(Engine& eng, U e, I part, U other, I opart) {
     I t = m.s32(other + 8);
     if (projectile_type(t) || t == 0x25) return 0;
     damage_from_hit(eng, e, part, other, opart);
-    if (m.u16(o + 0x38) & 0x100) eng.note("explosive round's hit not implemented");
+    if (m.u16(o + 0x38) & 0x100) {
+        // an explosive round (a rocket): the explosion (6, 6, 75) with no normal, its sound
+        for (U k = 0; k < 3; k++) m.w16(e + 0x364 + 2 * k, 0);
+        explosion_spawn(eng, e, 6, 6, 0x4B, 0x10000, 0x1000, 0x40000, 5, 0);
+        explosion_sound(eng, e);
+        eng.remove(e, "explosive round hit");
+        return 1;
+    }
     if (t == 0x1402) {
         I snd = (eng.rand.draw(FN("hit")) >> 15) + 0xC;
         eng.audio->play(0, snd, e, 0x20000, 0, 0x10000, 0x4CCD, 0, 0, 0, 0);
