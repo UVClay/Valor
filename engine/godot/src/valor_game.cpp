@@ -453,6 +453,7 @@ Dictionary ValorGame::get_state() const {
             if (e.type() == 0x1402 || e.type() == 0x1405) (e.dead() ? dead : alive)++;
         d["enemies"] = alive;
         d["enemies_dead"] = dead;
+        d["kills"] = view::stat(m, 4);  // g_stat_kills: the pause menu's TOTAL ENEMIES NEUTRALIZED
         return d;
     }
     const valor::Player& player = session_.player();

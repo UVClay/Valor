@@ -92,6 +92,8 @@ std::vector<Text> texts(const Mem& m) {
     return out;
 }
 
+int32_t stat(const Mem& m, int k) { return m.s32(0x80039CA8 + 4 * U(k)); }
+
 std::array<int32_t, 4> hit_timers(const Mem& m) {
     std::array<int32_t, 4> out{};
     for (U k = 0; k < 4; k++) out[k] = m.s32(0x8009A590 + 4 * k);

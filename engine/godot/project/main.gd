@@ -22,6 +22,7 @@ const PAD_CIRCLE := 0x20  # switch weapons (the engine's layout 1)
 const PAD_LEFT := 0x8000
 const PAD_RIGHT := 0x2000
 const ANGLE := TAU / 4096.0
+const Settings := preload("res://shell/settings.gd")
 
 @export var mouse_units_per_pixel := 3.0  # game angle units (4096 per turn) per mouse pixel
 
@@ -64,6 +65,8 @@ var args := {}
 var data := ""
 var shell_mode := false  # the front end runs the levels (shell/shell.gd)
 var shell: Control
+var pause_menu: Control  # shell/pause.gd, while paused
+var quit_level := false  # the pause menu's QUIT: back to the front end at the next tick
 
 
 func _ready() -> void:
@@ -82,6 +85,10 @@ func _ready() -> void:
 	if args.has("camtrace"):
 		camtrace = FileAccess.open(String(args.camtrace), FileAccess.WRITE)
 	spin = float(args.get("spin", "0"))
+	# the player's settings (shell/settings.gd): the window, the bindings, the volumes
+	Settings.load_and_apply()
+	mouse_units_per_pixel = Settings.mouse_speed
+	apply_present_options()
 
 	game = ValorGame.new()
 	# With no level asked for (or --shell), the front end first (shell/shell.gd): the title, the
@@ -166,7 +173,7 @@ func start_level(mission: int, lvl: int, save: PackedByteArray) -> void:
 	# The original's view: projection distance 400 for 240 lines scaled by 5/8 (movement.md, The
 	# camera) is a vertical field of view of 2 atan(120 / 250) = 51.4 degrees.
 	cam.keep_aspect = Camera3D.KEEP_HEIGHT
-	cam.fov = float(args.get("fov", "51.4"))
+	cam.fov = float(args.get("fov", str(Settings.fov)))
 	if args.has("hfov"):  # e.g. 65.4: the original's 512-pixel width at projection 400
 		cam.keep_aspect = Camera3D.KEEP_WIDTH
 		cam.fov = float(args.hfov)
@@ -204,51 +211,91 @@ func apply_materials(mi: MeshInstance3D) -> void:
 		mi.set_surface_override_material(i, material_for(mi.mesh.surface_get_name(i)))
 
 
+## The settings the presentation layer reads from its own arguments (present/present.gd).
+func apply_present_options() -> void:
+	if not has_node("/root/Present"):
+		return
+	var pargs: Dictionary = get_node("/root/Present").args
+	if Settings.square_stick:
+		pargs["square-stick"] = ""
+	else:
+		pargs.erase("square-stick")
+
+
+# The bindable actions (shell/settings.gd) and the pad buttons they press.
+const ACTION_BUTTONS := {
+	"valor_jump": PAD_TRIANGLE, "valor_crouch": PAD_L2, "valor_use": PAD_SQUARE,
+	"valor_switch": PAD_CIRCLE, "valor_turn_left": PAD_LEFT, "valor_turn_right": PAD_RIGHT,
+	"valor_aim": PAD_R2, "valor_fire": PAD_CROSS, "valor_center": PAD_L3,
+}
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if cam == null or pause_menu != null:
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		mouse_turn += event.relative.x * mouse_units_per_pixel
-		mouse_pitch += event.relative.y * mouse_units_per_pixel
-	elif event is InputEventKey and event.pressed and not event.echo:
-		if event.physical_keycode == KEY_ESCAPE:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		else:
-			tapped |= key_button(event.physical_keycode)
-	elif event is InputEventMouseButton and event.pressed:
-		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		elif event.button_index == MOUSE_BUTTON_MIDDLE:
-			tapped |= PAD_L3
-
-
-func key_button(key: Key) -> int:
-	match key:
-		KEY_SPACE:
-			return PAD_TRIANGLE
-		KEY_C, KEY_CTRL:
-			return PAD_L2
-		KEY_E:
-			return PAD_SQUARE
-		KEY_Q:
-			return PAD_CIRCLE
-		KEY_LEFT:
-			return PAD_LEFT
-		KEY_RIGHT:
-			return PAD_RIGHT
-	return 0
+		mouse_pitch += event.relative.y * mouse_units_per_pixel * (-1.0 if Settings.invert_y else 1.0)
+		return
+	if event.is_action_pressed("valor_pause") and not event.is_echo():
+		pause()
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED  # the click that takes the mouse back presses nothing
+		return
+	if event.is_pressed() and not event.is_echo():
+		for action in ACTION_BUTTONS:
+			if event.is_action_pressed(action) and (action != "valor_fire" or engine_mode):
+				tapped |= ACTION_BUTTONS[action]
 
 
 func held_buttons() -> int:
 	var b := 0
-	for key in [KEY_SPACE, KEY_C, KEY_CTRL, KEY_E, KEY_Q, KEY_LEFT, KEY_RIGHT]:
-		if Input.is_physical_key_pressed(key):
-			b |= key_button(key)
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
-		b |= PAD_R2
-	if engine_mode and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		b |= PAD_CROSS
-	if Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE):
-		b |= PAD_L3
+	for action in ACTION_BUTTONS:
+		if Input.is_action_pressed(action):
+			b |= ACTION_BUTTONS[action]
+	if not engine_mode or Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		b &= ~PAD_CROSS
 	return b
+
+
+## The pause menu (shell/pause.gd, start_handler's): the game frame stops (the tree pauses, the
+## sound with it) until CONTINUE; QUIT returns to the front end, or ends the program without one.
+func pause() -> void:
+	if pause_menu != null or cam == null or not is_physics_processing():
+		return
+	var layer := CanvasLayer.new()
+	layer.layer = 6
+	layer.process_mode = Node.PROCESS_MODE_ALWAYS
+	add_child(layer)
+	pause_menu = preload("res://shell/pause.gd").new()
+	layer.add_child(pause_menu)
+	pause_menu.setup(self)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	get_tree().paused = true
+
+
+func resume(quit := false) -> void:
+	if pause_menu == null:
+		return
+	pause_menu.get_parent().queue_free()
+	pause_menu = null
+	get_tree().paused = false
+	mouse_units_per_pixel = Settings.mouse_speed
+	apply_present_options()
+	if quit and not shell_mode:
+		get_tree().quit()
+		return
+	quit_level = quit
+	if not quit and DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## A new field of view from the options: the camera's (the presentation layer zooms from it).
+func set_fov(v: float) -> void:
+	if cam and not args.has("fov") and not args.has("hfov"):
+		cam.fov = v
 
 
 ## The shell's level (its save data): the first builds the scene, the next go through the engine's
@@ -268,9 +315,11 @@ func play_level(save: PackedByteArray) -> void:
 
 
 func _physics_process(_delta: float) -> void:
-	if shell_mode and (game.is_level_over() or Input.is_physical_key_pressed(KEY_BACKSPACE)):
-		# the level's end (or a quit: Backspace) goes back to the front end
+	if shell_mode and (game.is_level_over() or quit_level):
+		# the level's end (or the pause menu's QUIT: level_exit(2), exit code 1, no carry) goes
+		# back to the front end
 		var res: Dictionary = game.get_level_results() if game.is_level_over() else {"exit": 1}
+		quit_level = false
 		set_physics_process(false)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		shell.level_over(res, game.get_engine_game())
@@ -279,13 +328,13 @@ func _physics_process(_delta: float) -> void:
 	var fwd := 0
 	var strafe := 0
 	var turn := 0
-	if Input.is_physical_key_pressed(KEY_W) or auto_walk > 0:
+	if Input.is_action_pressed("valor_forward") or auto_walk > 0:
 		fwd -= RUN
-	if Input.is_physical_key_pressed(KEY_S):
+	if Input.is_action_pressed("valor_back"):
 		fwd += RUN
-	if Input.is_physical_key_pressed(KEY_D):
+	if Input.is_action_pressed("valor_strafe_right"):
 		strafe += RUN
-	if Input.is_physical_key_pressed(KEY_A):
+	if Input.is_action_pressed("valor_strafe_left"):
 		strafe -= RUN
 	if auto_walk > 0:
 		auto_walk -= 1
@@ -327,6 +376,8 @@ func _physics_process(_delta: float) -> void:
 		if end_every > 0 and int(game.get_state().tick) >= end_every:
 			game.debug_end_level()
 		game.engine_tick(buttons, fwd, strafe, turn, pitch_role)
+		if args.has("pause-at") and int(game.get_state().tick) == int(args["pause-at"]):
+			call_deferred("pause")  # a test: the pause menu at that tick (--options: its options)
 	else:
 		game.tick(held_buttons() | tapped | pad_buttons, fwd, strafe, turn, pitch_role)
 	tapped = 0

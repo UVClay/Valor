@@ -268,6 +268,9 @@ ExplosionLight explosion_light(const Mem& m);
 std::vector<Text> texts(const Mem& m);
 // The hit wedges' timers (0x8009A590: right, left, front, behind; 40 when hit, counting down).
 std::array<int32_t, 4> hit_timers(const Mem& m);
+// The level's statistics (0x80039CA8.., s32 each; combat.md, Statistics): 0 shots, 1 hits,
+// 2 wounds, 4 kills (g_stat_kills), ...
+int32_t stat(const Mem& m, int k);
 // Every live particle and fireball of the effect entities, for drawing.
 std::vector<Sprite> sprites(const Mem& m);
 // The level script started the music (level_set(1, 1): music_start's 0x8009CC74).

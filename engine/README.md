@@ -72,10 +72,35 @@ copied into the project.
 | E | Use (Square) |
 | Right mouse button | Aim (R2): pinned, the strafe keys lean |
 | Middle mouse button | Centre the view (L3) |
-| Esc | Release the mouse |
+| Esc | Pause (Start): the pause menu |
 
 The keys press a fresh card's buttons, which the core reads through its own control
-configuration, exactly as the game does.
+configuration, exactly as the game does. They are the defaults of Godot input actions
+(`valor_*`), which OPTIONS > CONTROLS rebinds.
+
+**Options** (`project/shell/options.gd`, from the title and the pause menu; kept by
+`shell/settings.gd` in `user://valor_settings.cfg`):
+- VIDEO: fullscreen, the window size, and the field of view (vertical, 51.4° the original's). It
+  shows the view across the current screen, and says whether it stays inside the logic's view:
+  the recording's, 110° across at 21:9, 62.9° vertical (The view test, below). Past it, things at
+  the screen's edges count as out of sight: their poses hold and out-of-sight timers run.
+- CONTROLS: every action's key or button, the mouse speed, invert Y, and the square stick
+  (present/'s `--square-stick` for a round gamepad stick).
+- AUDIO: the master volume, and the game's own Sound Effects and Background levels (0..6, 4 by
+  default, shell.md). Effects scale the effect voices' buses linearly from 4 (an inference); the
+  presentation layer's music player doesn't take the Background level yet.
+
+**The pause menu** (`project/shell/pause.gd`) is `start_handler`'s screen (shell.md):
+- PAUSED, the mission objectives ticked when done, and TOTAL ENEMIES NEUTRALIZED (state
+  `kills`, `g_stat_kills`) in the original's places on the 512 × 240 screen;
+- then CONTINUE, OPTIONS (the port's addition; the game has none there) and QUIT, which asks
+  ARE YOU SURE? with NO resuming the game;
+- the scene tree pauses, so the ticks and the sound stop. Start resumes after 10 frames, as the
+  game's does.
+
+QUIT returns to the front end ("RETURNING TO BASE": exit code 1, no carry), or ends the program
+when there's no front end. `--pause-at=TICK [--options[=video|controls|audio]]` opens them for
+screenshots.
 
 The core ticks at 30 Hz in `_physics_process` (`physics_ticks_per_second = 30`). The camera is
 interpolated between the last two ticks at the display rate. The mouse turns the view at once,
@@ -235,7 +260,7 @@ through `ValorShell`:
   presentation layer draws the engine's own fade entities (state `fade`: the black's opacity
   from the latest type 0x32 entity; `fade_start` now also keeps its end colour at `+0x24`, bytes
   only the prims use). At the level's end the engine stops (`is_level_over`) instead of going on
-  by itself; Backspace leaves the level.
+  by itself; the pause menu's QUIT leaves the level.
 - **Results**: the level's results (`g_level_end` and the statistics at `0x80039CA8`): the
   objectives, kills, shots, hits and accuracy, hit locations, wounds and health, and
   `level_rating`'s stars. Then the post-mission choices: CONTINUE (only with the primary
@@ -254,6 +279,10 @@ says, and a save loads back. `--shell-auto=N
 --end-every=T` plays N levels unattended: `--shell-auto=4 --end-every=60` goes through the
 briefings of 1:1, 1:2, 1:3 and 2:1 (three pages each), each level, its results and CONTINUE,
 then saves "MOH-TESTER (16%)". `--shell-brief` opens the first briefing (for screenshots).
+With `--aimbot --walk=100000`, `--shell-auto=3 --end-every=2700` plays 1:1, 1:2 and 1:3 for
+2,701 ticks each with no error. 1:1: 64 shots, a kill. 1:2: none, its carried ammo is spent.
+1:3: none, it walks into the wall ahead of its start. At `--end-every=700`, 1:2 has 6 shots and
+a kill.
 
 ## Checking the core against the original
 

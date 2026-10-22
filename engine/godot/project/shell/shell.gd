@@ -112,7 +112,19 @@ func show_title(text := "") -> void:
 	button("LOAD", show_load)
 	button("SAVE", save_game, started)
 	button("PASSWORD", show_password)
+	button("OPTIONS", show_options)
 	button("QUIT", func(): get_tree().quit())
+
+
+# --- the settings (shell/options.gd)
+
+func show_options() -> void:
+	var o: Control = preload("res://shell/options.gd").new()
+	add_child(o)
+	o.setup(main)
+	o.closed.connect(func():
+		o.queue_free()
+		show_title())
 
 
 func level_name(slot: int, level: int) -> String:
@@ -275,6 +287,8 @@ func level_over(res: Dictionary, game_after: PackedByteArray) -> void:
 	button("SAVE", post_save)
 	button("WAR ROOM", post_war_room)
 	if auto > 0:
+		var now: Dictionary = main.game.get_state()
+		print("Valor shell: ended at tick %d at (%d, %d, %d)" % [int(now.get("tick", 0)), int(now.get("x", 0)), int(now.get("y", 0)), int(now.get("z", 0))])
 		print("Valor shell: " + "; ".join(lines))
 		auto -= 1
 		if auto > 0:
