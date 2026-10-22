@@ -7,7 +7,7 @@ extends Control
 ## From the state: the health ring, the compass (the view yaw), the clip and reserve with the
 ## slot's ammo picture (hidden for the papers), the aim reticle (aim mode; the bazooka's own
 ## shape), the pickup messages (from health and ammo changes), the level-start and death fades.
-## Tab shows the objectives (the pause menu's list: a box, ticked when done). The sniper scope
+## Tab (or --show-objectives) shows the objectives (the pause menu's list: a box, ticked when done). The sniper scope
 ## (aim mode with the scope, zoomed): the view outside a circle blacked out (inference: the scope
 ## model, the weapon block's +0x130 object, wasn't read; hud.md).
 ## Stubbed until the core reports them: the hit wedges (the hit's direction), level messages
@@ -189,12 +189,18 @@ func _draw() -> void:
 		draw_line(c + Vector2(k * 0.6, 0), c + Vector2(k * 2, 0), col, maxf(1.0, scale_y() * 0.4))
 		draw_line(c - Vector2(0, k * 2), c - Vector2(0, k * 0.6), col, maxf(1.0, scale_y() * 0.4))
 		draw_line(c + Vector2(0, k * 0.6), c + Vector2(0, k * 2), col, maxf(1.0, scale_y() * 0.4))
-	if Input.is_physical_key_pressed(KEY_TAB):
+	if Input.is_physical_key_pressed(KEY_TAB) or p.args.has("show-objectives"):
 		draw_objectives(s.get("objectives", []))
-	# Fades (hud.md): cuts to black. The level start: black for 15 ticks. Death: 65 ticks, then black.
-	var tick := int(s.get("tick", 99))
-	if tick < 15 or (dead_since >= 0 and tick - dead_since >= 65):
-		draw_rect(Rect2(Vector2.ZERO, size), Color.BLACK)
+	# Fades (hud.md): the engine's fade entities when it reports them (state "fade": the black's
+	# opacity), else the cuts as hud.md has them: the level start black for 15 ticks, death 65 ticks
+	# then black.
+	if s.has("fade"):
+		if float(s.fade) > 0.0:
+			draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, float(s.fade)))
+	else:
+		var tick := int(s.get("tick", 99))
+		if tick < 15 or (dead_since >= 0 and tick - dead_since >= 65):
+			draw_rect(Rect2(Vector2.ZERO, size), Color.BLACK)
 
 
 ## The health ring (hud.md, Health ring): 32 segments of 11.25 degrees between radii 14 and 20 (x
