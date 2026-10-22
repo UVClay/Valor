@@ -264,8 +264,18 @@ class LevelLogic(lv.Sim):
             if what == 4:
                 eng.note("level_set(4): alarm from level not implemented")
         if n == 19:
-            # sound(...): the level's sounds; positional ones are heard by soldiers
-            eng.note("level sound not implemented")
+            # bi_sound (0x80069B88) -> lvl_sound (0x800533D4): pops mode, bank + 1, sound, pitch,
+            # pitch spread, volume, volume spread; sound_play on the script's entity (bank 0 for
+            # 0), looping for mode 3, whose voice is pushed (audio.md, Scripts)
+            pop = lambda: st.pop()[1] if st else 0
+            mode, bank1, snd, pitch, pspread, vol, vspread = (s32(pop()) for _ in range(7))
+            ent = c.sub.addr if isinstance(c.sub, lv.Ent) and not c.sub.removed else 0
+            v = eng.audio.play(bank1 - 1 if bank1 else 0, snd, ent, vol, vspread, pitch, pspread, 0,
+                               1 if mode == 3 else 0, 0, 0)
+            self.calls[n] += 1
+            if mode == 3:
+                st.append((0xB, v))
+            return
         if n in (18, 21):
             eng.note("world animation (drawing only)")
         lv.Sim.builtin(self, n, c, st, base, sid)

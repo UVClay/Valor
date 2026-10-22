@@ -721,9 +721,10 @@ class Engine:
     def run(self, to=None, out=None, compare=None):
         """Every frame of the recording's level: vblanks advance the timer, ticks run."""
         f = open(out, "w") if out else None
-        for vb, ticks in self.frames:
+        for fi, (vb, ticks) in enumerate(self.frames):
             if to and ticks and ticks[0] > to:
                 break
+            self.next_vblank = self.frames[fi + 1][0] if fi + 1 < len(self.frames) else vb + 2
             # vblanks since the last frame feed the 1/3-second counter (the vblank handler)
             if self.vblank_prev is not None:
                 self.m.w32(G_VBL_TIMER, self.m.s32(G_VBL_TIMER) + (vb - self.vblank_prev))
@@ -878,6 +879,9 @@ def main():
     # the seed frame's own wait (its idle work as recorded)
     eng.tick_no = t0
     eng.idle_work()
+    # its sound_update is in the seed already: its record of the SPU is passed over
+    if feed.keys.get((level, t0)):
+        feed.keys[(level, t0)].pop(0)
     from engine_cmp import Compare
     cmpr = Compare(lines, maxn=int(args[args.index("--max") + 1]) if "--max" in args else 20) if cmd == "cmp" else None
     try:

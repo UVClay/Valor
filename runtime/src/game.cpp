@@ -130,6 +130,19 @@ extern "C" void hook_frame_wait(Cpu *c, RecompFn body) {
     body(c);
 }
 
+// 0x80015A9C SpuGetAllKeysStatus(out): what the SPU reports for each voice at the start of
+// sound_update (0 off, 1 on, 3 keyed off and releasing), "keys TICK: 24 bytes hex" under
+// VALOR_TRACE_INPUT: when the hardware finishes a sample is real time, an input for an engine
+// (docs/re/audio.md).
+extern "C" void hook_spu_keys(Cpu *c, RecompFn body) {
+    uint32_t out = c->r[4];
+    body(c);
+    if (!trace_idle()) return;
+    char buf[64];
+    for (int v = 0; v < 24; v++) snprintf(buf + 2 * v, 3, "%02X", r32(out + (v & ~3)) >> (8 * (v & 3)) & 0xFF);
+    log("keys %u: %s", r32(0x8009A5DC), buf);
+}
+
 // 0x80076008 role_axis_alt(port, source role, role, ?): with the port's "pitch from the move
 // stick" option (0x8009E398) the role's curve applied to the source role's stick. Traced (source
 // 2) so a reimplementation can take it as input like the other roles.

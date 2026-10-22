@@ -73,6 +73,8 @@ seeds = []
 "0x8007A6B0" = "hook_player_update"
 
 [hooks.exe]
+# What the SPU reports for each voice (traced: when the hardware finished a sample).
+"0x80015A9C" = "hook_spu_keys"
 # World polygon visibility: polygons reaching behind the camera are near-clipped instead.
 "0x80011214" = "hook_world_polygon"
 # ClearOTagR, done natively in a decoupled rendering pass.

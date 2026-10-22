@@ -139,7 +139,14 @@ with 10 when the player draws a weapon, cutting the reload sound); `sound_stop_a
 Called once per drawn frame from `game_frame` after the draw (not once per tick: with several
 ticks per frame it still runs once), and from the level loop while loading.
 
-1. Read the key status of all voices; send the queued key-ons.
+1. Read the key status of all voices (`SpuGetAllKeysStatus`, `0x80015A9C`, into
+   `0x800910D0`: 0 off, 1 on, 3 keyed off and releasing); send the queued key-ons. When the SPU
+   finishes a sample is real time (sample length, pitch, the release envelope, and a voice can
+   end and be retaken within one frame, so the status bytes alone don't show every end): an
+   engine that must reuse voices exactly as the original takes these statuses from a recording
+   (the runtime logs them under `VALOR_TRACE_INPUT`: `keys TICK: 24 bytes`). Scripts read them
+   through variable 0x68 (my last sound still playing), so a soldier's pacing follows them (2:2
+   tick 138).
 2. For each voice 1..23 that is on:
    - age += 1; at **351 frames** a non-looping voice is stopped (`voice_stop`), whatever it is.
    - **Follow the entity**: while its entity lives (not flags A 0x80000) the source position is
@@ -312,6 +319,8 @@ playing a footstep for the player was found (inferred: the player is silent when
 **Level scripts, built-in 19 `sound`** (`0x80069B94` → `lvl_sound` `0x800533D4`): 7 values,
 in push order `volume_spread, volume, pitch_spread, pitch, sound, bank + 1, mode` (bank 0 when
 given 0). Played on the script's entity; mode 3 = loop, and the voice is pushed as a handle.
+Exactly: `sound_play(bank, sound, the context's entity, volume, volume_spread, pitch,
+pitch_spread, 0, mode == 3, 0, 0)`.
 Built-in 20 `sound_stop(handle)` (`0x80069CC4` → `0x80053444`) stops that voice at once. 1:3's
 calls: 0:53 and 0:54 (objective jingles), 0:50 (the message beep, with on-screen texts), 0:49 at
 1.0 and 0.5 together (a scripted explosion), 0:39 (a destructible, script 84), 0:40 (with a

@@ -15,9 +15,37 @@ G_SIZES = 0x8009263C           # per slot 0x200: u16 VAG sizes in 8-byte units (
 G_PITCH = 0x8009163C           # base pitch per sound and slot
 
 
+import os
+import re
+from bisect import bisect_right
+
+VOICES_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "build", "engine", "voices.log")
+WATCH = re.compile(r"^watch (\d+) vs\+([0-9A-F]+): ([0-9A-F]+) -> ([0-9A-F]+)")
+
+
+def recorded_ends():
+    """When the SPU reported each voice finished (status 1 -> 3) in the recording: a watch of
+    the status bytes (VALOR_WATCH="vs=800910D0:24", build/engine/voices.log), by voice, the
+    vblanks in order. Real time: how long the hardware takes to play a sample."""
+    ends = {}
+    if not os.path.exists(VOICES_LOG):
+        return None
+    for line in open(VOICES_LOG, errors="replace"):
+        mm = WATCH.match(line)
+        if not mm:
+            continue
+        vb, off = int(mm[1]), int(mm[2], 16)
+        a, b = int(mm[3], 16), int(mm[4], 16)
+        for i in range(4):
+            if (a >> 8 * i) & 0xFF == 1 and (b >> 8 * i) & 0xFF == 3:
+                ends.setdefault(off + i, []).append(vb)
+    return ends
+
+
 class Audio:
     def __init__(self, eng):
         self.eng = eng
+        self.ends = recorded_ends()
         self.keyon = 0                      # g_keyon_pending
         self.spu = {}                       # voice -> (start vblank, end vblank) once keyed on
         self.ended = set()                  # voices read as 3 at the last update
@@ -117,13 +145,26 @@ class Audio:
     def update(self):
         eng, m = self.eng, self.eng.m
         vb = eng.vblank
-        # SpuGetAllKeysStatus
+        frames = eng.feed.keys.get((eng.level, eng.tick_no))
+        rec = frames.pop(0) if frames else None
+        # SpuGetAllKeysStatus: as the recording's SPU reported it (real time), else modelled
         for v in range(1, 24):
+            if rec is not None:
+                m.w8(G_ENABLED + v, rec[v])
+                continue
             st = self.spu.get(v)
             if st is None:
                 continue
             if st[0] == "on":
-                status = 1 if vb < st[2] else 3
+                if self.ends is not None:
+                    # the recording's end: the first 1 -> 3 after the key-on, read by the update
+                    # of the frame that runs until it
+                    lst = self.ends.get(v, [])
+                    i = bisect_right(lst, st[1])
+                    nxt = getattr(eng, "next_vblank", vb + 2)
+                    status = 3 if i < len(lst) and lst[i] <= nxt else 1
+                else:
+                    status = 1 if vb < st[2] else 3
                 if status == 3:
                     self.spu[v] = ("rel", 0)
             elif st[0] == "rel":

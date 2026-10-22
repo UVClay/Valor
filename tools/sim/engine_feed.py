@@ -63,6 +63,8 @@ class Feed:
         # the vblank wait's idle work after each frame, in order (runtime/src/game.cpp): the
         # job state of each frame_idle_job call, None for each frame_idle_loop call
         self.idle = defaultdict(list)           # (level, last tick) -> [[state | None] per frame]
+        # the SPU's key status per voice read at each frame's sound_update (runtime/src/game.cpp)
+        self.keys = defaultdict(list)           # (level, last tick) -> [24 bytes per frame]
         level = None
         for line in open(log_path, errors="replace"):
             c = line[0]
@@ -83,6 +85,11 @@ class Feed:
                     level = f"{m[1]}:{m[2]}"
                     self.marks.append((int(m[3]), level))
                     continue
+            elif c == "k":
+                if line.startswith("keys "):
+                    # SpuGetAllKeysStatus at the frame's sound_update: each voice's status
+                    p = line.split()
+                    self.keys[(level, int(p[1].rstrip(":")))].append(bytes.fromhex(p[2]))
             elif c == "i":
                 if line.startswith("idlef "):
                     # frame_wait_vblank: a frame's idle work starts
