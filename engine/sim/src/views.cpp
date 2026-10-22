@@ -40,6 +40,16 @@ Instance instance(const Entity& e) { return {e.m, e.instance_addr()}; }
 Entity soldier(const Mem& m) { return {&m, U(m.u32(G_SOLDIER))}; }
 Entity camera(const Mem& m) { return {&m, U(m.u32(G_PLAYER))}; }
 
+std::array<double, 3> Camera::eye() const {
+    if (death()) return {eye_x() / 65536.0, eye_y() / 65536.0, eye_z() / 65536.0};
+    return {m->s32(e + 0x20C) / 65536.0, m->s32(e + 0x210) / 65536.0, m->s32(e + 0x214) / 65536.0};
+}
+
+Camera camera_view(const Mem& m) {
+    U c = U(m.u32(G_PLAYER));
+    return {&m, c, c ? U(m.u32(c + 0x388)) : 0};
+}
+
 Player player(const Mem& m) {
     U s = U(m.u32(G_SOLDIER));
     return {&m, s ? U(m.u32(s + 0x388)) : 0};

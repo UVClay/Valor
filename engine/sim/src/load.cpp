@@ -2026,6 +2026,7 @@ void GameHeap::tsp_unload(I slot) {
 }
 
 void GameHeap::tsp_load(I chunk_file, I slot) { impl_->ld.tsp_load(chunk_file, slot); }
+void GameHeap::level_start() { impl_->ld.level_start(); }
 
 void GameHeap::destroy(U e) {
     Loader& ld = impl_->ld;

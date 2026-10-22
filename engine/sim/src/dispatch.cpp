@@ -9,6 +9,7 @@ namespace valor::sim {
 bool run_think(Engine& eng, U fn, U e) {
     switch (fn) {
         case 0x8007A6B0: player_update(eng, e); return true;
+        case 0x80079A50: player_think_dead(eng, e); return true;
         case 0x800473DC: camera_think(eng, e); return true;
         case 0x80053C00: return true;  // the world's colour cycles: drawing only
         case 0x8004F488: fade_think(eng, e); return true;
@@ -36,6 +37,7 @@ bool run_touch(Engine& eng, U fn, U e, U o, I& r) {
         case 0x8007C030: r = player_touch(eng, e, o); return true;
         case BULLET_TOUCH: r = bullet_touch(eng, e, o); return true;
         case 0x8005D32C: r = destructible_touch(eng, e, o); return true;
+        case 0x800476C4: r = sphere_vs_object_planes(eng, e, o) != 0; return true;  // the death camera's
         default: return false;
     }
 }
@@ -55,6 +57,12 @@ bool run_hit_part(Engine& eng, U fn, U e, I p, U o, I op, I& r) {
 bool run_world_contact(Engine& eng, U fn, U e, I res) {
     switch (fn) {
         case PROJECTILE_WORLD_CONTACT: projectile_world_contact(eng, e, res); return true;
+        case 0x800476E8:  // the death camera's: landing stops it
+            if (res & 1) {
+                eng.m.w32(e + 0x200, 0);
+                eng.m.w32(e + 0x38, eng.m.u32(e + 0x38) | 2);
+            }
+            return true;
         case 0x80056250:
         case 0x80054E14: walker_world_contact(eng, e, res); return true;
         default: return false;

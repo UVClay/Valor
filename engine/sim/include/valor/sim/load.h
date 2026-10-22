@@ -47,6 +47,9 @@ public:
     // chunk file into the slot's buffer, tsp_parse, its instance: 0x8008C798).
     void tsp_unload(I slot);
     void tsp_load(I chunk_file, I slot);
+    // level_start (0x80061E14) again on the running state (level_restart 0x800624AC, after a
+    // death): the caller has removed the entities level_start removes.
+    void level_start();
 
 private:
     struct Impl;

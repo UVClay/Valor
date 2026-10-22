@@ -657,6 +657,20 @@ void Engine::stream_end() {
     }
 }
 
+void Engine::level_restart() {
+    for (U e : m.entities()) {
+        I t = m.s32(e + 8);
+        if (t == 0 || (t >= 4 && t != 8)) remove(e, "level restart");
+    }
+    handles_free_removed();
+    gheap->level_start();
+    stream_slot = -1;
+    stream_frames_left = 0;
+    chunks_apply();
+    restarts++;
+    stats["level restarts"]++;
+}
+
 void Engine::chunk_stream() {
     U rec = U(m.u32(0x80099070));
     auto loaded = [&](I c) {
@@ -726,6 +740,8 @@ void Engine::live_frame(I vblanks) {
     // session's median for such frames (2:1 204, 2:2 498; objects.md, The frame and the tick)
     for (int k = 0; k < 1 + 189; k++) idle_job(m.s32(0x800AB8E8));
     audio->update();
+    // level_main: a death (flags 2) ends the frame loop; the level restarts in place
+    if ((m.u32(0x8009C840) & 2) && gheap) level_restart();
 }
 
 void Engine::run(I to, const std::function<void(const StateLine&)>& line) {

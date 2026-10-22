@@ -92,6 +92,9 @@ void player_update(Engine& eng, U e);
 void player_move(Engine& eng, U e);
 void player_weapon_update(Engine& eng, U e);
 void fade_think(Engine& eng, U e);
+U fade_start(Engine& eng, I mode, I delay, I len, I hold, const I c0[3], const I c1[3]);
+void player_death_start(Engine& eng, U e, I killer);
+void player_think_dead(Engine& eng, U e);
 
 // engine_camera.py
 void camera_think(Engine& eng, U e);

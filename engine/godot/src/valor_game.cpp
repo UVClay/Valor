@@ -341,9 +341,8 @@ void ValorGame::place(double x, double y, double z, double yaw, double pitch) {
 
 Vector3 ValorGame::get_eye_position() const {
     if (engine_) {
-        // the camera entity: the view's position
-        valor::sim::view::Entity cam = valor::sim::view::camera(engine_->m);
-        auto p = cam.position();
+        // the camera's eye (the death camera's own when dying)
+        auto p = valor::sim::view::camera_view(engine_->m).eye();
         return to_godot(p[0], p[1], p[2]);
     }
     const valor::Player& player = session_.player();
@@ -352,11 +351,26 @@ Vector3 ValorGame::get_eye_position() const {
 }
 
 double ValorGame::get_yaw() const {
-    if (engine_) return -(valor::sim::view::player(engine_->m).look_yaw() / 65536.0) * kAngle;
+    if (engine_) {
+        auto c = valor::sim::view::camera_view(engine_->m);
+        if (c.death()) {  // the death camera looks from its eye to its look point
+            auto a = c.eye(), b = c.look();
+            return -std::atan2(b[0] - a[0], b[2] - a[2]);
+        }
+        return -(valor::sim::view::player(engine_->m).look_yaw() / 65536.0) * kAngle;
+    }
     return -(session_.player().yaw() / 65536.0) * kAngle;
 }
 double ValorGame::get_pitch() const {
-    if (engine_) return (valor::sim::view::player(engine_->m).look_pitch() / 65536.0) * kAngle;
+    if (engine_) {
+        auto c = valor::sim::view::camera_view(engine_->m);
+        if (c.death()) {
+            auto a = c.eye(), b = c.look();
+            double h = std::hypot(b[0] - a[0], b[2] - a[2]);
+            return std::atan2(-(b[1] - a[1]), h);  // y down
+        }
+        return (valor::sim::view::player(engine_->m).look_pitch() / 65536.0) * kAngle;
+    }
     return (session_.player().pitch() / 65536.0) * kAngle;
 }
 

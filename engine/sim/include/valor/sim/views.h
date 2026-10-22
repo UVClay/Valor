@@ -117,6 +117,27 @@ struct Player {
     int16_t reserve() const { return int16_t(m->s16(a + 0x56 + 2 * slot())); }
 };
 
+// The camera's object (movement.md, The camera): the view's points.
+#define VALOR_CAMERA_FIELDS(X)                                                    \
+    X(look_x, int32_t, 0x000, "the look point, 16.16")                          \
+    X(look_y, int32_t, 0x004, "")                                                \
+    X(look_z, int32_t, 0x008, "")                                                \
+    X(eye_x, int32_t, 0x03C, "the eye in the death modes (camera_place), 16.16") \
+    X(eye_y, int32_t, 0x040, "")                                                 \
+    X(eye_z, int32_t, 0x044, "")                                                 \
+    X(mode, uint32_t, 0x09C, "0x80 follows the soldier, 0x800 the death camera")
+
+struct Camera {
+    const Mem* m = nullptr;
+    U e = 0, a = 0;  // the camera entity, its object
+    VALOR_CAMERA_FIELDS(VALOR_VIEW_FIELD)
+
+    bool death() const { return mode() & 0x1800; }
+    // The eye (whole units): the camera entity's position, or in the death modes camera_place's.
+    std::array<double, 3> eye() const;
+    std::array<double, 3> look() const { return {look_x() / 65536.0, look_y() / 65536.0, look_z() / 65536.0}; }
+};
+
 #undef VALOR_VIEW_FIELD
 
 // The entity list from g_entities, in the game's order.
@@ -125,6 +146,7 @@ Instance instance(const Entity& e);
 // The player's soldier, the camera (the view: its position and angles) and the latest tick.
 Entity soldier(const Mem& m);
 Entity camera(const Mem& m);
+Camera camera_view(const Mem& m);
 Player player(const Mem& m);
 uint32_t tick(const Mem& m);
 

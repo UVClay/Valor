@@ -661,6 +661,138 @@ void fade_think(Engine& eng, U e) {
     eng.remove(e, "fade done");
 }
 
+// fade_start (0x8004F748): a type 0x32 fade entity: mode (1: drawn), a delay, a ramp of len ticks
+// from one colour to another, a hold; linked at the front. Its prims are drawing only.
+U fade_start(Engine& eng, I mode, I delay, I len, I hold, const I c0[3], const I c1[3]) {
+    Mem& m = eng.m;
+    U e = eng.entity_create(0x32, 0x74);
+    if (!e) return 0;
+    m.w32(e + 8, 0x32);
+    m.w32(e + 0xC, 0x20000);
+    m.w32(e + 0x10, 0x203);
+    m.w32(e + 0x14, 0);
+    m.w32(e + 0x36C, 0x8004F488);
+    m.w32(e + 0x370, delay ? 0 : ((mode & 1) ? 0x8004F670 : 0));
+    m.w32(e + 0x374, 0);
+    m.w32(e + 0x378, 0);
+    m.w32(e + 0x384, 0x8006A318);
+    U o = U(m.u32(e + 0x388));
+    m.w32(o, mode);
+    m.w32(o + 4, delay);
+    m.w32(o + 8, len);
+    m.w32(o + 0xC, hold);
+    for (int k = 0; k < 3; k++) {
+        m.w8(o + 0x18 + k, c0[k]);
+        m.w16(o + 0x10 + 2 * k, len ? (c1[k] - c0[k]) / len : 0);
+    }
+    if (mode & 4) {
+        m.w32(o + 0x6C, 0x300000);
+        m.w32(o + 0x70, len ? 0x300000 / len : 0);
+    }
+    eng.link_front(e);
+    return e;
+}
+
+// player_death_start (0x80079D10): the soldier's think becomes player_think_dead, its handlers
+// cleared; with a camera animation the camera runs the death camera (script 0xF), becomes a
+// physical walker at the soldier's place (mode 0x800) and picks the death animation (variable
+// 2: 30 crouched, 20 killed by an explosion, else 50% 10-12, 50% 0-2); without one, the fade.
+void player_death_start(Engine& eng, U e, I killer) {
+    Mem& m = eng.m;
+    U inv = U(m.u32(e + 0x388));
+    U cam = U(m.u32(G_PLAYER));
+    U co = U(m.u32(cam + 0x388));
+    m.w32(e + 0x36C, 0x80079A50);
+    m.w32(e + 0x374, 0);
+    m.w32(e + 0x378, 0);
+    m.w32(e + 0x37C, 0);
+    U cinst = U(m.u32(cam + 0x100));
+    if (cinst && m.u32(cinst + 0x74)) {
+        m.w32(e + 0x38, m.u32(e + 0x38) & ~I(0x4000));
+        VM(eng, e).script_start(0xF, 0, 0);  // the soldier's death script (a0 is still the soldier)
+        m.w32(co + 0x9C, 0x800);
+        m.w32(co + 0x10, 3);
+        m.w32(e + 0x228, 0);
+        m.w32(e + 0x230, 0);
+        m.w32(cam + 0xC, 0x102A);
+        m.w32(cam + 0x10, 0x200);
+        m.w32(cam + 0x37C, 0x800476C4);
+        m.w32(cam + 0x14, 0x08000400);
+        m.w32(cam + 0x378, 0x800476E8);
+        m.w32(cam + 0x284, m.u32(e + 0x284));
+        for (U o : {0x20Cu, 0x210u, 0x214u, 0x228u, 0x22Cu, 0x230u, 0x258u, 0x25Cu, 0x260u, 0x264u, 0x268u, 0x26Cu, 0x270u, 0x274u, 0x278u})
+            m.w32(cam + o, m.u32(e + o));
+        m.copy(cam + 0x2D8, e + 0x2D8, 0x10);  // the sphere's offset and centre
+        m.w16(cam + 0x2E8, m.u16(e + 0x2E8));
+        m.w16(cam + 0x2EC, m.u16(e + 0x2EC));
+        m.w32(cam + 0x2D4, m.u32(e + 0x2D4));
+        m.w16(cam + 0x3C8, m.u16(e + 0x3C8));
+        m.w32(cam + 0x208, m.u32(e + 0x208));
+        I v;
+        if (m.u32(inv) & 2)
+            v = 0x1E;
+        else if (killer == 0x31)
+            v = 0x14, m.w32(co + 0x10, 3);
+        else if (((eng.rand.draw(FN("player_death")) * 0x64) >> 15) < 0x32)
+            v = ((eng.rand.draw(FN("player_death")) * 3) >> 15) + 0xA;
+        else
+            v = (eng.rand.draw(FN("player_death")) * 3) >> 15;
+        m.w32(cam + 0x4C + 4 * 2, v);
+        m.w32(e + 0xC, (m.u32(e + 0xC) & ~I(0x28)) | 0x20000);
+        m.w32(e + 0x10, m.u32(e + 0x10) | 0x13);
+    } else {
+        static const I black[3] = {0, 0, 0}, white[3] = {0xFF, 0xFF, 0xFF};
+        fade_start(eng, 1, 0x32, 0xF, 0x78, black, white);
+    }
+    m.w32(inv, m.u32(inv) & ~I(0x20) & ~I(0x40) & ~I(0x100) & 0xFFDFFFFF & ~I(0x4000));
+    m.w32(e + 0xC, m.u32(e + 0xC) | 0x20);
+    m.w32(e + 0x10, m.u32(e + 0x10) & ~I(0x10));
+}
+
+// player_think_dead (0x80079A50): the soldier follows the death camera; when the camera's script
+// has ended, the fade to black, and when that is gone the level is lost (flags | 2).
+void player_think_dead(Engine& eng, U e) {
+    Mem& m = eng.m;
+    U inv = U(m.u32(e + 0x388));
+    U cam = U(m.u32(G_PLAYER));
+    U cinst = U(m.u32(cam + 0x100));
+    U co = U(m.u32(cam + 0x388));
+    if (cinst && m.u32(cinst + 0x74) && (m.u32(co + 0x9C) & 0x800)) {
+        m.w32(e + 0x284, m.u32(cam + 0x284));
+        for (U o : {0x20Cu, 0x210u, 0x214u, 0x228u, 0x22Cu, 0x230u, 0x258u, 0x25Cu, 0x260u, 0x264u, 0x268u, 0x26Cu})
+            m.w32(e + o, m.u32(cam + o));
+        if (m.s16(e + 0x11C) == -1) m.w32(inv, m.u32(inv) | 0x8000);
+        if (m.u32(inv) & 0x10000) {
+            if (!find_type_group(m, 0x32, m.s8(inv + 0x152))) {
+                m.w32(0x8009C840, m.u32(0x8009C840) | 2);
+                m.w32(e + 0x38, m.u32(e + 0x38) | 0x4000);
+            }
+        } else if (m.s32(cam + 0x54) == -1) {  // the death camera's variable 2: its script ended
+            static const I black[3] = {0, 0, 0}, white[3] = {0xFF, 0xFF, 0xFF};
+            U f = fade_start(eng, 1, 0x32, 0xF, 0, black, white);
+            if (f) {
+                m.w32(inv, m.u32(inv) | 0x10000);
+                m.w8(f + 0x35, m.u8(inv + 0x152));
+            } else {
+                m.w32(0x8009C840, m.u32(0x8009C840) | 2);
+                m.w32(e + 0x38, m.u32(e + 0x38) | 0x4000);
+            }
+        }
+    } else if (m.u32(e + 0xC) & 0x100000) {
+        m.w32(G_LAST_EXPLOSION, 0);
+        m.w32(0x8009C840, m.u32(0x8009C840) | 0x202);
+        eng.note("player death without a death camera (white fades)");
+    }
+    VM vm(eng, e);
+    vm.run_b();
+    if (m.s32(e + 0x288) < 0) {
+        m.w32(e + 0x288, 1);
+        m.w32(e + 0x28C, 1);
+        m.w32(e + 0x22C, S32(m.s32(e + 0x22C) + 0x08000000));
+    }
+    vm.run_a();
+}
+
 void player_update(Engine& eng, U e) {
     Mem& m = eng.m;
     U inv = U(m.u32(e + 0x388));
@@ -668,7 +800,7 @@ void player_update(Engine& eng, U e) {
     if (m.s8(inv + 0x153) != m.s8(ANALOG + port)) player_pad_config(eng, e, inv, port);
     if (m.s32(e + 0x210) > 0x13880000) eng.note("player fell out of the world (10000 damage) not implemented");
     if (m.u32(e + 0x38) & 0x4000)
-        eng.note("player death not implemented");
+        player_death_start(eng, e, m.s32(inv + 0x1C0));
     else {
         bool aimed = false;
         if (m.s32(e + 0x284)) {

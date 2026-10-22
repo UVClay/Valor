@@ -389,7 +389,8 @@ static ViewDirs view_dirs(Engine& eng, U cam, U co, bool widen) {
     Mem& m = eng.m;
     const Gte& g = eng.gte;
     U blk = U(m.u32(co + 0xC8));
-    V3 eye = {m.s32(cam + 0x20C), m.s32(cam + 0x210), m.s32(cam + 0x214)};
+    V3 eye = (m.u32(co + 0x9C) & 0x1800) ? V3{m.s32(co + 0x3C), m.s32(co + 0x40), m.s32(co + 0x44)}
+                                          : V3{m.s32(cam + 0x20C), m.s32(cam + 0x210), m.s32(cam + 0x214)};
     V3 look = {m.s32(co), m.s32(co + 4), m.s32(co + 8)};
     V3 side = {m.s32(co + 0x6C), m.s32(co + 0x70), m.s32(co + 0x74)};
     I w = m.s32(blk + 0x30), h = m.s32(blk + 0x34);

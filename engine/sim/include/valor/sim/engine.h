@@ -119,6 +119,10 @@ public:
     I stream_frames_left = 0, stream_slot = -1;
     void chunks_apply();
     void stream_end();
+    // level_restart (0x800624AC), for live play after a death (the level flags' bit 2): every
+    // entity but the player's soldier, the camera, the world and type 8 removed, level_start.
+    void level_restart();
+    I restarts = 0;
     void remove(U e, const std::string& why = "");
 
     // -- input

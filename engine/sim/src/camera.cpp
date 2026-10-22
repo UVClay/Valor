@@ -3,6 +3,7 @@
 #include "valor/aim.h"
 #include "valor/sim/engine.h"
 #include "valor/sim/objects.h"
+#include "valor/sim/scripts.h"
 #include "valor/sim/simgte.h"
 
 namespace valor::sim {
@@ -19,9 +20,51 @@ void ease(Mem& m, U co) {
     }
 }
 
-void look_points(Engine& eng, U, U co, U sol) {
+// The camera entity's matrix (+0x340) and translation (+0x354) applied to a short vector.
+V3 cam_local(Mem& m, U e, I x, I y, I z) {
+    M3 R;
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++) R[i][j] = m.s16(e + 0x340 + 6 * i + 2 * j);
+    V3 t = {m.s32(e + 0x354), m.s32(e + 0x358), m.s32(e + 0x35C)};
+    V3 mac = gmul_mac(R, {S16(x), S16(y), S16(z)}, t, 12);
+    return {S16(mac[0]), S16(mac[1]), S16(mac[2])};
+}
+
+// 0x80046EB4, the death camera's targets from its animation: the bone model+0xD4's joint
+// (co+0x54..), and its rotation (the pose's quaternion) applied to the model's two offsets plus the
+// joint: the look point (co+0x24..) and the side point (co+0x84..), model space.
+void death_points(Engine& eng, U e, U co) {
+    Mem& m = eng.m;
+    U inst = U(m.u32(e + 0x100));
+    U model = U(m.u32(inst + 8));
+    I bone = m.s16(model + 0xD4);
+    U jp = U(m.u32(inst + 0x94) + 8 * bone);
+    V3 j = {m.s16(jp), m.s16(jp + 2), m.s16(jp + 4)};
+    for (int k = 0; k < 3; k++) m.w32(co + 0x54 + 4 * k, S32(j[k] << 16));
+    U qb = U(m.u32(inst + 0x88));
+    if (!qb) qb = U(m.u32(inst + 0x8C));
+    if (!qb) qb = U(m.u32(inst + 0x90));
+    U q = qb + 8 * bone;
+    M3 R = quat_m3(m.s16(q), m.s16(q + 2), m.s16(q + 4), m.s16(q + 6));
+    for (auto [off, dst] : {std::pair<U, U>{0xD8, 0x24}, {0xE0, 0x84}}) {
+        V3 v = {m.s16(model + off), m.s16(model + off + 2), m.s16(model + off + 4)};
+        V3 mac = gmul_mac(R, v, j, 12);
+        for (int k = 0; k < 3; k++) m.w32(co + dst + 4 * k, S32(S16(mac[k]) << 16));
+    }
+}
+
+void look_points(Engine& eng, U e, U co, U sol) {
     Mem& m = eng.m;
     I mode = m.u32(co + 0x9C);
+    if (mode & 0x800) {
+        // the eased targets through the camera entity's own matrix
+        V3 a = cam_local(m, e, m.s16(co + 0x1A), m.s16(co + 0x1E), m.s16(co + 0x22));
+        for (int k = 0; k < 3; k++) m.w32(co + 4 * k, S32(a[k] << 16));
+        m.w32(co + 0x98, a[1]);
+        V3 b = cam_local(m, e, m.s16(co + 0x7A), m.s16(co + 0x7E), m.s16(co + 0x82));
+        for (int k = 0; k < 3; k++) m.w32(co + 0x6C + 4 * k, S32(b[k] << 16));
+        return;
+    }
     if (!(mode & 0x480)) {
         eng.note("camera look mode not implemented");
         return;
@@ -41,6 +84,17 @@ void look_points(Engine& eng, U, U co, U sol) {
 
 void place_cam(Engine& eng, U e, U co, U sol) {
     Mem& m = eng.m;
+    if (m.u32(co + 0x9C) & 0x800) {
+        // the eye: the eased joint through the camera's matrix, kept 85 above its floor
+        I ly = m.s16(co + 0x4E);
+        m.w32(co + 0x94, ly);
+        V3 p = cam_local(m, e, m.s16(co + 0x4A), ly, m.s16(co + 0x52));
+        m.w32(co + 0x3C, S32(p[0] << 16));
+        m.w32(co + 0x44, S32(p[2] << 16));
+        I floor = m.s32(e + 0x208);
+        m.w32(co + 0x40, (floor >> 16) - p[1] < 0x55 ? S32(floor - 0x550000) : S32(p[1] << 16));
+        return;
+    }
     if (m.u32(co + 0x9C) & 0x80) {
         m.w32(e + 0x20C, m.s32(sol + 0x20C));
         m.w32(e + 0x210, S32(m.s32(sol + 0x210) + (m.s32(co + 0x94) << 16)));
@@ -86,7 +140,16 @@ void camera_think(Engine& eng, U e) {
     U co = U(m.u32(e + 0x388));
     U sol = eng.resolve(m.u32(co + 0xC));
     if (sol) {
-        if (m.u32(co + 0x9C) & 0x800) eng.note("death camera (mode 0x800) not implemented");
+        if (m.u32(co + 0x9C) & 0x800) {
+            U inst = U(m.u32(e + 0x100));
+            if (inst && m.u32(inst + 8)) {
+                VM vm(eng, e);
+                vm.run_b();
+                vm.run_a();
+                death_points(eng, e, co);
+            } else
+                m.w32(co + 0x9C, (m.u32(co + 0x9C) & ~I(0x800)) | 0x80);
+        }
         ease(m, co);
         look_points(eng, e, co, sol);
         place_cam(eng, e, co, sol);
@@ -104,12 +167,10 @@ void camera_think(Engine& eng, U e) {
 void camera_setup(Engine& eng, U e) {
     Mem& m = eng.m;
     U co = U(m.u32(e + 0x388));
-    if (m.u32(co + 0x9C) & 0x1800) {
-        eng.note("camera_setup in death mode not implemented");
-        return;
-    }
     V3 look = {m.s16(co + 2), m.s16(co + 6), m.s16(co + 0xA)};
-    V3 eye = {m.s16(e + 0x20E), m.s16(e + 0x212), m.s16(e + 0x216)};
+    // the eye: in the death modes (0x1800) the one camera_place put at co+0x3C
+    V3 eye = (m.u32(co + 0x9C) & 0x1800) ? V3{m.s16(co + 0x3E), m.s16(co + 0x42), m.s16(co + 0x46)}
+                                          : V3{m.s16(e + 0x20E), m.s16(e + 0x212), m.s16(e + 0x216)};
     V3 side = {m.s16(co + 0x6E), m.s16(co + 0x72), m.s16(co + 0x76)};
     for (int k = 0; k < 3; k++) {
         m.w32(co + 0xE4 + 4 * k, look[k]);

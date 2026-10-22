@@ -18,6 +18,7 @@
 #include "valor/sim/engine.h"
 #include "valor/sim/feed.h"
 #include "valor/sim/load.h"
+#include "valor/sim/scripts.h"
 #include "valor/sim/views.h"
 
 using namespace valor::sim;
@@ -124,11 +125,33 @@ int run_live(int argc, char** argv) {
                 feed.live_pad[2] = (feed.live_pad[2] & ~U(0x40)) | ((t - 1) % 4 < 2 ? 0x40 : 0);
             }
         }
-        I ld0 = m.s32(0x800AA184), s00 = m.s32(0x80098970);
+        I ld0 = m.s32(0x800AA184), s00 = m.s32(0x80098970), rs0 = eng.restarts;
+        U cam0 = U(m.u32(G_PLAYER));
+        I mode0 = cam0 ? m.u32(m.u32(cam0 + 0x388) + 0x9C) : 0, hp0 = view::soldier(m).a ? view::soldier(m).health() : 0;
         eng.live_frame();
+        {
+            U cam = U(m.u32(G_PLAYER));
+            I mode = cam ? m.u32(m.u32(cam + 0x388) + 0x9C) : 0, hp = view::soldier(m).a ? view::soldier(m).health() : 0;
+            if (hp0 > 0 && hp <= 0) std::printf("tick %5lld: the player is dead\n", (long long)eng.tick_no);
+            if ((mode & 0x800) && std::getenv("VALOR_LIVE_DEATH")) {
+                U co = U(m.u32(cam + 0x388)), ci = U(m.u32(cam + 0x100));
+                std::printf("  death %lld: eye %.1f %.1f %.1f look %.1f %.1f %.1f anim %lld frame %lld var2 %lld fades %d flags %llX\n", (long long)eng.tick_no,
+                            m.s32(co + 0x3C) / 65536.0, m.s32(co + 0x40) / 65536.0, m.s32(co + 0x44) / 65536.0, m.s32(co) / 65536.0,
+                            m.s32(co + 4) / 65536.0, m.s32(co + 8) / 65536.0, (long long)m.s16(ci + 0x5C), (long long)m.s16(ci + 0x5E),
+                            (long long)m.s32(cam + 0x54), find_type_group(m, 0x32, 0) ? 1 : 0, (unsigned long long)m.u32(0x8009C840));
+            }
+            if ((mode ^ mode0) & 0x800)
+                std::printf("tick %5lld: the death camera %s (var 2 = %lld)\n", (long long)eng.tick_no, (mode & 0x800) ? "starts" : "ends",
+                            (long long)m.s32(cam + 0x54));
+            if (eng.restarts != rs0) std::printf("tick %5lld: the level restarts (%lld)\n", (long long)eng.tick_no, (long long)eng.restarts);
+        }
         if (std::getenv("VALOR_LIVE_CAM")) {
             view::Entity cam = view::camera(m), sol = view::soldier(m);
             view::Player p = view::player(m);
+            auto cv = view::camera_view(m);
+            auto ea = cv.eye(), lb = cv.look();
+            std::printf("  view from the points: yaw %.1f pitch %.1f\n", std::atan2(lb[0] - ea[0], lb[2] - ea[2]) * 2048 / M_PI,
+                        std::atan2(-(lb[1] - ea[1]), std::hypot(lb[0] - ea[0], lb[2] - ea[2])) * 2048 / M_PI);
             std::printf("cam %lld: %.3f %.3f %.3f yaw %.3f pitch %.3f | soldier %.3f %.3f %.3f yaw %.3f\n", (long long)eng.tick_no,
                         cam.position()[0], cam.position()[1], cam.position()[2], p.look_yaw() / 65536.0, p.look_pitch() / 65536.0,
                         sol.position()[0], sol.position()[1], sol.position()[2], sol.yaw() / 65536.0);

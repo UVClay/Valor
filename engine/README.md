@@ -115,6 +115,16 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
   more, the 1:3 session's median for frames whose work ran past their first vblank (2:1's is 204,
   2:2's 498; a tenth of 1:3's frames ran fewer than 78). The jobs run messages, spawn retries,
   removed handles and chunk streaming;
+- dying works as the original's does. The soldier runs its death script (0xF); the camera
+  becomes the death camera: a walker at the soldier's place whose eye and look point follow its
+  animation's bones (`0x80046EB4`, camera_look_points and camera_place in mode 0x800). When the
+  animation ends there is a 50-tick delay and a 15-tick fade, then flag 2. The level then
+  restarts in place (`level_restart`): every entity but the soldier, the camera, the world and
+  type 8 is removed, and `level_start` runs again on the running state, without reloading files.
+  `coretest --live 1:3 --replay`: the player dies at tick 2613, the crouched death animation
+  plays (20 frames), and the level restarts at 2701 at full health with its statistics zeroed.
+  (The doc's "the camera runs script 0xF" is the soldier: `a0` is still the soldier at the
+  call.) Godot draws the death camera's own eye and look point;
 - chunks stream as the original streams them: entering a streaming record (class 0x4D078F23)
   runs `chunk_stream`, and so do the idle jobs 2 and 3. The record's chunks that aren't loaded
   replace the slots it doesn't list, one read at a time. The slot being read is left out of
@@ -419,8 +429,7 @@ in the recordings: the pad words and the control roles' values per tick.
 
 ## What's next
 
-1. **Live play's own rules**: the player's death and restart (`level_start`
-   again on the built state).
+1. **Live play's own rules**: level transitions (end of level → the next, the mission through).
 3. **Presentation**: the first-person weapon, pickups and effects (tracers, explosions' particle
    systems), sounds and music from the engine's voice table, the HUD.
 4. **2:2 from the disc**: a dump from before its tick 1 (the capture's earlier vblank), so its
