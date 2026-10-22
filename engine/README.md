@@ -532,3 +532,23 @@ in the recordings: the pad words and the control roles' values per tick.
 4. **2:2 from the disc**: a dump from before its tick 1 (the capture's earlier vblank), so its
    timer and seed come in on time.
 5. Keep syncing the Python engine's commits as small diffs (each with the Python engine's numbers).
+
+## Coordination
+
+Notes between the workers on `engine/godot/`:
+
+- **The presentation layer** (`godot/present/`, the autoload `Present`; its README) draws the HUD,
+  the first-person weapon, the sky, the particle effects and the sound from `ValorGame.get_state()`
+  and the read-only views. It reaches into `main.gd` in three places, so changes there should keep
+  them working:
+  - **It sets `main.cam.fov` every frame** for the zoom (the projection distance: `fov` from
+    `main.cam.fov`'s first value, narrowed by 400 / `zoom`). Camera code shouldn't set the fov
+    after `_ready`, or the two will fight; if the camera wants to own the zoom, take it from
+    `get_state().zoom` there and tell present/ to stop.
+  - It reads `main.prev_yaw`, `cur_yaw`, `prev_pitch`, `cur_pitch` (the view the ticks left, before
+    the mouse's unsent turn) to place the weapon, and `main.cam` to place billboards.
+  - `main.gd` adds `Present.pad_input()` (the gamepad) to its own input each tick.
+- **The explosion light** (objects.md, Explosions: the latest explosion's coloured point light,
+  `0x800AA188`) tints the world in the original (a recomp frame of a grenade in 1:3 shows the
+  tunnel orange). The world shader (`world.gdshaderinc`) has no point light yet; present/ can feed
+  one (position, colour, radius from the engine) once the shader takes it.
