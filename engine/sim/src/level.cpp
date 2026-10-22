@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "valor/gte.h"
+#include "valor/sim/audio.h"
 #include "valor/sim/engine.h"
 #include "valor/sim/objects.h"
 
@@ -1131,7 +1132,26 @@ void LevelLogic::builtin(I n, Ctx& c, std::vector<SVal>& st, U base, I sid) {
         I what = st.size() > 1 ? as_int(st[st.size() - 2]) : 0;
         if (what == 4) eng_.note("level_set(4): alarm from level not implemented");
     }
-    if (n == 19) eng_.note("level sound not implemented");
+    if (n == 8) {
+        // bi_show_text (0x80069FC4) -> show_text (0x80053464)
+        I v = as_int(popv());
+        calls[n]++;
+        show_text(eng_, S32(v));
+        return;
+    }
+    if (n == 19) {
+        // bi_sound (0x80069B88) -> lvl_sound (0x800533D4): pops mode, bank + 1, sound, pitch,
+        // pitch spread, volume, volume spread; sound_play on the script's entity (bank 0 for 0),
+        // looping for mode 3, whose voice is pushed (audio.md, Scripts)
+        I v7[7];
+        for (I& x : v7) x = S32(as_int(popv()));
+        I mode = v7[0], bank1 = v7[1];
+        U ent = c.sub && !c.sub->removed ? c.sub->addr : 0;
+        I v = eng_.audio->play(bank1 ? bank1 - 1 : 0, v7[2], ent, v7[5], v7[6], v7[3], v7[4], 0, mode == 3 ? 1 : 0, 0, 0);
+        calls[n]++;
+        if (mode == 3) st.push_back(SVal::num(0xB, v));
+        return;
+    }
     if (n == 18 || n == 21) eng_.note("world animation (drawing only)");
     builtin_base(n, c, st, base, sid);
 }

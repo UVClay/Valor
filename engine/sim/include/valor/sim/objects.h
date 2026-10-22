@@ -161,6 +161,15 @@ U projectile_create(Engine& eng, U owner, I etype, I model, I speed, I bone_a, I
 void parts_box(Mem& m, U e);
 bool segment_sphere(Mem& m, U e, U o, const V3& u, I& key);
 
+// The on-screen text list and the hit wedges' timers (texts.cpp; engine_texts.py, hud.md).
+void texts_update(Engine& eng);                   // 0x8005F69C, every tick after the collisions
+void show_text(Engine& eng, I n);                 // level built-in 8 (0x80053464)
+void pickup_message(Engine& eng, U e, U text);    // the pickups' message, id 2
+void ammo_hud_update(Engine& eng, U e);           // 0x800467EC: the clip and reserve strings
+void ammo_hud_init(Engine& eng, U e);             // 0x80046874: the icon quad, the two digit texts
+void hit_indicator(Engine& eng, U victim, U attacker);  // 0x80060FC4
+void hit_wedges(Engine& eng);                     // 0x80060B04, every drawn frame
+
 // Grenades and explosions (grenade.cpp; engine_grenade.py, engine_explosion.py).
 I dist2d_approx(Mem& m, U a, U b);
 U grenade_spawn(Engine& eng, U owner, U model_hash, I bone_a, I bone_b, I fuse, I speed, U off_a, U off_b);

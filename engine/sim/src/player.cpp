@@ -175,6 +175,7 @@ void weapon_draw(Engine& eng, U e, U inv) {
     VM vm(eng, e);
     vm.script_start(2, 1, 0);
     vm.run_a();
+    ammo_hud_update(eng, e);  // ammo_hud_icon (the icon itself is drawing)
     bool empty = m.s16(inv + 0x66 + 2 * slot) == 0 && !(m.u16(G_WEAPONS + 0x44 * m.u8(G_SLOT_WEAPON + slot) + 0x2A) & 1);
     set_var(m, e, 0x10, empty ? 1 : 0);
     eng.audio->fade_entity(e, 10);
@@ -216,6 +217,7 @@ I weapon_reload(Engine& eng, U e, U inv) {
         }
     }
     m.w32(0x80039CBC, m.s32(0x80039CBC) + 1);
+    ammo_hud_update(eng, e);
     if (w == 3 || w == 10) {
         if (m.s16(a + 0x66)) set_var(m, e, 0x10, 0);
     } else if (m.s32(inv + 0x13C) == 0) {

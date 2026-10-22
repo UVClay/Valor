@@ -290,6 +290,7 @@ void throw_weapon(Engine& eng, U e, I bone_a, I bone_b, I fire, I charge) {
         m.w32(inv + 0x124, 1);
         m.w32(inv + 0x44, d);
         m.w32(inv + 0x48, iabs(d));
+        ammo_hud_update(eng, e);
     }
     if (m.s32(inv + 0x124) == 0) return;
     I c = m.s32(inv + 0x124);

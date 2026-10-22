@@ -53,6 +53,38 @@ struct Compare {
                 kinds.insert(w);
                 diffs.push_back(w + ": " + std::to_string(e.player[k]) + " / " + std::to_string(o.player[k]));
             }
+        // the on-screen texts and the hit wedge timers, when the original's trace has them
+        if (o.has_texts) {
+            std::vector<std::string> sa, sb;
+            for (auto& t : e.texts) sa.push_back(t.first);
+            for (auto& t : o.texts) sb.push_back(t.first);
+            auto join = [](const std::vector<std::string>& v) {
+                std::string r;
+                for (auto& x : v) r += (r.empty() ? "'" : ", '") + x + "'";
+                return "[" + r + "]";
+            };
+            if (sa != sb) {
+                kinds.insert("texts (strings)");
+                diffs.push_back("texts (strings): " + join(sa) + " / " + join(sb));
+            } else if (e.texts != o.texts) {
+                kinds.insert("texts (fields)");
+                std::string d = "texts (fields):";
+                for (size_t i = 0; i < e.texts.size(); i++)
+                    if (e.texts[i] != o.texts[i]) {
+                        d += " '" + sa[i] + "'";
+                        for (size_t k = 0; k < e.texts[i].second.size() && k < o.texts[i].second.size(); k++)
+                            d += " " + std::to_string(e.texts[i].second[k]) + "/" + std::to_string(o.texts[i].second[k]);
+                        break;
+                    }
+                diffs.push_back(d);
+            }
+        }
+        if (o.has_hud && e.hud != o.hud) {
+            kinds.insert("hit wedge timers");
+            std::string d = "hit wedge timers:";
+            for (size_t k = 0; k < e.hud.size() && k < o.hud.size(); k++) d += " " + std::to_string(e.hud[k]) + "/" + std::to_string(o.hud[k]);
+            diffs.push_back(d);
+        }
         std::vector<I> ta, tb;
         for (auto& x : e.ents) ta.push_back(x[1]);
         for (auto& x : o.ents) tb.push_back(x[1]);
@@ -302,6 +334,8 @@ int run_engine(int argc, char** argv) {
     // the seed frame's own wait (its idle work as recorded)
     eng.tick_no = t0;
     eng.idle_work();
+    // its sound_update is in the seed already: its record of the SPU is passed over
+    eng.spu_keys();
     Compare cmp;
     cmp.maxn = maxn;
     for (auto& d : after) cmp.orig[d.tick] = &d;

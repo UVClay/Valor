@@ -356,6 +356,7 @@ void apply_damage(Engine& eng, U victim, I dmg, U attacker) {
     }
     I fa = m.u32(victim + 0xC);
     if (fa & 1) {
+        hit_indicator(eng, victim, attacker);
         U inv = U(m.u32(victim + 0x388));
         m.w32(G_STAT_WOUNDED, m.u32(G_STAT_WOUNDED) + 1);
         m.w32(inv + 0x144, m.u32(inv + 0x144) + 1);

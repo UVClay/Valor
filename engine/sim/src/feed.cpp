@@ -1,6 +1,7 @@
 #include "valor/sim/feed.h"
 
 #include <algorithm>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -95,6 +96,15 @@ bool Feed::load(const std::string& root, const std::string& log_path) {
             }
         } else if (c == 'i' && starts(line, "input: game set pad 1 to analog mode")) {
             if (!level.empty()) analog.insert(level);
+        } else if (c == 'k' && starts(line, "keys ")) {
+            // SpuGetAllKeysStatus at the frame's sound_update: each voice's status
+            long long t;
+            char hex[64];
+            if (std::sscanf(line.c_str(), "keys %lld: %63s", &t, hex) == 2 && std::strlen(hex) >= 48) {
+                std::array<uint8_t, 24> k{};
+                for (int v = 0; v < 24; v++) k[size_t(v)] = uint8_t(std::strtoul(std::string(hex + 2 * v, 2).c_str(), nullptr, 16));
+                keys[{level, t}].push_back(k);
+            }
         } else if (c == 'i' && starts(line, "idlef ")) {
             // frame_wait_vblank: a frame's idle work starts
             idle[{level, std::atoll(line.c_str() + 6)}].emplace_back();
@@ -238,6 +248,52 @@ struct Json {
         p++;
         return true;
     }
+    bool str(std::string& out) {
+        ws();
+        if (*p != '"') return false;
+        p++;
+        while (*p && *p != '"') {
+            if (*p == '\\' && p[1]) p++;
+            out += *p++;
+        }
+        if (!*p) return false;
+        p++;
+        return true;
+    }
+    // [[string, n, ...], ...]
+    bool texts(std::vector<std::pair<std::string, std::vector<I>>>& out) {
+        ws();
+        if (*p != '[') return false;
+        p++;
+        ws();
+        if (*p == ']') return p++, true;
+        for (;;) {
+            ws();
+            if (*p != '[') return false;
+            p++;
+            out.emplace_back();
+            if (!str(out.back().first)) return false;
+            for (;;) {
+                ws();
+                if (*p == ']') {
+                    p++;
+                    break;
+                }
+                if (*p != ',') return false;
+                p++;
+                I v;
+                if (!num(v)) return false;
+                out.back().second.push_back(v);
+            }
+            ws();
+            if (*p == ',') {
+                p++;
+                continue;
+            }
+            if (*p == ']') return p++, true;
+            return false;
+        }
+    }
     // Skips any value.
     void skip() {
         ws();
@@ -303,6 +359,12 @@ bool parse_state(const std::string& line, StateLine& s) {
                     }
                     return false;
                 }
+        } else if (k == "texts") {
+            s.has_texts = true;
+            if (!j.texts(s.texts)) return false;
+        } else if (k == "hud") {
+            s.has_hud = true;
+            if (!j.list(s.hud)) return false;
         } else
             j.skip();
         j.ws();
@@ -340,7 +402,26 @@ std::string state_json(const StateLine& s) {
         if (i) o += ',';
         list(s.ents[i]);
     }
-    o += "]}";
+    o += ']';
+    if (s.has_texts) {
+        o += ",\"texts\":[";
+        for (size_t i = 0; i < s.texts.size(); i++) {
+            o += i ? ",[\"" : "[\"";
+            for (char c : s.texts[i].first) {
+                if (c == '"' || c == '\\') o += '\\';
+                o += c;
+            }
+            o += '"';
+            for (I v : s.texts[i].second) o += "," + std::to_string(v);
+            o += ']';
+        }
+        o += ']';
+    }
+    if (s.has_hud) {
+        o += ",\"hud\":";
+        list(s.hud);
+    }
+    o += '}';
     return o;
 }
 

@@ -64,6 +64,7 @@ void route_turn_kind(Engine& eng, U e, I px, I pz, I& kind, I& out);
 I brain_node_target(Mem& m, U e, NodeTarget& w, I node);
 I probe(Engine& eng, U e, I how, I r);
 I compute_node(Engine& eng, U e, I rng, I exclude, I mask);
+I node_eval(Engine& eng, U e, U n, I fact);  // op 34 (0x8005B32C)
 I world_value(VM& vm, I op, I var);
 I sense_sensor(VM& vm, I vid);
 

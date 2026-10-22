@@ -195,6 +195,16 @@ struct Objective {
     std::string text;
 };
 
+// The on-screen texts (hud.md, Messages: the text list at 0x80099F4C, count 0x80099ED0): the
+// ammo digits, the level's messages, the pickups' messages; position in the 512 x 240 screen.
+struct Text {
+    std::string text;
+    int x = 0, y = 0;
+    uint8_t rgb[3]{};
+    bool additive = false;  // +0xB semi-transparency
+    int32_t life = -1;      // ticks left, -1 forever
+};
+
 #undef VALOR_VIEW_FIELD
 
 // The entity list from g_entities, in the game's order.
@@ -213,6 +223,9 @@ std::array<int, 3> fade(const Mem& m);
 // The effect voices 1..23, as the sound driver keeps them.
 std::vector<Voice> voices(const Mem& m);
 std::vector<Objective> objectives(const Mem& m);
+std::vector<Text> texts(const Mem& m);
+// The hit wedges' timers (0x8009A590: right, left, front, behind; 40 when hit, counting down).
+std::array<int32_t, 4> hit_timers(const Mem& m);
 // Every live particle and fireball of the effect entities, for drawing.
 std::vector<Sprite> sprites(const Mem& m);
 // The level script started the music (level_set(1, 1): music_start's 0x8009CC74).

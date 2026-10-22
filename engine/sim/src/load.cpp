@@ -824,7 +824,7 @@ bool Loader::level_load(std::string* err) {
     eng.logic->bind(w);
     player_spawn();
     link_front(w);
-    note("ammo_hud_init (the HUD's ammunition panel): drawing only, not built");
+    ammo_hud_init(eng, U(m.u32(G_SOLDIER)));  // ammo_hud_init_player (0x80061130)
     for (int v = 1; v < 0x18; v++) voice_stop(v);  // sound_stop_all
     m.w32(0x8009EC50, 1);
     return true;
@@ -1400,7 +1400,10 @@ void Loader::level_entry() {
     m.w32(0x80093B84, 0);
     m.w32(0x80093B88, 0);
     for (U k = 0; k < 0xA; k++) m.w32(0x80093C04 + 4 * k, 0), m.w32(0x80093C2C + 4 * k, 0);
-    note("level_entry: sound_init, texts_clear, hud_init and func_8007B780 (the HUD, SPU, menus) not built");
+    // texts_clear (0x8005F260): the 50 entries' strings, then the count
+    for (U k = 0; k < 0x32; k++) m.w32(0x80099F4C + 0x20 * k, 0);
+    m.w32(0x80099ED0, 0);
+    note("level_entry: sound_init, hud_init and func_8007B780 (the HUD, SPU, menus) not built");
 }
 
 void Loader::pools_reset() {

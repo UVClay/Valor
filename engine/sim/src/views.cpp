@@ -77,6 +77,27 @@ std::vector<Voice> voices(const Mem& m) {
     return out;
 }
 
+std::vector<Text> texts(const Mem& m) {
+    std::vector<Text> out;
+    for (I i = 0; i < std::max<I>(0, std::min<I>(m.s32(0x80099ED0), 0x32)); i++) {
+        U a = 0x80099F4C + 0x20 * U(i);
+        Text t;
+        for (U s = U(m.u32(a)); s && t.text.size() < 64 && m.u8(s + U(t.text.size()));) t.text += char(m.u8(s + U(t.text.size())));
+        t.x = m.s16(a + 4), t.y = m.s16(a + 6);
+        for (U k = 0; k < 3; k++) t.rgb[k] = uint8_t(m.u8(a + 8 + k));
+        t.additive = m.u8(a + 0xB) != 0;
+        t.life = m.s32(a + 0xC);
+        out.push_back(t);
+    }
+    return out;
+}
+
+std::array<int32_t, 4> hit_timers(const Mem& m) {
+    std::array<int32_t, 4> out{};
+    for (U k = 0; k < 4; k++) out[k] = m.s32(0x8009A590 + 4 * k);
+    return out;
+}
+
 std::vector<Objective> objectives(const Mem& m) {
     // levels.md, Objectives: the count 0x80098620, done flags 0x800988DC, texts 0x80098904, ids
     // 0x8009892C (10 slots).

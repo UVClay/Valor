@@ -76,6 +76,7 @@ public:
     std::unique_ptr<Audio> audio;
     std::unique_ptr<LevelLogic> logic;
     I tick_no = 0, vblank = 0;
+    I frame_ticks = 1;  // the drawn frame's ticks (the hit wedges' countdown)
     std::optional<I> vblank_prev;
     I pad_now = 0, pad_prev = 0;
     std::map<std::string, std::string> dumps;  // "TICK" or "TICKa" -> path
@@ -108,6 +109,7 @@ public:
     // The game's heap at run time, once the state was built from the disc (load.h).
     std::unique_ptr<class GameHeap> gheap;
     std::map<I, size_t> idle_used_;  // the idle records consumed, by tick
+    std::map<I, size_t> keys_used_;  // the SPU key records consumed, by tick
     // Live play (no recording): see start_live and live_frame; in_view answers the draw pass's
     // question (is the entity drawn this frame) for the host's camera.
     std::function<bool(U e)> live_view;
@@ -158,6 +160,7 @@ public:
     void idle_job(I state);  // frame_idle_job (0x80090A30)
     void idle_loop();        // frame_idle_loop (0x80090AEC)
     void idle_work();        // a frame's idle work as the recording has it
+    const std::array<uint8_t, 24>* spu_keys();  // the frame's SPU key status as recorded
     // Every frame of the recording's level (to: the last tick, 0 all); each tick's state line goes
     // to `line`.
     void run(I to, const std::function<void(const StateLine&)>& line);

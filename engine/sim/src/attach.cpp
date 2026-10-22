@@ -621,14 +621,17 @@ static void ammo_add(Engine& eng, U e, I slot, I n) {
         I flags = (m.u16(G_WEAPONS + 0x44 * m.u8(inv + 0x55) + 0x2A) >> 3) & 2;
         eng.audio->play(bank, snd, e, 0x10000, 0, 0x7FFF, 0, 0, 0, 0, flags);
     }
+    ammo_hud_update(eng, e);
 }
 
 I health_touch(Engine& eng, U p, U e) {
     Mem& m = eng.m;
     if ((m.u32(e + 0xC) & 0x20180000) || m.s32(e + 0xF4) == 0x800000) return 0;
     U o = U(m.u32(p + 0x388));
-    m.w32(e + 0xF4, imin(S32(m.s32(e + 0xF4) + m.s32(o + 0x14)), 0x800000));
     I k = m.s32(o);
+    // the message (kind 0..2: 0x8009E864..)
+    pickup_message(eng, e, (k == 0 || k == 1 || k == 2) ? U(m.u32(0x8009E864 + 4 * U(k))) : 0);
+    m.w32(e + 0xF4, imin(S32(m.s32(e + 0xF4) + m.s32(o + 0x14)), 0x800000));
     I snd = k == 0 ? 0x1F : (k == 1 || k == 2) ? 0x1E : -1;
     if (snd != -1) eng.audio->play(0, snd, e, 0x20000, 0, 0x10000, 0x3333, 0, 0, 0, 0);
     eng.remove(p, "health taken");
@@ -644,6 +647,7 @@ I ammo_touch(Engine& eng, U p, U e) {
     for (I slot = 0; slot < m.s32(G_SLOT_COUNT); slot++) {
         if (m.u8(G_SLOT_WEAPON + slot) == w) {
             if (m.s16(inv + 0x56 + 2 * slot) < m.s16(inv + 0x5E + 2 * slot)) {
+                pickup_message(eng, e, U(m.u32(G_WEAPONS + 0x44 * U(w) + 0x3C)));
                 eng.audio->play(0, 0x20, e, 0x10000, 0, 0x10000, 0x3333, 0, 0, 0, 0);
                 ammo_add(eng, e, slot, m.s32(o + 0x14));
                 eng.remove(p, "ammo taken");

@@ -39,6 +39,9 @@ public:
     // -1 for each frame_idle_loop call; by (level, the frame's last tick), one list per frame
     // ("idlef": paused frames share the tick)
     std::map<std::pair<std::string, I>, std::vector<std::vector<I>>> idle;
+    // the SPU's key status per voice read at each frame's sound_update ("keys TICK: 24 bytes",
+    // SpuGetAllKeysStatus 0x80015A9C), by (level, the frame's last tick), one per frame
+    std::map<std::pair<std::string, I>, std::vector<std::array<uint8_t, 24>>> keys;
 
     I role_alt(const std::string& level, I tick, int port, int role) const;
     I role(const std::string& level, I tick, int port, int role) const;
@@ -79,6 +82,11 @@ struct StateLine {
     bool has_player = false;
     std::vector<I> player;
     std::vector<std::vector<I>> ents;
+    // the on-screen texts ([string, x, y, r, g, b, life, hold]) and the hit wedge timers (right,
+    // left, front, behind), when the trace has them (hud.md)
+    bool has_texts = false, has_hud = false;
+    std::vector<std::pair<std::string, std::vector<I>>> texts;
+    std::vector<I> hud;
 };
 std::vector<StateLine> read_trace(const std::string& path);
 std::string state_json(const StateLine& s);

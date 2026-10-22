@@ -477,6 +477,7 @@ void Engine::tick(bool) {
     }
     entities_update();
     entities_collide(*this);
+    texts_update(*this);
     timer_message();
 }
 
@@ -576,6 +577,16 @@ void Engine::end_frame() {
     draw_pass(*this);
     idle_work();
     audio->update();
+}
+
+// The SPU's key status as the recording's sound_update read it this frame (when a sample ends is
+// real time: audio.md), consumed one per frame; null live or with no record.
+const std::array<uint8_t, 24>* Engine::spu_keys() {
+    if (feed.live) return nullptr;
+    auto it = feed.keys.find({level, tick_no});
+    size_t& used = keys_used_[tick_no];
+    if (it == feed.keys.end() || used >= it->second.size()) return nullptr;
+    return &it->second[used++];
 }
 
 // The frame's wait for the vblank as recorded: frame_idle_job / frame_idle_loop calls.
@@ -836,6 +847,7 @@ void Engine::live_frame(I vblanks) {
     stream_end();
     if (gheap) gheap->frame();
     char_pool_update(*this);
+    frame_ticks = 1;
     tick(true);
     draw_pass(*this);
     // frame_wait_vblank (0x80090B80) at 30 Hz, one tick a frame: one idle job, then, the frame's
@@ -860,6 +872,7 @@ void Engine::run(I to, const std::function<void(const StateLine&)>& line) {
         // a paused frame (no tick due): the timer reset, then the draw and the idle work all
         // the same (game_frame, objects.md)
         if (ticks.empty()) m.w32(G_VBL_TIMER, 0);
+        frame_ticks = I(ticks.size());
         for (size_t i = 0; i < ticks.size(); i++) {
             if (ticks[i] != tick_no + 1) note("tick numbering", std::to_string(ticks[i]) + " after " + std::to_string(tick_no));
             tick(i == 0);
@@ -888,6 +901,18 @@ StateLine Engine::state_line() const {
         out.ents.push_back({e.handle(), e.type(), e.flags_a(), e.x(), e.y(), e.z(), e.pitch(), e.yaw(), e.roll(), e.health(),
                             in.a ? in.anim() : -1, in.a ? in.frame() : -1});
     }
+    // the text list (0x80099F4C, count 0x80099ED0) and the hit wedge timers (0x8009A590)
+    out.has_texts = out.has_hud = true;
+    for (I i = 0; i < imax(0, imin(m.s32(0x80099ED0), 0x32)); i++) {
+        U a = 0x80099F4C + 0x20 * U(i);
+        std::string s;
+        for (U str = U(m.u32(a)); str && s.size() < 64 && m.u8(str + U(s.size())); ) {
+            char c = char(m.u8(str + U(s.size())));
+            s += c >= 32 && c < 127 ? c : '?';
+        }
+        out.texts.push_back({s, {m.s16(a + 4), m.s16(a + 6), m.u8(a + 8), m.u8(a + 9), m.u8(a + 0xA), m.s32(a + 0xC), m.s32(a + 0x10)}});
+    }
+    for (U k = 0; k < 4; k++) out.hud.push_back(m.s32(0x8009A590 + 4 * k));
     return out;
 }
 

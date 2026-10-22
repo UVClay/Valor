@@ -396,10 +396,22 @@ original's every tick, as `engine.py cmp` does.
 | Level | Ticks | Identical to the original | Identical to the Python engine |
 |---|---|---|---|
 | 1:3 | 7,296 | 7,073 (the other 223: impact-spark positions, one hit face at 1658 and 3454) | all |
-| 2:1 | 8,368 | 4,943 (everything to 768) | all |
-| 2:2 | 7,036 | 826 (everything to 810) | all |
+| 2:1 | 8,368 | 6,247 (everything to 768; to 6,279 but for one shot's type 31 at 769) | to tick 7,597 |
+| 2:2 | 7,036 | 3,478 (everything to 3,479) | to tick 3,479 |
 
-Synced to the Python engine at eb3c158; each number is the Python engine's own at that commit.
+Synced to the Python engine at 7661dba; the left column is the Python engine's own at that commit.
+The right column compares with the Python engine's latest traces (`build/engine/eng_*.jsonl`).
+Each run parts from it only after both have parted from the original. The trace now also
+carries the on-screen text list and the hit wedges' timers (`texts`, `hud`), which agree
+wherever the entities do. Since eb3c158:
+- the SPU's key status comes from the recording (`keys` lines, `SpuGetAllKeysStatus`). A
+  soldier's script reads it (variable 0x68), so 2:2 runs to 3,479 (was 810);
+- the level scripts' sounds (built-in 19) are played;
+- the node search (op 33 compute 0), op 34 `node_eval` and `brain_node_target` for the node
+  goal are ported;
+- the text list (`texts.cpp`: `text_add`, `texts_update`, `show_text`, the pickups' messages,
+  the ammo digits, `ammo_hud_init` at level load, `texts_clear` at level entry) and
+  `hit_indicator` with the wedges' countdown.
 
 ### Why it keeps the original's memory layout
 
@@ -465,8 +477,10 @@ From the disc it matches the seed-dump run exactly: **7,073 of 7,296 ticks ident
 d337b74: 5,632, as the seed run then). RAM differs from the seed run by a constant 35,996 words at ticks
 1000..1003: the unbuilt library and HUD state above, which nothing in the logic reads.
 
-2:1 from the disc matches its seed run too (4,943). 2:2 has no dump from before its tick 1, so
-the timer and `rand`'s seed come a tick late from the seed: 0 identical (821 from the seed dump),
+2:1 from the disc does better than its seed run: 8,245. Its first difference is the same (769),
+but the impact at 6280, whose sparks part the seed run, agrees, and it runs to 8,306 (why the
+disc start gets that impact right is not known yet). 2:2 has no dump from before its tick 1, so
+the timer and `rand`'s seed come a tick late from the seed: 0 identical (3,478 from the seed dump),
 first difference at tick 2 for both.
 
 ### The view test

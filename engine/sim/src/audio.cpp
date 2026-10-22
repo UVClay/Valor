@@ -102,7 +102,13 @@ void Audio::stop(int v) {
 void Audio::update() {
     Mem& m = eng_.m;
     double vb = double(eng_.vblank);
+    // SpuGetAllKeysStatus: as the recording's SPU reported it (real time), else modelled
+    const std::array<uint8_t, 24>* rec = eng_.spu_keys();
     for (int v = 1; v < 24; v++) {
+        if (rec) {
+            m.w8(G_ENABLED + v, (*rec)[size_t(v)]);
+            continue;
+        }
         auto it = spu_.find(v);
         if (it == spu_.end()) continue;
         Voice& st = it->second;

@@ -510,6 +510,7 @@ bool entity_in_view(Engine& eng, U e) {
 void draw_pass(Engine& eng) {
     Mem& m = eng.m;
     m.w32(G_FRAME_COUNT, m.u32(G_FRAME_COUNT) + 1);
+    hit_wedges(eng);
     const std::map<U, std::array<I, 3>>* seen = nullptr;
     std::map<U, std::array<I, 3>> live_seen;
     if (eng.live_view) {

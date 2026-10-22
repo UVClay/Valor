@@ -429,6 +429,22 @@ Dictionary ValorGame::get_state() const {
             objs.push_back(od);
         }
         d["objectives"] = objs;
+        // the text list (hud.md): {text, x, y (512 x 240), color, additive, life}, and the hit
+        // wedges' timers (right, left, front, behind: 40 when hit)
+        Array texts;
+        for (const view::Text& t : view::texts(m)) {
+            Dictionary td;
+            td["text"] = String(t.text.c_str());
+            td["x"] = t.x;
+            td["y"] = t.y;
+            td["color"] = Color(t.rgb[0] / 255.0f, t.rgb[1] / 255.0f, t.rgb[2] / 255.0f);
+            td["additive"] = t.additive;
+            td["life"] = t.life;
+            texts.push_back(td);
+        }
+        d["texts"] = texts;
+        auto ht = view::hit_timers(m);
+        d["hit_wedges"] = PackedInt32Array({ht[0], ht[1], ht[2], ht[3]});
         auto fc = view::fade(m);
         d["fade"] = float(std::max({fc[0], fc[1], fc[2]})) / 255.0f;  // hud.md's fades: the black's opacity now
         int alive = 0, dead = 0;

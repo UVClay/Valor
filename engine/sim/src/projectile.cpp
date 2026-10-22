@@ -526,6 +526,7 @@ void fire_gun(Engine& eng, U e, U inv, I fire) {
     I d = m.s32(inv + 0x40);
     m.w32(inv + 0x44, d);
     m.w32(inv + 0x48, iabs(d));
+    ammo_hud_update(eng, e);
 }
 
 U bullet_spawn(Engine& eng, U owner, I bone_a, I bone_b, const V3* a3, U a4, U off_a, U off_b, I dmg, I spread, I aimed, I etype,

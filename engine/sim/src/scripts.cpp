@@ -435,7 +435,12 @@ void behaviour(VM& vm, I goal, I a, I b_, I c, I d) {
         m.w32(b + 0x3C, a);
         m.w32(b + 0x7C, b_);
         m.w16(b + 0xA8, c);
-        eng.note("brain_node_target not implemented");
+        NodeTarget got;  // brain_node_target (0x80057474) into the brain
+        brain_node_target(m, e, got, S32(a));
+        for (int k = 0; k < 3; k++) m.w16(b + 0xA0 + 2 * U(k), got.node_point[size_t(k)]);
+        m.w16(b + 0xAC, got.side[0]), m.w16(b + 0xAE, got.side[1]);
+        m.w32(b + 0x8C, got.via);
+        m.w16(b + 0xB6, got.claimed);
         m.w16(b + 0xC2, d);
     } else if (goal == 0x4000) {
         brain_clear_moves(m, b);
@@ -586,11 +591,16 @@ bool VM::world_op(I op, U pc, I w, I mask, I imm, U& next) {
     I imm_lo = imm & 0xFF, imm_hi = imm >> 8;
     auto O = [&](int n, I v) { return operand(n, mask, v); };
     auto W = [&](int k) { return m.s32(pc + 4 * k); };
-    (void)w;
     if (op == 0x33) {
         I r = compute_node(eng, e, O(2, W(2)), O(3, W(3)), O(4, W(4)));
         set_var(O(1, W(1)), r);
         next = pc + 0x18;
+        return true;
+    }
+    if (op == 0x34) {  // 0x8005B32C: node_eval, the fact in the instruction's low byte
+        I r = node_eval(eng, e, U(O(1, W(1)) & 0xFFFFFFFF), w & 0xFF);
+        set_var(O(2, W(2)), r);
+        next = pc + 0xC;
         return true;
     }
     if (op == 0x35) {

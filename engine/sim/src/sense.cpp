@@ -1,5 +1,6 @@
 // What model scripts read from the world (docs/re/enemies.md Variables, op 2E query; soldier.md):
 // sight, hearing, angles, routes, probes, nodes. tools/sim/engine_sense.py.
+#include <algorithm>
 #include <cmath>
 
 #include "valor/sim/engine.h"
@@ -261,12 +262,83 @@ I probe(Engine& eng, U e, I how, I r) {
     return S16(r) + 1;
 }
 
-I compute_node(Engine& eng, U, I, I, I) {
+// 0x80040F48 (op 33 compute 0): over the world's nodes (0x34 bytes: +0xC kind bits, +0x14
+// position, +0x24 direction, +0x30 holder), the nearest (max + (mid + min) / 4 from the soldier,
+// within |rng|) that is not `exclude`, free (its holder's handle dead; with exclude -1 any), of a
+// kind in mask (mask -1: any), with the soldier nearer to it than the player and the player within
+// 10000 of it, and the player in front of it ((player - node) . direction, y left out, >> 12, at
+// least 101); mask 8 waives the last two tests but the 10000. -1 if none.
+I compute_node(Engine& eng, U e, I rng, I exclude, I mask) {
     Mem& m = eng.m;
     U wo = U(m.u32(m.u32(0x8009D648) + 0x388));
-    if (m.s32(wo + 0xC) <= 0) return -1;
-    eng.note("node search with nodes not implemented");
-    return -1;
+    I n = m.s32(wo + 0xC);
+    U base = U(m.u32(wo + 8));
+    U p = U(m.u32(G_SOLDIER));
+    I best = -1;
+    rng = iabs(S32(rng));
+    exclude = S32(exclude), mask = S32(mask);
+    auto cheap = [&](U a, U q) {
+        I d[3];
+        for (int k = 0; k < 3; k++) d[k] = iabs(S16(m.s16(a + 0x20E + 4 * U(k)) - m.u16(q + 0x14 + 2 * U(k))));
+        std::sort(d, d + 3);
+        return d[2] + ((d[0] + d[1]) >> 2);
+    };
+    for (I i = 0; i < n; i++) {
+        U q = base + 0x34 * U(i);
+        if (i == exclude) continue;
+        if (!eng.handle_dead(I(m.u32(q + 0x30))) && exclude != -1) continue;
+        I t = cheap(e, q);
+        if (rng < t) continue;
+        if (!(m.u32(q + 0xC) & U(mask)) && mask != -1) continue;
+        I tp = cheap(p, q);
+        if (!(t < tp || mask == 8)) continue;
+        if (!(tp < 0x2710)) continue;
+        I dx = S16(m.s16(p + 0x20E) - m.u16(q + 0x14));
+        I dz = S16(m.s16(p + 0x216) - m.u16(q + 0x18));
+        I dot = S32(dx * m.s16(q + 0x24) + dz * m.s16(q + 0x28)) >> 12;
+        if (dot < 0x65 && mask != 8) continue;
+        best = i, rng = t;
+    }
+    return best;
+}
+
+// Op 34 (0x8005B32C): a fact about node n: 1..5 the node's words +0..+0x10, 6 its holder (the
+// entity of the handle +0x30), 7 its cover score: 0x7FFF if the node has +4 and its link +0x2C
+// names an entry of the world object's table +0x14 (8 bytes) with bit 2; else, from the soldier
+// to the node's point (the brain's node point +0xA0 when it holds this node, else the node's
+// +0x14), 0x7FFE when the node's +4 is 500 or more and the soldier is 201 or more off in height
+// or in front of it (offset . direction +0x24 >> 12 at least 101), or when the player is within
+// 600 of the point; otherwise the angle between the node's direction and the player (|wrap|) if
+// the player is within 3500 (7000 for kind 0x10), farther than the soldier and under 0x400 off,
+// else 0x7FFD. -1 for n past the node count.
+I node_eval(Engine& eng, U e, U n, I fact) {
+    Mem& m = eng.m;
+    U wo = U(m.u32(m.u32(0x8009D648) + 0x388));
+    if (n >= m.u32(wo + 0xC)) return -1;
+    U q = U(m.u32(wo + 8)) + 0x34 * n;
+    if (1 <= fact && fact <= 5) return m.s32(q + 4 * U(fact - 1));
+    if (fact == 6) return I(eng.resolve(I(m.u32(q + 0x30))));
+    if (fact != 7) return 0;
+    I link = m.s32(q + 0x2C);
+    if (m.s32(q + 4) && link >= 0 && (m.u32(U(m.u32(wo + 0x14)) + 8 * U(link)) & 2)) return 0x7FFF;
+    U b = U(m.u32(e + 0x38C));
+    U src = m.s16(b + 0xB6) == S16(I(n)) ? b + 0xA0 : q + 0x14;
+    I pt[3], d[3];
+    for (int k = 0; k < 3; k++) pt[k] = m.s16(src + 2 * U(k)), d[k] = S16(m.s16(e + 0x20E + 4 * U(k)) - pt[k]);
+    if (m.s32(q + 4) >= 0x1F4) {
+        if (iabs(d[1]) >= 0xC9) return 0x7FFE;
+        I dot = S32(d[0] * m.s16(q + 0x24) + d[1] * m.s16(q + 0x26) + d[2] * m.s16(q + 0x28)) >> 12;
+        if (dot >= 0x65) return 0x7FFE;
+    }
+    I de = dist_approx(d[0], d[1], d[2]) & 0xFFFF;
+    U p = U(m.u32(G_SOLDIER));
+    I dp[3];
+    for (int k = 0; k < 3; k++) dp[k] = S16(m.s16(p + 0x20E + 4 * U(k)) - pt[k]);
+    I dpd = dist_approx(dp[0], dp[1], dp[2]) & 0xFFFF;
+    if (dpd < 0x258) return 0x7FFE;
+    I a = iabs(wrap(S16(eng.gte.ratan2(int32_t(dp[0]), int32_t(dp[2])) - eng.gte.ratan2(int32_t(m.s16(q + 0x24)), int32_t(m.s16(q + 0x28))))));
+    I lim = m.s32(q + 0xC) == 0x10 ? 0x1B58 : 0xDAC;
+    return (dpd < lim && de < dpd && a < 0x400) ? a : 0x7FFD;
 }
 
 static I aimed_at(Engine& eng, U e) {
