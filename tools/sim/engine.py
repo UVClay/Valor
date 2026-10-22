@@ -668,6 +668,11 @@ class Engine:
         the vblank. How many of each ran is real time: taken from the recording's trace."""
         from engine_draw import draw_pass
         draw_pass(self)
+        self.idle_work()
+        self.audio.update()
+
+    def idle_work(self):
+        """The frame's wait for the vblank as recorded: frame_idle_job / frame_idle_loop calls."""
         frames = self.feed.idle.get((self.level, self.tick_no))
         jobs = frames.pop(0) if frames else None
         if jobs is None:
@@ -680,7 +685,6 @@ class Engine:
                     self.idle_loop()
                 else:
                     self.idle_job(j)
-        self.audio.update()
 
     def idle_job(self, state):
         """frame_idle_job (0x80090A30), round-robin 0x800AB8E8: 0 one message; 1 one message and
@@ -871,8 +875,9 @@ def main():
     eng.vblank_prev = vb0
     eng.world.skip_to(vb0)
     eng.audio.adopt(vb0)
-    eng.logic.run_queue()
-    eng.handles_free_removed()
+    # the seed frame's own wait (its idle work as recorded)
+    eng.tick_no = t0
+    eng.idle_work()
     from engine_cmp import Compare
     cmpr = Compare(lines, maxn=int(args[args.index("--max") + 1]) if "--max" in args else 20) if cmd == "cmp" else None
     try:
