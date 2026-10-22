@@ -378,7 +378,16 @@ def _world_value(vm, op, var):
             return abs(angle_to(m, e, tgt)) if tgt else 0
         if fact == 0xF:
             return aimed_at(eng, e)
+        if not tgt and fact in (1, 3, 4, 5, 6):
+            # no target: the fields of "entity" 0, low RAM (op_query does not check)
+            return m.s32({1: 0xF4, 3: 0x2D4, 4: 0x290, 5: 0x44, 6: 0x48}[fact])
+        if not tgt and fact == 9:
+            d = [s16(s32(m.s32(e + 0x20C + 4 * k) - m.s32(0x20C + 4 * k)) >> 16) for k in range(3)]
+            return dist_approx(*d)
         eng.note(f"query fact {fact:X} not implemented")
+        return 0
+    if op == 0x2E:
+        # query fact 8 (the target itself) with none found: 0
         return 0
     eng.note(f"script world read op {op:X} not implemented")
     return 0
