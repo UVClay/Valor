@@ -320,9 +320,19 @@ Flag 4 of a fade also ramps a value at `+0x6C` from 0x300000 to 0 (no caller pas
   second taken ×1.6, `0x88888889` arithmetic), so a square of half 2 × half × scale in world
   units round the point, then projected with the rest (`RTPT`). Used by the muzzle flash and
   the explosions' fireballs and puffs (objects.md).
-- **Weapon model brightness**: `player_draw` moves the weapon model's `+0x6C` toward 0x40
-  (2 a frame) while the soldier's flags B 0x400 are set, else back to 0x80 (inference: darker
-  in dark places; who sets 0x400 wasn't traced).
+- **Weapon model brightness**: `player_draw` (`0x8007B8F4`, each drawing pass), when the view
+  object's `+0xA4` is 400 and its `+0` has neither 0x4000 nor 0x8000: with the soldier's flags B
+  0x400 set, the soldier's animation instance (`+0x100`) `+0x6C` falls by 2 while above 0x40;
+  otherwise it rises by 2 to at most 0x80 (the model's colour scale: darker held weapon).
+  **Flags B 0x400 is the script variable 0x8A** (`set_var` bit 10 of `+0x10`; enemies.md,
+  Variables), read back by the soldiers' sensor 0x61 (`player_hidden`, `get_var` `0x8005CC1C`);
+  no code sets it by name: every `set_var` caller either passes another fixed variable or is a
+  model-script op on the script's own entity, so only a script running on the player's soldier
+  with `set 0x8A` could. No script in 1:3, 2:1 or 2:2 writes variable 0x8A
+  (`et_sst.py --grep`), while four soldier scripts test `player_hidden`; a watch of the soldier's
+  flags B over the whole session recording (1:3 to 2:3) never shows 0x400 (only 0x3, 0x10,
+  0x800 come and go). So in the shipped game the weapon keeps 0x80 and `player_hidden` reads 0
+  (inference: a darkness/hiding feature left unfinished).
 - **Pause menu panels**: `menu_boxes` (`0x80096E60`, 9 entries of 0x1EC bytes, bevelled flat
   boxes made by `menu_box_add` `0x8004E798` from `start_handler`), drawn by
   `hud_overlay_draw` → `menu_boxes_draw` (`0x8004E8FC`). shell.md covers the pause menu.
