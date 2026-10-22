@@ -46,9 +46,9 @@ registers it (run the project once with `--headless --import` after the first bu
 | Sky gradient (from the look pitch), 255 twinkling stars, the moon | formats.md, Sky | the view's pitch |
 | Every sound: the engine's 23 effect voices (views::voices), placed as `sound_pan` places them (the scaled view matrix, the class's falloff, the near/far split) | audio.md | `get_engine_voices()` |
 | Music, looping, from the level script's start (the ambience-only mix with `--ambience-only`) | audio.md, Music | `music` |
-| Sparks, smoke, debris, explosion fireballs and puffs, with their systems' textures (sizes approximate) | combat.md, objects.md | `get_engine_sprites()` |
-| Muzzle flash: the 31 x 31 sprite at VRAM (1008, 128) on the weapon's bone, the tick after a shot | combat.md, hud.md | the fire |
-| Zoom (the weapon hidden, the view narrowed) and the scope (black outside a circle: an inference) | hud.md, movement.md | `zoom`, `scoped` |
+| Sparks, smoke and debris (tumbling quads), explosion fireballs and puffs (camera-facing, coloured by size), by the game's draw functions | combat.md (Drawing particles), objects.md, hud.md (Billboards) | `get_engine_sprites()` |
+| Muzzle flash: the 31 x 31 sprite at VRAM (1008, 128), 15 units round the weapon's bone point, one of eight turns, the tick after a shot (checked against a recomp RAM dump) | hud.md | the fire |
+| Zoom (the weapon hidden, the view narrowed) and the scope: the game's scope model (0x003C8662) under the HUD | hud.md, movement.md | `zoom`, `scoped` |
 | Objectives (Tab), with the pause menu's box and tick glyphs | levels.md | `objectives` |
 | Fades from the engine's fade entities | hud.md | `fade` |
 
@@ -76,8 +76,10 @@ Waiting for the engine to keep them (each is state the original keeps that the e
   keeps the text list (`g_texts`); `--test-message=TEXT` shows the path works.
 - **Weapon brightness** in dark places: the soldier's flags B 0x400 isn't traced (hud.md).
 - **Looping sounds** (alarms, script loops): the engine notes them as not restarted.
-- **The scope model** (the weapon block's +0x130 object) and the crosshair's movement (the
-  reticle sits at its rest point); the muzzle flash's random rotation; footsteps (not documented).
+- **The crosshair's movement** (the reticle sits at its rest point); footsteps (not documented).
+- **The explosion light** tinting the world (engine/README.md, Coordination).
+- **Other effects**: the impact effect (type 0x23, `impact_effect_spawn`), the enemies' gun smoke
+  puffs and blood drops (weapon block `+0x3E8`, `+0x49C`) aren't in the sprites view yet.
 - **Without the engine** (a walk) the weapon is the level's first and plays its animations from
   input (left mouse fire, E reload), and there are no sounds but the music.
 - **PVS culling**: the world is one mesh (main.gd's, ValorGame.build_world_mesh); per-chunk meshes
