@@ -126,6 +126,33 @@ particle (`0x80073960`: life down, dead at 0; after its delay it moves, gravity 
 the limit, drag towards 0 on x and z, rotation += speed) and removes the entity once both
 systems had no live particle. So its life is its longest particle's.
 
+**The impact effect** (`impact_effect_spawn`, `0x800702E0`, type 0x23, from `impact_sound` on
+walls: `n` 8, life 4, colours (0xF0, 0x48, 0) to (0x40, 0x10, 0)): its object holds a count (+0),
+a life (+1), a template (+2 width 1, +4 height 1, +6/+8 VRAM (0x3FF, 0): one texel, +0xA/+0xC CLUT
+(0x3E0, 0xFD), +0xE mode 4) and particles of 0x24 bytes from +0x10 (+4 a start point, +0x10 an end
+point, 16.16; +0x1C the start colour, +0x20 the end colour, halved over the last 3 ticks by the
+think `0x800701DC`). **Drawn** (`0x8006F7BC`) as one `POLY_GT3` per particle: both points
+projected, the start widened across the streak by ±(dy, −dx)/16 of the screen vector start→end (in
+the 512 × 240 pixels), so a sliver from the start (start colour) to a point at the end (end colour),
+semi-transparent with ABR (mode − 1) & 3 = 3: B + F/4. The **explosion bursts** (`0x800708F0`,
+type 0x23, the explosion's first think): 10 particles of two kinds (+0 1 or 2), each start point
+±8 round the centre and an end point along a random direction, drawn by `0x8006FBF0` as `POLY_GT4`
+streaks textured 31 × 31 (kind 1 VRAM (1008, 32), kind 2 (1008, 64), CLUTs (1008, 252) and
+(1008, 253)), B + F. Natively: `present/effects.gd` (the bursts' corners approximated).
+
+**Hit reactions on soldiers and dogs** (`hit_reaction`, the scripts' reaction variables): with
+blood on, **drops** (object `+0x49C`, 15 of 0x74 bytes: they fall, stop on the floor (flag 8) and
+fade), drawn by `0x800729C0` as textured quads (VRAM (992, 0), 32 × 32, CLUT 0x3EFE, opaque; their
+size not followed); with blood off, **puffs** (`+0x3E8`, 5 of 0x24 bytes: +8 an angle, +0x10 the
+place, +0x1C a scale 2.0, +0x20 a grey 0x3C fading by an eighth a tick, 60 ticks), drawn by
+`0x80072310` as camera-facing quads of ±15 × scale in view space (×2 across on screen: 15 × s
+units across, 12 × s up), VRAM (1008, 0), 32 × 32, CLUT 0x3EFF, additive (tpage 0x2F). (names.txt
+called them the enemies' gun smoke, inferred; they are the hit puffs.) **The enemies' muzzle
+flashes**: the same sprite as the player's (hud.md), at `object+0xB68` (set up in `enemy_spawn`
+with the enemy weapon table's vertex), drawn by `enemy_draw` the frame after `enemy_weapon` sets
+its counter: at the muzzle, where the shot leaves (natively: at the new bullet's previous
+position).
+
 **Drawing particles** (`0x800732F8`, while the system's done flag, object `+0`, is clear): each
 live particle past its delay is a `POLY_FT4` of corners (±`+0x30`, ±`+0x32`), scaled by the
 system's `+0x8` (16.16: 1.0 for impacts, 1.5 for the rocket's) and turned by `RotMatrixYXZ` of its
@@ -177,8 +204,11 @@ Every tick the player's controls (`player_controls`, `0x8007F300`) end in `aim_u
   Checked: 416 of 416 player projectiles start exactly at `+0x198` (or one step on, 5, the
   firing tick above) and all 108 unspread rounds have exactly these angles; the spread ones are
   these plus the spread.
-- Scoped (`inv` flag 0x100; turning is cut to 1/8; only reached when not aimed): from the
-  camera's position along the camera's angles. Checked: 3 scoped rounds start at the camera.
+- Scoped (`inv` flag 0x100; turning is cut to 1/8; only reached when not aimed): the start is
+  the camera entity's position (`copy_camera_pos` `0x80045160`) and the angles are
+  `angles_from_to(start, the camera object's first three words)` (`0x80045184`: the camera's
+  look point, 16.16). Checked: 3 scoped rounds start at the camera; the engine's scoped shots
+  match the original's in 2:2 (ticks 6115..6323).
 - Otherwise: from the gun, along the line between two points on it (`0x80044E0C`: the model's
   bones `+0xD4`, `+0xD6` with offsets `+0xD8`, `+0xE0`; `0x80044F10`, `0x80044D18` turn the
   line into angles): **along the barrel**, so where the gun points, not where the crosshair is.

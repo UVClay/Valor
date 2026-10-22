@@ -323,7 +323,17 @@ def projectile_aim(eng, owner, p, bone_a, bone_b, target, attach, off_a, off_b, 
     if aimed:
         return projectile_aim_at_point(eng, owner, p)
     if m.u32(owner + 0xC) & 1 and m.u32(m.u32(owner + 0x388)) & 0x100:
-        eng.note("scoped shot (copy_camera_pos) not implemented")
+        # through the scope: from the camera entity's position (copy_camera_pos 0x80045160)
+        # toward the camera's look point, its object's first three words
+        # (angles_to_camera_look 0x80045184)
+        cam = m.u32(0x8009D638)
+        start = [m.s32(cam + 0x20C + 4 * k) for k in range(3)]
+        for k in range(3):
+            m.w32(p + 0x20C + 4 * k, start[k])
+        co = m.u32(cam + 0x388)
+        pitch, yaw = cs.angles_from_to(start, [m.s32(co + 4 * k) for k in range(3)])
+        m.w32(p + 0x228, s32(pitch << 16))
+        m.w32(p + 0x22C, s32(yaw << 16))
         return
     t = m.s32(p + 8)
     if t == 0x13F3 or (t == 0x13F1 and m.u32(owner + 0xC) & 1):
