@@ -17,6 +17,11 @@ uniform vec3 dyn_light_rgb = vec3(0.0);  // 0..1 of 255, the vertex colours' sca
 uniform float dyn_light_r2 = 0.0;        // radius squared, game units; 0: none
 uniform vec4 scorches[32];               // xyz Godot metres, w radius squared (game units); w 0: none
 instance uniform float dyn_lit = 0.0;
+// The PVS (formats.md, The render tree; set by present/world_pvs.gd): one texel per world leaf,
+// 1 if tsp_walk would draw it from the camera's leaf; the leaf's id in CUSTOM0.x of the world mesh.
+// A face whose leaf isn't drawn is clipped away.
+uniform sampler2D pvs_vis : filter_nearest;
+uniform int pvs_width = 0;  // 0: no PVS
 
 varying flat float layer;
 varying vec3 light_colour;
@@ -33,6 +38,12 @@ void vertex() {
     depth_units = -(MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).z * units_per_metre;
     dyn_add = vec3(0.0);
     dyn_dark = 1.0;
+    if (dyn_lit > 0.5 && pvs_width > 0) {
+        int leaf = int(CUSTOM0.x + 0.5);
+        if (texelFetch(pvs_vis, ivec2(leaf % pvs_width, leaf / pvs_width), 0).r < 0.5) {
+            POSITION = vec4(2.0, 2.0, 2.0, 1.0);
+        }
+    }
     if (dyn_lit > 0.5) {
         vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
         if (dyn_light_r2 > 0.0) {
