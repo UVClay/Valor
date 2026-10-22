@@ -39,6 +39,18 @@ class Compare:
                 w = f"player {PLAYER[k]}"
                 kinds.add(w)
                 diffs.append(f"{w}: {x} / {y}")
+        # the on-screen texts and the hit wedge timers, when the original's trace has them
+        if "texts" in o:
+            ta_, tb_ = eng_line.get("texts", []), o["texts"]
+            if [x[0] for x in ta_] != [x[0] for x in tb_]:
+                kinds.add("texts (strings)")
+                diffs.append(f"texts (strings): {[x[0] for x in ta_]} / {[x[0] for x in tb_]}")
+            elif ta_ != tb_:
+                kinds.add("texts (fields)")
+                diffs.append(f"texts (fields): {ta_} / {tb_}")
+        if "hud" in o and eng_line.get("hud") != o["hud"]:
+            kinds.add("hit wedge timers")
+            diffs.append(f"hit wedge timers: {eng_line.get('hud')} / {o['hud']}")
         ea, eb = eng_line["ents"], o["ents"]
         ta = [e[1] for e in ea]
         tb = [e[1] for e in eb]

@@ -283,6 +283,33 @@ def damage_from_hit(eng, victim, vpart, attacker, apart):
     return 1
 
 
+G_HIT_TIMER = 0x8009A590      # right, left, front, behind (hud.md, Hit wedges)
+
+
+def hit_indicator(eng, victim, attacker):
+    """hit_indicator (0x80060FC4): the attacker's last move (+0x258 - +0x20C, whole units) turned
+    into the player's view (RotMatrixYXZ(-pitch +0x22A, -view yaw inv+0x186, -roll +0x232), GTE
+    >> 12): |x| > |z|: x < 0 the left timer, x > 0 the right; else z < 0 behind, z > 0 front;
+    set to 40."""
+    import brain_sim as bs
+    m = eng.m
+    inv = m.u32(victim + 0x388)
+    r = bs.rot_yxz(s16(-m.s16(victim + 0x22A)), s16(-m.s16(inv + 0x186)), s16(-m.s16(victim + 0x232)))
+    v = [s16((m.s32(attacker + 0x258 + 4 * k) - m.s32(attacker + 0x20C + 4 * k)) >> 16) for k in range(3)]
+    mac, _ = gt.mul([r[0:3], r[3:6], r[6:9]], v, sf=12)
+    x, z = mac[0], mac[2]
+    if abs(z) < abs(x):
+        if x < 0:
+            m.w32(G_HIT_TIMER + 4, 0x28)
+        if x > 0:
+            m.w32(G_HIT_TIMER, 0x28)
+    else:
+        if z < 0:
+            m.w32(G_HIT_TIMER + 0xC, 0x28)
+        if z > 0:
+            m.w32(G_HIT_TIMER + 8, 0x28)
+
+
 def apply_damage(eng, victim, dmg, attacker):
     """apply_damage (0x8004AC58): nothing while +0x48 runs; health down; at 0 dead (flags A
     0x20000000, +0x38 0x4000), a kill credited for flags B 0x8000; the player's wound feedback;
@@ -304,7 +331,7 @@ def apply_damage(eng, victim, dmg, attacker):
         m.w32(victim + 0xF4, 0)
     fa = m.u32(victim + 0xC)
     if fa & 1:
-        # hit_indicator (0x80060FC4): the HUD's wound wedge timers, drawing only
+        hit_indicator(eng, victim, attacker)
         inv = m.u32(victim + 0x388)
         m.w32(G_STAT_WOUNDED, m.u32(G_STAT_WOUNDED) + 1)
         m.w32(inv + 0x144, m.u32(inv + 0x144) + 1)

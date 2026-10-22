@@ -263,6 +263,13 @@ class LevelLogic(lv.Sim):
             what = st[-2][1] if len(st) > 1 else 0
             if what == 4:
                 eng.note("level_set(4): alarm from level not implemented")
+        if n == 8:
+            # bi_show_text (0x80069FC4) -> show_text (0x80053464)
+            from engine_texts import show_text
+            v = st.pop()[1] if st else 0
+            self.calls[n] += 1
+            show_text(eng, s32(v))
+            return
         if n == 19:
             # bi_sound (0x80069B88) -> lvl_sound (0x800533D4): pops mode, bank + 1, sound, pitch,
             # pitch spread, volume, volume spread; sound_play on the script's entity (bank 0 for

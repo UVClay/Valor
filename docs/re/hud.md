@@ -82,6 +82,10 @@ acted on:
    **front**, z < 0 **behind**. The timer is set to **40** (both of a pair can't light from one
    hit; exact ties with x = z = 0 light nothing).
 
+Exactly (`0x80060B04`, the HUD drawer, every drawn frame): a running timer becomes
+`t − 1 − g_catchup_ticks`, floored at 0 (`tools/sim/engine_draw.py`; the original's timers are
+in the state trace, `"hud"`).
+
 **Shown** while the timer is non-zero: a dark red (64, 0, 0) quarter wedge from the compass's
 centre to radius 20, covering 90° (front: the top quarter, −45°..45°; right: 45°..135°;
 behind: the bottom; left: the left), drawn over the compass. Each drawn frame the timer drops
@@ -173,12 +177,29 @@ so this is a fade in and out.
 (`0x80099EB3 + c`, `0x80099EEF + c`); a space skips 12 pixels. Semi-transparent texts use
 additive blending.
 
+`texts_update` exactly: first every lifetime other than −1 counts down, a text reaching 0 is
+removed at once (the last entry moves into its slot, which is looked at again); then the colour
+pass above over the remaining texts. `text_add` with id 0xFE draws `(rand & 0x7F) + 0x78` until
+no text has that id. `text_add_fade(text, x, y, r, g, b, semi, life, id, mask, hold, fade, sr, sg,
+sb)`: a negative fade −T is the fewest ticks any channel needs from its start to T at its step.
+
+**Ammo digits** (`ammo_hud_update`, `0x800467EC`): the two permanent texts point at strings
+inside the inventory, rewritten in place: `inv+0x108` the clip (width 2), `inv+0x10C` the
+reserve (width 3), by `ammo_digits` (`0x80046700`: space-padded; with width 3 a zero tens digit
+after a hundreds digit is 0); the papers (weapon 7) empty both. Rewritten by `fire_gun` (after
+the round), `weapon_reload` (after the rounds move), `ammo_add`, `throw_weapon` (when a throw
+starts, so the count drops on screen only at the next update) and `weapon_draw`
+(`ammo_hud_icon`).
+
+The runtime's state trace (`VALOR_TRACE_STATE`) records the list each tick (`"texts"`: string,
+x, y, colour, life, hold), and `tools/sim/engine.py` reproduces it on 1:3, 2:1 and 2:2.
+
 Who adds texts:
 
 | Text | Position | Colour | Life | How it changes |
 |---|---|---|---|---|
 | Level messages: built-in 8 `show_text(n)` (`0x80053464`, levels.md), the message table `0x80098188` (objective done, "ATTACHE CASE ACQUIRED", ...) | x 20; y from `g_msg_line_y` (`0x80098628`) | (128, 128, 128), additive | 100 ticks (3.3 s), then gone at once | A message different from the last one (`0x8009862C`) moves down a line: y += 12, and from 168 back to 120; the same message again reuses the line. The line is set to 120 when the level's scripts are set up (`0x80066110`), so the first message is at 132 and the lines cycle 132, 144, 156, 120 |
-| Health pickup: "MEDICINAL CANTEEN" (kind 0, +13), "FIRST AID KIT" (1, +32), "FIELD SURGEON PACK" (2, +64) (`0x8009E864..`) | (10, 70) | additive, from 0 up by (10, 8, 4) a tick for 11 ticks: (110, 88, 44), amber | 40 ticks (1.33 s) | id 2: a new pickup message first removes the previous one |
+| Health pickup: "MEDICINAL CANTEEN" (kind 0, +13, string `0x8009E864`), "FIRST AID KIT" (1, +32, `0x8009E868`), "FIELD SURGEON PACK" (2, +64, `0x8009E86C`): `texts_remove_id(2)`, then `text_add_fade(s, 10, 70, 0, 0, 0, 1, 40, 2, 1 << port, 40, 11, 10, 8, 4)` | (10, 70) | additive, from 0 up by (10, 8, 4) a tick for 11 ticks: (110, 88, 44), amber | 40 ticks (1.33 s) | id 2: a new pickup message first removes the previous one |
 | Ammo pickup: the weapon's ammo name ("RIFLE ROUNDS", player.md) | (10, 70) | as above | 40 ticks | id 2, as above |
 | Ammo digits | above | (100, 100, 100), opaque | forever | rewritten in place |
 | Pause menu (objectives with a box and a tick: "$", "#"; options) | | | | the pause menu's own, ids 1 |

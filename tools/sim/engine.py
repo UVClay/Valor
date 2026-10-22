@@ -547,6 +547,8 @@ class Engine:
             m.w32(PAD_PREV + 4, pad[3])
         self.entities_update()
         self.entities_collide()
+        from engine_texts import texts_update
+        texts_update(self)
         self.timer_message()
 
     def entities_update(self):
@@ -725,6 +727,7 @@ class Engine:
             if to and ticks and ticks[0] > to:
                 break
             self.next_vblank = self.frames[fi + 1][0] if fi + 1 < len(self.frames) else vb + 2
+            self.frame_ticks = len(ticks)
             # vblanks since the last frame feed the 1/3-second counter (the vblank handler)
             if self.vblank_prev is not None:
                 self.m.w32(G_VBL_TIMER, self.m.s32(G_VBL_TIMER) + (vb - self.vblank_prev))
@@ -779,6 +782,9 @@ class Engine:
                          m.s32(e + 0x214), m.s32(e + 0x228), m.s32(e + 0x22C), m.s32(e + 0x230),
                          m.s32(e + 0xF4), m.s16(inst + 0x5C) if inst else -1, m.s16(inst + 0x5E) if inst else -1])
         out["ents"] = ents
+        from engine_texts import state as texts_state
+        out["texts"] = texts_state(m)
+        out["hud"] = [m.s32(0x8009A590 + 4 * k) for k in range(4)]
         return out
 
 

@@ -43,6 +43,8 @@ def throw_weapon(eng, e, bone_a, bone_b, fire, charge):
         m.w32(inv + 0x124, 1)
         m.w32(inv + 0x44, d)
         m.w32(inv + 0x48, abs(d))
+        from engine_texts import ammo_hud_update
+        ammo_hud_update(eng, e)
     if m.s32(inv + 0x124) == 0:
         return
     c = m.s32(inv + 0x124)

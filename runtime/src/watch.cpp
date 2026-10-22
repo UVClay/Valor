@@ -183,7 +183,8 @@ extern "C" void hook_bullet_spawn(Cpu *c, RecompFn body) {
 // turn as 16.16):
 //   {"tick":g_tick, "vblank":N,
 //    "player":[look yaw, look pitch, slot, weapon, clip, reserve, flags B],
-//    "ents":[[handle, type, flags A, x, y, z, pitch, yaw, roll, health, animation, frame], ...]}
+//    "ents":[[handle, type, flags A, x, y, z, pitch, yaw, roll, health, animation, frame], ...],
+//    "texts":[[string, x, y, r, g, b, life, hold], ...], "hud":[hit wedge timers r, l, front, behind]}
 // "ents" follows the entity list (g_entities, 0x8009D64C) in order; animation and frame are -1
 // without a model instance (docs/re/entities.md, animation.md).
 extern "C" void trace_drawn(Cpu *c);
@@ -220,7 +221,23 @@ extern "C" void hook_texts_update(Cpu *c, RecompFn body) {
                 s32(e + 0x20C), s32(e + 0x210), s32(e + 0x214), s32(e + 0x228), s32(e + 0x22C), s32(e + 0x230),
                 s32(e + 0xF4), anim ? s16(inst + 0x5C) : -1, anim ? s16(inst + 0x5E) : -1);
     }
-    fputs("]}\n", out);
+    // the text list (0x80099F4C, count 0x80099ED0): [string, x, y, r, g, b, life, hold], and the
+    // hit wedge timers (0x8009A590: right, left, front, behind) (docs/re/hud.md)
+    fputs("],\"texts\":[", out);
+    int nt = s32(0x80099ED0);
+    for (int i = 0; i < nt && i < 50; i++) {
+        uint32_t a = 0x80099F4C + 32 * i, str = r32(a);
+        fputs(i ? ",[\"" : "[\"", out);
+        for (int k = 0; in_ram(str & ~3u) && k < 64; k++) {
+            char ch = char(psx_r8(c, str + k));
+            if (!ch) break;
+            if (ch == '"' || ch == '\\') fputc('\\', out);
+            fputc(ch >= 32 && ch < 127 ? ch : '?', out);
+        }
+        fprintf(out, "\",%d,%d,%u,%u,%u,%d,%d]", s16(a + 4), s16(a + 6), psx_r8(c, a + 8), psx_r8(c, a + 9),
+                psx_r8(c, a + 10), s32(a + 12), s32(a + 16));
+    }
+    fprintf(out, "],\"hud\":[%d,%d,%d,%d]}\n", s32(0x8009A590), s32(0x8009A594), s32(0x8009A598), s32(0x8009A59C));
 }
 
 // VALOR_TRACE_DRAWN: after every tick, each entity's drawn flags (+0x298 drawn once, +0x29C drawn

@@ -376,6 +376,8 @@ def weapon_draw(eng, e, inv):
     vm = EVM(eng, e)
     vm.script_start(2, 1, 0)
     vm.run_a()
+    from engine_texts import ammo_hud_update
+    ammo_hud_update(eng, e)                  # ammo_hud_icon (the icon itself is drawing)
     empty = m.s16(inv + 0x66 + 2 * slot) == 0 and not m.u16(G_WEAPONS + 0x44 * m.u8(G_SLOT_WEAPON + slot) + 0x2A) & 1
     set_var(m, e, 0x10, 1 if empty else 0)
     eng.audio.fade_entity(e, 10)
@@ -418,6 +420,8 @@ def weapon_reload(eng, e, inv):
             m.w16(a + 0x66, have + res)
             m.w16(a + 0x56, 0)
     m.w32(0x80039CBC, m.s32(0x80039CBC) + 1)
+    from engine_texts import ammo_hud_update
+    ammo_hud_update(eng, e)
     if w in (3, 10):
         if m.s16(a + 0x66):
             set_var(m, e, 0x10, 0)

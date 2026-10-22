@@ -137,6 +137,8 @@ def fire_gun(eng, e, inv, fire):
     d = m.s32(inv + 0x40)
     m.w32(inv + 0x44, d)
     m.w32(inv + 0x48, abs(d))
+    from engine_texts import ammo_hud_update
+    ammo_hud_update(eng, e)
 
 
 def rumble_set(m, port, a, b, c, d):

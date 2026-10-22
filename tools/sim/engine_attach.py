@@ -640,12 +640,16 @@ G_WEAPONS = 0x80093640
 
 def health_touch(eng, p, e):
     """health_pickup_touch (0x80082E90): not for the dead or removed (flags A 0x20180000) nor at
-    full health (128.0): health += the pickup's +0x14 up to 128.0, the text (drawing), sound 0x1F
+    full health (128.0): the message (kind 0..2: 0x8009E864.., engine_texts), health += the
+    pickup's +0x14 up to 128.0, sound 0x1F
     (kind 0) or 0x1E, removed."""
     m = eng.m
     if m.u32(e + 0xC) & 0x20180000 or m.s32(e + 0xF4) == 0x800000:
         return 0
     o = m.u32(p + 0x388)
+    from engine_texts import pickup_message
+    kind = m.s32(o)
+    pickup_message(eng, e, m.u32(0x8009E864 + 4 * kind) if kind in (0, 1, 2) else 0)
     m.w32(e + 0xF4, min(s32(m.s32(e + 0xF4) + m.s32(o + 0x14)), 0x800000))
     snd = {0: 0x1F, 1: 0x1E, 2: 0x1E}.get(m.s32(o), -1)
     if snd != -1:
@@ -667,6 +671,8 @@ def ammo_touch(eng, p, e):
     for slot in range(m.s32(G_SLOT_COUNT)):
         if m.u8(G_SLOT_WEAPON + slot) == w:
             if m.s16(inv + 0x56 + 2 * slot) < m.s16(inv + 0x5E + 2 * slot):
+                from engine_texts import pickup_message
+                pickup_message(eng, e, m.u32(G_WEAPONS + 0x44 * w + 0x3C))
                 eng.audio.play(0, 0x20, e, 0x10000, 0, 0x10000, 0x3333, 0, 0, 0, 0)
                 ammo_add(eng, e, slot, m.s32(o + 0x14))
                 eng.remove(p, "ammo taken")
@@ -693,6 +699,8 @@ def ammo_add(eng, e, slot, n):
             bank = m.s16(m.u32(w + 0x40) + 0xC8)
         flags = (m.u16(G_WEAPONS + 0x44 * m.u8(inv + 0x55) + 0x2A) >> 3) & 2
         eng.audio.play(bank, snd, e, 0x10000, 0, 0x7FFF, 0, 0, 0, 0, flags)
+    from engine_texts import ammo_hud_update
+    ammo_hud_update(eng, e)
 
 
 def item_touch(eng, p, e):

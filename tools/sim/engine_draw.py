@@ -52,6 +52,7 @@ class Drawn:
 def draw_pass(eng):
     m = eng.m
     m.w32(G_FRAME_COUNT, m.u32(G_FRAME_COUNT) + 1)
+    hit_wedges(eng)
     seen = Drawn.get().by_level.get(eng.level, {}).get(eng.tick_no + 1)
     if seen is None:
         eng.note("drawn flags: no record of the next tick")
@@ -219,3 +220,15 @@ def joints(eng, e, inst, model, drawn):
     for i, j in js.items():
         for k in range(3):
             m.w16(jp + 8 * i + 2 * k, j[k])
+
+
+def hit_wedges(eng):
+    """The HUD's hit wedges (0x80060B04, every drawn frame): each timer that is running drops by
+    1 + g_catchup_ticks (the frame's ticks beyond the first), not below 0 (hud.md)."""
+    m = eng.m
+    step = 1 + max(getattr(eng, "frame_ticks", 1) - 1, 0)
+    for k in range(4):
+        a = 0x8009A590 + 4 * k
+        t = m.s32(a)
+        if t:
+            m.w32(a, max(t - step, 0))
