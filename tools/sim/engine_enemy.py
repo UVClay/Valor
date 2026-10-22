@@ -172,6 +172,9 @@ def instance_init(eng, e, inst, model, pool):
     m.w32(e + 0x2D4, m.u32(model + 0xA0))
 
 
+from engine_heap import instance_release  # noqa: E402
+
+
 def brain_alloc(eng):
     return eng.alloc(0x124)
 
@@ -456,46 +459,58 @@ WITNESS_VICTIM, WITNESS_SPOT, WITNESSES, WITNESS_COUNT = 0x80098178, 0x8009817C,
 
 
 def witness_report(eng, e):
-    """0x80052AF4: hit this tick (+0x38 0x20/0x40): the victim, its position and the first five
-    other living soldiers and dogs in the list as witnesses (enemy_types.md, Witnesses)."""
+    """0x80052AF4: hit this tick (+0x38 0x20/0x40): the victim's handle, up to five other soldiers
+    and dogs in list order whose flag variable 0x109 is set (the scripts' "can witness"), as
+    handles, and the victim's position (enemy_types.md, Witnesses)."""
     m = eng.m
     if not m.u32(e + 0x38) & 0x60:
         return
-    m.w32(WITNESS_VICTIM, e)
-    for k in range(3):
-        m.w16(WITNESS_SPOT + 2 * k, s16(m.s32(e + 0x20C + 4 * k) >> 16))
+    m.w32(WITNESS_VICTIM, m.u32(e))
+    m.w8(WITNESS_COUNT, 0)
     n = 0
     for o in eng.entities():
-        if n >= 5:
-            break
-        if o != e and m.s32(o + 8) in (SOLDIER, DOG) and not m.u32(o + 0xC) & 0x20080000:
-            m.w32(WITNESSES + 4 * n, o)
+        if m.s32(o + 8) in (SOLDIER, DOG) and o != e and n < 5 and m.u32(o + 0xEC) & 0x200:
+            m.w32(WITNESSES + 4 * n, m.u32(o))
             n += 1
-    m.w32(WITNESS_COUNT, n)
+            m.w8(WITNESS_COUNT, n)
+    for k in range(3):
+        m.w16(WITNESS_SPOT + 2 * k, m.s16(e + 0x20E + 4 * k))
 
 
 def witness_check(eng):
-    """0x80052C38, once per entities_update: the last witness tests whether it sees the victim
-    with its long range; if so +0x3C 0x10000."""
+    """0x80052C38, once per entities_update: the last witness taken off; both alive, it tests
+    whether it sees the victim (sight_test with blockers) within the **victim's** long range
+    (its brain +0xB2); if so +0x3C 0x10000."""
     m = eng.m
-    n = m.s32(WITNESS_COUNT)
+    n = m.u8(WITNESS_COUNT)
     if n <= 0:
         return
-    n -= 1
-    m.w32(WITNESS_COUNT, n)
-    w, v = m.u32(WITNESSES + 4 * n), m.u32(WITNESS_VICTIM)
-    if not w or not v:
-        return
-    from engine_sense import sees
-    if sees(eng, w, v, long=True):
-        m.w32(w + 0x3C, m.u32(w + 0x3C) | 0x10000)
+    v = eng.resolve(m.u32(WITNESS_VICTIM))
+    w = eng.resolve(m.u32(WITNESSES + 4 * (n - 1)))
+    if (v and w and not eng.handle_dead(m.u32(WITNESS_VICTIM))
+            and not eng.handle_dead(m.u32(WITNESSES + 4 * (n - 1)))):
+        from engine_sense import sight_test
+        if sight_test(eng, w, v, m.s16(m.u32(v + 0x38C) + 0xB2)):
+            m.w32(w + 0x3C, m.u32(w + 0x3C) | 0x10000)
+    m.w8(WITNESS_COUNT, n - 1)
+
+
+def attachments_release(eng, e):
+    """0x800506B0, from the characters' destructors: every attachment's instance released two
+    frames late (its model's first-user bit given back)."""
+    m = eng.m
+    obj = m.u32(e + 0x388)
+    for k in range(max(0, m.s32(obj + 0x18))):
+        instance_release(eng, obj + 0x1C + 0x144 * k + 0x94, 0, 2)
 
 
 def enemy_destroy(eng, e):
     """The soldier's destructor (0x80056288 -> 0x80056290): the count, its brain, the slot."""
     m = eng.m
     m.w32(G_SOLDIER_COUNT, max(m.s32(G_SOLDIER_COUNT) - 1, 0))
+    attachments_release(eng, e)
     if m.u32(e + 0x100):
+        instance_release(eng, m.u32(e + 0x100), e, 2)
         pose_release(eng, m.u32(e + 0x100))
     b = m.u32(e + 0x38C)
     if b:
@@ -507,7 +522,9 @@ def dog_destroy(eng, e):
     m = eng.m
     m.w32(G_SOLDIER_COUNT, max(m.s32(G_SOLDIER_COUNT) - 1, 0))
     m.w32(G_DOG_COUNT, max(m.s32(G_DOG_COUNT) - 1, 0))
+    attachments_release(eng, e)
     if m.u32(e + 0x100):
+        instance_release(eng, m.u32(e + 0x100), e, 2)
         pose_release(eng, m.u32(e + 0x100))
     b = m.u32(e + 0x38C)
     if b:

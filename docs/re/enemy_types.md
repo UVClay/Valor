@@ -418,12 +418,15 @@ over 1000 holds). Whether the gun's shots hit was not checked (god mode).
 ## Witnesses: soldiers who see a comrade hit
 
 `0x80052AF4`, at the start of every soldier's and dog's think: if the entity was hit this tick
-(`+0x38` 0x20 or 0x40), it records itself as the victim (`0x80098178`), its position
-(`0x8009817C`), and the first five other living soldiers and dogs in the entity list as
-witnesses (`0x80098164`, count `0x80098184`), replacing any earlier report. Once per frame
-(`0x80052C38`, from `entities_update`) the last witness is taken off the list and, both being
-valid, tests whether it sees the victim with its long range (`+0xB2`, the sight test of query
-0x10); if so it gets `+0x3C` 0x10000. The soldier's idle and patrol scripts (and the dog's)
+(`+0x38` 0x20 or 0x40), it records itself as the victim (`0x80098178`, a handle), its position
+(`0x8009817C`), and the first five other soldiers and dogs in the entity list **whose flag
+variable 0x109 is set** (`+0xEC` bit 9, set by their scripts; dead ones are not excluded by
+anything else) as witnesses (handles at `0x80098164`, count the byte `0x80098184`), replacing
+any earlier report. Once per frame (`0x80052C38`, from `entities_update`) the last witness is
+taken off the list and, both handles being live, tests whether it sees the victim (the sight
+test with blockers) within **the victim's** long range (the victim's brain `+0xB2`, not the
+witness's); if so it gets `+0x3C` 0x10000. (2:2 tick 6009: a witness 2700 away with its own
+long range 1200 sees the hit comrade, whose range is larger.) The soldier's idle and patrol scripts (and the dog's)
 answer that with 201 (the dog 16): run to where the victim was hit, then alert (209).
 
 So shooting a soldier in view of up to five others (by list order, not distance) pulls those
@@ -937,7 +940,7 @@ knock-off speed (16.16; -1: keep the motion it had), +0x14 its vertical speed, +
 
 ```
 80052AF4 witness_report             # hit this tick: victim, spot (0x8009817C), up to 5 living soldiers/dogs as witnesses
-80052C38 witness_check              # once per frame: last witness sees the victim (range +0xB2) -> +0x3C 0x10000
+80052C38 witness_check              # once per frame: last witness sees the victim (the victim's range +0xB2) -> +0x3C 0x10000
 80098164 g_witnesses                # handles of up to 5 witnesses; +0x14 the victim, +0x18 the spot, +0x20 the count
 80098178 g_witness_victim
 8009817C g_witness_spot             # sensor 0x6E; soldier script 201 and dog script 16 run here
