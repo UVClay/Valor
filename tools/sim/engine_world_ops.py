@@ -55,6 +55,8 @@ def world_op(vm, op, pc, w, mask, imm, O, W):
         return pc + 8
     if op == 0x46:      # 0x8005C398: follow
         return follow(vm, pc, O, W, imm)
+    if op == 0x34:      # 0x8005B32C: node_eval
+        return node_eval(vm, pc, w, O, W)
     if op == 0x36:      # 0x8005B8EC: node_take
         return node_take(vm, pc, O, W)
     return None
@@ -127,4 +129,66 @@ def follow(vm, pc, O, W, imm):
     else:
         m.w32(e + 0x20C, s32(m.s32(tgt + 0x20C) + (((-s16(u[0]) * dist) >> 12) << 16)))
         m.w32(e + 0x214, s32(m.s32(tgt + 0x214) + (((-s16(u[2]) * dist) >> 12) << 16)))
+    return pc + 0xC
+
+
+def node_eval(vm, pc, w, O, W):
+    """Op 34 (0x8005B32C): a fact about node N (operand 1) into a variable (operand 2), the fact
+    the instruction's low byte: 1..5 the node's words +0..+0x10, 6 its holder (the entity of the
+    handle +0x30), 7 its cover score: 0x7FFF if the node has +4 and its link +0x2C names an entry
+    of the world object's table +0x14 (8 bytes) with bit 2; else, from the soldier to the node's
+    point (the brain's node point +0xA0 when it holds this node, else the node's +0x14), 0x7FFE
+    when the node's +4 is 500 or more and the soldier is 201 or more off in height or in front
+    of it (offset . direction +0x24 >> 12 at least 101), or when the player is within 600 of
+    the point; otherwise the angle between the node's direction and the player (|wrap|) if the
+    player is within 3500 (7000 for kind 0x10), farther than the soldier and under 0x400 off,
+    else 0x7FFD. -1 for N past the node count."""
+    import combat_sim as cs
+    eng, m, e = vm.eng, vm.m, vm.e
+    wo = m.u32(m.u32(0x8009D648) + 0x388)
+    base = m.u32(wo + 8)
+    n = O(1, W(1)) & 0xFFFFFFFF
+    var = O(2, W(2))
+    fact = w & 0xFF
+    if n >= m.u32(wo + 0xC):
+        vm.set_var(var, -1)
+        return pc + 0xC
+    q = base + 0x34 * n
+    v = 0
+    if 1 <= fact <= 5:
+        v = m.s32(q + 4 * (fact - 1))
+    elif fact == 6:
+        h = m.u32(q + 0x30)
+        v = eng.resolve(h) if h else 0
+    elif fact == 7:
+        link = m.s32(q + 0x2C)
+        if m.s32(q + 4) and link >= 0 and m.u32(m.u32(wo + 0x14) + 8 * link) & 2:
+            v = 0x7FFF
+        else:
+            b = m.u32(e + 0x38C)
+            src = b + 0xA0 if m.s16(b + 0xB6) == s16(n) else q + 0x14
+            pt = [m.s16(src + 2 * k) for k in range(3)]
+            d = [s16(m.s16(e + 0x20E + 4 * k) - pt[k]) for k in range(3)]
+            near = False
+            if m.s32(q + 4) >= 0x1F4:
+                if abs(d[1]) >= 0xC9:
+                    near = True
+                else:
+                    dot = s32(sum(d[k] * m.s16(q + 0x24 + 2 * k) for k in range(3))) >> 12
+                    near = dot >= 0x65
+            if near:
+                v = 0x7FFE
+            else:
+                de = es.dist_approx(*d) & 0xFFFF
+                p = m.u32(0x8009D654)
+                dp = [s16(m.s16(p + 0x20E + 4 * k) - pt[k]) for k in range(3)]
+                dpd = es.dist_approx(*dp) & 0xFFFF
+                if dpd < 0x258:
+                    v = 0x7FFE
+                else:
+                    a = es.wrap(s16(cs.ratan2(dp[0], dp[2]) - cs.ratan2(m.s16(q + 0x24), m.s16(q + 0x28))))
+                    a = abs(a)
+                    lim = 0x1B58 if m.s32(q + 0xC) == 0x10 else 0xDAC
+                    v = a if (dpd < lim and de < dpd and a < 0x400) else 0x7FFD
+    vm.set_var(var, v)
     return pc + 0xC

@@ -146,7 +146,7 @@ def behaviour(vm, goal, a, b_, c, d):
         m.w32(b + 0x3C, a)
         m.w32(b + 0x7C, b_)
         m.w16(b + 0xA8, c)
-        eng.note("brain_node_target not implemented")
+        node_target(eng, e, b, a)
         m.w16(b + 0xC2, d)
     elif goal == 0x4000:
         brain_clear_moves(m, b)
@@ -309,3 +309,23 @@ EFFECTS = {
     "pose_blend": save_pose,
     "behaviour": behaviour,
 }
+
+
+def node_target(eng, e, b, node):
+    """brain_node_target (0x80057474) into the brain: the node point +0xA0, the side waypoint
+    +0xAC/+0xAE, whether to go by it +0x8C, the claimed node +0xB6 (engine_sense)."""
+    from engine_sense import brain_node_target
+    m = eng.m
+
+    def write(f, v):
+        if f == "node_point":
+            for k in range(3):
+                m.w16(b + 0xA0 + 2 * k, v[k])
+        elif f == "side":
+            m.w16(b + 0xAC, v[0])
+            m.w16(b + 0xAE, v[1])
+        elif f == "via":
+            m.w32(b + 0x8C, v)
+        elif f == "claimed":
+            m.w16(b + 0xB6, v)
+    brain_node_target(m, e, write, s32(node))

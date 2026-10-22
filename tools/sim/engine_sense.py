@@ -291,14 +291,44 @@ def probe(eng, e, how, r):
 
 
 def compute_node(eng, e, rng, exclude, mask):
-    """0x80040F48 (op 33 compute 0): the nearest node within rng whose kind has a bit of mask, not
-    `exclude`, free, nearer the soldier than the player, ... -1 if none."""
+    """0x80040F48 (op 33 compute 0): over the world's nodes (0x34 bytes: +0xC kind bits, +0x14
+    position, +0x24 direction, +0x30 holder), the nearest (max + (mid + min) / 4 from the soldier,
+    within |rng|) that is not `exclude`, free (its holder's handle dead; with exclude -1 any),
+    of a kind in mask (mask -1: any), with the soldier nearer to it than the player and the player
+    within 10000 of it, and the player in front of it ((player - node) . direction, y left out,
+    >> 12, at least 101); mask 8 waives the last two tests but the 10000. -1 if none."""
     m = eng.m
     wo = m.u32(m.u32(0x8009D648) + 0x388)
-    if m.s32(wo + 0xC) <= 0:
-        return -1
-    eng.note("node search with nodes not implemented")
-    return -1
+    n, base = m.s32(wo + 0xC), m.u32(wo + 8)
+    best, rng = -1, abs(s32(rng))
+    p = m.u32(G_SOLDIER)
+
+    def cheap(a, q):
+        d = sorted(abs(s16(m.s16(a + 0x20E + 4 * k) - m.u16(q + 0x14 + 2 * k))) for k in range(3))
+        return d[2] + ((d[0] + d[1]) >> 2)
+    for i in range(max(n, 0)):
+        q = base + 0x34 * i
+        if i == s32(exclude):
+            continue
+        if not eng.handle_dead(m.u32(q + 0x30)) and s32(exclude) != -1:
+            continue
+        t = cheap(e, q)
+        if rng < t:
+            continue
+        if not m.u32(q + 0xC) & mask and s32(mask) != -1:
+            continue
+        tp = cheap(p, q)
+        if not (t < tp or s32(mask) == 8):
+            continue
+        if not tp < 0x2710:
+            continue
+        dx = s16(m.s16(p + 0x20E) - m.u16(q + 0x14))
+        dz = s16(m.s16(p + 0x216) - m.u16(q + 0x18))
+        dot = s32(dx * m.s16(q + 0x24) + dz * m.s16(q + 0x28)) >> 12
+        if dot < 0x65 and s32(mask) != 8:
+            continue
+        best, rng = i, t
+    return best
 
 
 # ---------------------------------------------------------------- the VM's hooks
