@@ -35,6 +35,12 @@ var prev_pitch := 0.0
 var cur_pitch := 0.0
 var mouse_turn := 0.0  # game units not yet given to the core
 var mouse_pitch := 0.0
+# The mouse's turn and look given to the core at the last tick (game units): the tick's yaw and
+# pitch already include them, so the blend starts from the previous view plus them (else the view
+# jumps back by the mouse's movement at every tick and catches up again: a 30 Hz shake)
+var sent_turn := 0.0
+var sent_pitch := 0.0
+var first_tick := true
 var tapped := 0  # buttons pressed and released since the last tick: held for one tick
 var auto_walk := 0
 var screenshot := ""
@@ -46,8 +52,11 @@ var skinned := {}  # actor index -> MeshInstance3D
 var level_info := {}
 var engine_mode := false
 var engine_meshes := {}  # entity handle -> MeshInstance3D
+var engine_xf := {}  # entity handle -> [the previous tick's transform, this tick's]: blended per frame
 var skip_to := 0  # --skip=TICKS: run the engine up to this tick at once (50 ticks a frame)
 var shot_tick := 0  # --shot-tick=T: the screenshot once the core reaches tick T
+var camtrace: FileAccess = null  # --camtrace=FILE: the camera per drawn frame (smoothness checks)
+var spin := 0.0  # --spin=UNITS: a constant mouse turn per drawn frame, in game angle units
 var aimbot := false  # --aimbot (with --engine): turn to the nearest living soldier and fire
 
 
@@ -64,6 +73,9 @@ func _ready() -> void:
 	skip_to = int(args.get("skip", "0"))
 	shot_tick = int(args.get("shot-tick", "0"))
 	aimbot = args.has("aimbot")
+	if args.has("camtrace"):
+		camtrace = FileAccess.open(String(args.camtrace), FileAccess.WRITE)
+	spin = float(args.get("spin", "0"))
 
 	game = ValorGame.new()
 	if not game.load_level(data, int(lv[0]), int(lv[1])):
@@ -232,6 +244,8 @@ func _physics_process(_delta: float) -> void:
 	# moving the mouse up (negative y) looks up.
 	turn += int(mouse_turn * 65536.0)
 	var pitch_role := int(mouse_pitch * 2.0 * 65536.0)
+	sent_turn = mouse_turn
+	sent_pitch = mouse_pitch
 	mouse_turn = 0.0
 	mouse_pitch = 0.0
 	prev_eye = cur_eye
@@ -257,6 +271,9 @@ func _physics_process(_delta: float) -> void:
 		game.tick(held_buttons() | tapped, fwd, strafe, turn, pitch_role)
 	tapped = 0
 	cur_eye = game.get_eye_position()
+	if first_tick:  # nothing to blend from before the first tick (the engine's camera starts at 0)
+		prev_eye = cur_eye
+		first_tick = false
 	cur_yaw = game.get_yaw()
 	cur_pitch = game.get_pitch()
 	var lights := game.get_light_colours()
@@ -302,6 +319,7 @@ func update_engine_actors() -> void:
 		if not actors.has(h):
 			engine_meshes[h].queue_free()
 			engine_meshes.erase(h)
+			engine_xf.erase(h)
 	for h in actors:
 		var a: Dictionary = actors[h]
 		var mi: MeshInstance3D = engine_meshes.get(h)
@@ -314,19 +332,28 @@ func update_engine_actors() -> void:
 		elif a.skinned:
 			mi.mesh = game.build_engine_actor_mesh(h)
 			apply_materials(mi)
-		mi.transform = a.transform
+		var xf: Transform3D = a.transform
+		engine_xf[h] = [engine_xf[h][1] if engine_xf.has(h) else xf, xf]
+		mi.transform = xf
 	var pages := game.get_texture_pages()
 	for mat in materials.values():
 		mat.set_shader_parameter("pages", pages)
 
 
 func _process(_delta: float) -> void:
+	mouse_turn += spin
 	var f := Engine.get_physics_interpolation_fraction()
 	cam.position = prev_eye.lerp(cur_eye, f)
 	# The mouse turns the view at once; the core gets it on the next tick.
-	var yaw := lerp_angle(prev_yaw, cur_yaw, f) - mouse_turn * ANGLE
-	var pitch := clampf(lerpf(prev_pitch, cur_pitch, f) - mouse_pitch * ANGLE, -682 * ANGLE, 682 * ANGLE)
+	var yaw := lerp_angle(prev_yaw - sent_turn * ANGLE, cur_yaw, f) - mouse_turn * ANGLE
+	var pitch := clampf(lerpf(prev_pitch - sent_pitch * ANGLE, cur_pitch, f) - mouse_pitch * ANGLE, -682 * ANGLE, 682 * ANGLE)
 	cam.rotation = Vector3(pitch, yaw, 0.0)
+	# the engine's actors move at 30 Hz: blended between their last two ticks as the camera is
+	for h in engine_xf:
+		var pair: Array = engine_xf[h]
+		engine_meshes[h].transform = (pair[0] as Transform3D).interpolate_with(pair[1], f)
+	if camtrace:
+		camtrace.store_line("%d %f %f %f %f %f %f %d" % [frames, f, cam.position.x, cam.position.y, cam.position.z, yaw, pitch, Engine.get_physics_frames()])
 	var s := game.get_state()
 	hud.text = "%d:%d  tick %d  pos %.1f %.1f %.1f  %s%s  zone %d  %d fps" % [
 		game.get_level_info().mission, game.get_level_info().level, s.tick, s.x, s.y, s.z,
