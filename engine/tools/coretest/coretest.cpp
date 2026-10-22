@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 
+#include "valor/disc.h"
+#include "valor/io.h"
 #include "valor/fixed.h"
 #include "valor/io.h"
 #include "valor/level.h"
@@ -122,7 +124,51 @@ int run_build(int argc, char** argv);
 int run_live(int argc, char** argv);
 int run_campaign(int argc, char** argv);  // campaign_mode.cpp: coretest --campaign  // live_mode.cpp: coretest --live M:L (no recording)  // build_mode.cpp: coretest --build M:L --against DUMP  // engine_mode.cpp: coretest --engine M:L (the whole engine)
 
+// coretest --disc-image IMAGE: every file of the mounted image (disc.h) against the extracted copy
+// (extracted/moh), byte for byte.
+static int run_disc_image(int argc, char** argv) {
+    std::string err;
+    if (argc < 3 || !valor::disc_mount(argv[2], &err)) {
+        std::fprintf(stderr, "coretest --disc-image: %s\n", err.c_str());
+        return 2;
+    }
+    size_t same = 0, differ = 0, missing = 0, form2 = 0;
+    uint64_t bytes = 0;
+    for (auto& [path, f] : valor::disc_files()) {
+        std::vector<uint8_t> a, b;
+        if (!valor::read_file("disc:/" + path, a)) {
+            std::printf("unreadable: %s\n", path.c_str());
+            differ++;
+            continue;
+        }
+        if (!valor::read_file("extracted/moh/" + path, b)) {
+            missing++;
+            continue;
+        }
+        if (valor::disc_files().at(path).form2) form2++;
+        bytes += a.size();
+        if (a == b)
+            same++;
+        else {
+            differ++;
+            std::printf("differs: %s (%zu / %zu bytes)\n", path.c_str(), a.size(), b.size());
+        }
+    }
+    std::printf("%s: %zu files, %zu identical to the extracted copy (%llu bytes; %zu with Form 2 sectors, raw), %zu differ, %zu not extracted\n",
+                valor::disc_image().c_str(), valor::disc_files().size(), same, (unsigned long long)bytes, form2, differ, missing);
+    return differ ? 1 : 0;
+}
+
 int main(int argc, char** argv) {
+    // VALOR_DISC=IMAGE: the game's files from the user's disc image instead of extracted/moh
+    if (const char* img = std::getenv("VALOR_DISC")) {
+        std::string err;
+        if (!valor::disc_mount(img, &err)) {
+            std::fprintf(stderr, "VALOR_DISC: %s\n", err.c_str());
+            return 2;
+        }
+    }
+    if (argc >= 2 && !std::strcmp(argv[1], "--disc-image")) return run_disc_image(argc, argv);
     if (argc >= 2 && !std::strcmp(argv[1], "--pose")) return run_pose(argc, argv);
     if (argc >= 2 && !std::strcmp(argv[1], "--engine")) return run_engine(argc, argv);
     if (argc >= 2 && !std::strcmp(argv[1], "--build")) return run_build(argc, argv);

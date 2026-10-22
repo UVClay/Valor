@@ -16,6 +16,7 @@ option(VALOR_GODOT "Build the Godot GDExtension (needs third_party/godot-cpp)" O
 add_library(valor_core STATIC
     core/src/fixed.cpp
     core/src/io.cpp
+    core/src/disc.cpp
     core/src/world.cpp
     core/src/movement.cpp
     core/src/trace.cpp

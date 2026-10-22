@@ -1,5 +1,6 @@
 #include "valor_game.h"
 
+#include "valor/disc.h"
 #include "valor/sim/engine.h"
 #include "valor/sim/feed.h"
 #include "valor/sim/load.h"
@@ -10,6 +11,7 @@
 #include <map>
 
 #include <godot_cpp/classes/image.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/classes/mesh.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/color.hpp>
@@ -27,6 +29,9 @@ constexpr double kAngle = 2.0 * 3.14159265358979323846 / 4096.0;  // radians per
 
 void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("load_level", "data_dir", "mission", "level"), &ValorGame::load_level);
+    ClassDB::bind_method(D_METHOD("mount_disc", "path"), &ValorGame::mount_disc);
+    ClassDB::bind_method(D_METHOD("get_disc_image"), &ValorGame::get_disc_image);
+    ClassDB::bind_method(D_METHOD("get_disc_data_dir"), &ValorGame::get_disc_data_dir);
     ClassDB::bind_method(D_METHOD("get_error"), &ValorGame::get_error);
     ClassDB::bind_method(D_METHOD("build_world_mesh"), &ValorGame::build_world_mesh);
     ClassDB::bind_method(D_METHOD("get_texture_pages"), &ValorGame::get_texture_pages);
@@ -74,6 +79,25 @@ Vector3 ValorGame::to_godot(double x, double y, double z) {
     // y down, z forward at yaw 0 -> Godot's y up, -z forward: a half turn about x.
     return Vector3(real_t(x / kUnitsPerMetre), real_t(-y / kUnitsPerMetre), real_t(-z / kUnitsPerMetre));
 }
+
+// The repository's root, three levels above the project (engine/godot/project); a recording's
+// inputs (build/engine) and the recompiler's tables are under it, the extracted files too.
+std::string ValorGame::repo_root() const {
+    String p = ProjectSettings::get_singleton()->globalize_path("res://").path_join("../../..").simplify_path();
+    return p.utf8().get_data();
+}
+
+bool ValorGame::mount_disc(const String& path) {
+    std::string err;
+    if (valor::disc_mounted() && valor::disc_image() == path.utf8().get_data()) return true;
+    if (!valor::disc_mount(path.utf8().get_data(), &err)) {
+        error_ = String(err.c_str());
+        return false;
+    }
+    return true;
+}
+
+String ValorGame::get_disc_image() const { return String(valor::disc_image().c_str()); }
 
 bool ValorGame::load_level(const String& data_dir, int mission, int level) {
     loaded_ = false;
@@ -498,8 +522,9 @@ bool ValorGame::start_engine_game(const PackedByteArray& game) {
 
 bool ValorGame::start_engine_with(const std::vector<uint8_t>& game, bool auto_advance) {
     if (!loaded_) return false;
-    // the repository root: the data directory is <root>/extracted/moh/DATA
-    std::string root = data_dir_ + "/../../..";
+    // the repository root (a recording's inputs; the game's files come from the disc image or
+    // <root>/extracted/moh)
+    std::string root = repo_root();
     feed_ = std::make_unique<valor::sim::Feed>();
     feed_->live = true;
     std::string lv = std::to_string(mission_) + ":" + std::to_string(level_);
@@ -629,7 +654,8 @@ bool ValorGame::set_engine_replay(const String& log_path) {
         return true;
     }
     replay_ = std::make_unique<valor::sim::Feed>();
-    if (!replay_->load(data_dir_ + "/../../..", log_path.utf8().get_data())) {
+    // the recompiler's tables under the repository root
+    if (!replay_->load(repo_root(), log_path.utf8().get_data())) {
         replay_.reset();
         error_ = "can't read the replay " + log_path;
         return false;

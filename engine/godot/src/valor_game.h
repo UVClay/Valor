@@ -43,6 +43,11 @@ public:
     static constexpr double kUnitsPerMetre = 128.0;
 
     bool load_level(const String& data_dir, int mission, int level);
+    // The user's disc image (a .cue or .bin of Medal of Honor (USA)), read in place: once mounted
+    // the game's files are under "disc:/DATA" (get_disc_data_dir), for every loader (valor/disc.h).
+    bool mount_disc(const String& path);
+    String get_disc_image() const;
+    String get_disc_data_dir() const { return "disc:/DATA"; }
     String get_error() const { return error_; }
 
     Ref<ArrayMesh> build_world_mesh();
@@ -154,6 +159,7 @@ private:
     int64_t level_changes_seen_ = 0;
     bool level_changed_ = false;
     bool start_engine_with(const std::vector<uint8_t>& game, bool auto_advance);
+    std::string repo_root() const;
     void sync_engine_level();
     Ref<ArrayMesh> mesh_of(const valor::Model& m, const std::vector<valor::Quat>* pose,
                            const std::vector<std::array<int16_t, 3>>* joints);

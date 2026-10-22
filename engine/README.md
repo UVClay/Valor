@@ -58,9 +58,35 @@ the library links the system one (`GODOTCPP_USE_STATIC_CPP=OFF`).
 build/godot/Godot_v4.7.2-stable_linux.x86_64 --path engine/godot/project -- --level=1:3
 ```
 
-Before the first run, `--headless --import` once registers the extension. The project reads the
-extracted disc from `extracted/moh/DATA` (`--data=DIR` to change it). Nothing from the disc is
-copied into the project.
+Before the first run, `--headless --import` once registers the extension.
+
+**The game's files come from the user's own disc image, read in place** (`core/include/valor/disc.h`).
+Point it at the `.cue` or `.bin` of Medal of Honor (USA) with `--disc-image=PATH`, or choose it in
+the front end: the first run asks (YOUR DISC: a path or BROWSE), and OPTIONS > DISC changes it.
+The path is kept in the settings (`user://valor_settings.cfg`).
+- The reader walks the image's ISO9660 file system on raw 2352-byte Mode 2 sectors once, at
+  mount (about a second), and checks for `SLUS_009.74`.
+- `read_file` then serves `disc:/...` paths from it: Form 1 sectors' 2048 bytes, the music's
+  `.VB` streams among them. A file with Form 2 sectors (the STR movies' video and XA audio) reads
+  as its raw sectors, as `tools/extract_disc.py` writes them.
+- The loader takes the files' LBAs from the image instead of `manifest.json`.
+- Nothing is copied into the project.
+
+`--data=DIR` (an extracted `DATA` folder) and the source tree's `extracted/moh/DATA` still work, for
+development. `coretest` takes the image with `VALOR_DISC=PATH`.
+
+Checks:
+- `coretest --disc-image IMAGE` compares every file of the image with the extracted copy: all 704
+  files are identical (694,669,544 bytes; the 22 STR files raw).
+- With `extracted/` hidden behind an empty folder, `VALOR_DISC=... coretest --engine 1:3 --disc`
+  gives 7,073 identical ticks, as from the extracted files. The live 1:3 replay dies at 2613 and
+  restarts at 2701, and `--live 1:1 --end-every 300` goes through all 24 levels.
+- In Godot from the image (`extracted/` hidden), the 1:3 `--replay` frame at tick 372 matches the
+  one from the extracted files except 41 pixels of the compass's needle (the frame's
+  interpolation).
+- The front end plays 1:1 and 1:2 from it with the presentation layer's textures and music.
+  Present's library mounts the image too (`ValorAssets.mount_disc`; main.gd passes it in
+  `args`).
 
 | Control | |
 |---|---|

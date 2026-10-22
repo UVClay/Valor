@@ -83,6 +83,8 @@ func _attach() -> void:
 	attached_world = main.get("world")
 	var data: String = args.get("data", ProjectSettings.globalize_path("res://").path_join("../../../extracted/moh/DATA").simplify_path())
 	assets = ValorAssets.new()
+	if args.has("disc-image") and not assets.mount_disc(String(args["disc-image"])):  # main.gd's
+		push_error("Valor present: " + assets.get_error())
 	if not assets.load(data, int(info.mission), int(info.level), not args.has("german")):
 		push_error("Valor present: " + assets.get_error())
 		return

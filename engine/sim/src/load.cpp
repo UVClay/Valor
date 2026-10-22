@@ -2,6 +2,8 @@
 // the order is theirs, so the heap hands out the same addresses.
 #include "valor/sim/load.h"
 
+#include "valor/disc.h"
+
 #include "valor/sim/campaign.h"
 
 #include <cstdio>
@@ -177,12 +179,18 @@ struct Loader {
     int mission, level;
     std::map<std::string, DiscFile> disc;  // the manifest: upper-case path -> LBA, size
 
-    std::string data() const { return eng.root + "/extracted/moh/DATA"; }
+    std::string data() const { return game_root(eng.root) + "/DATA"; }
     std::string dir() const { return data() + "/MSN" + std::to_string(mission) + "/LVL" + std::to_string(level); }
     void note(const std::string& s) { out.notes.push_back(s); }
     U L() const { return U(m.u32(G_LEVEL_PTR)); }
 
+    // The files' places on the disc (the CD entries' LBAs): from the mounted image, else the
+    // extractor's manifest.
     bool load_manifest() {
+        if (disc_mounted()) {
+            for (auto& [path, f] : disc_files()) disc[path] = {I(f.lba), I(f.size)};
+            return !disc.empty();
+        }
         std::ifstream f(eng.root + "/extracted/moh/manifest.json");
         std::string line, path;
         I lba = -1;
@@ -1558,7 +1566,7 @@ void Loader::tsp_load(I chunk_file, I slot) {
     for (char c : path) up += char(c == '\\' ? '/' : std::toupper(c));
     if (!up.empty() && up[0] == '/') up = up.substr(1);
     std::vector<uint8_t> d;
-    std::string local = eng.root + "/extracted/moh/" + up;
+    std::string local = game_root(eng.root) + "/" + up;
     if (!read(local, d)) {
         note("no " + local);
         return;
@@ -1790,7 +1798,7 @@ void Loader::music_start() {
     std::vector<uint8_t> file;
     std::string up;
     for (char c : std::string(path + 1)) up += char(c == '\\' ? '/' : std::toupper(c));
-    read(eng.root + "/extracted/moh/" + up, file);
+    read(game_root(eng.root) + "/" + up, file);
     auto stream = [&]() {  // func_8004977C (1 slot, 20 sectors)
         I n = std::min<I>(0x14, m.s32(s + 8) - m.s32(s + 0xC));
         if (n == 0) {
@@ -2088,7 +2096,7 @@ std::vector<uint8_t> game_defaults(int mission, int level, int ammo) {
 bool Engine::load_disc(const std::vector<uint8_t>& game, LevelBuild& out, std::string* err) {
     std::fill(m.d.begin(), m.d.end(), 0);
     std::vector<uint8_t> exe, ovl;
-    if (!read(root + "/extracted/moh/SLUS_009.74", exe) || !read(root + "/extracted/moh/LEVEL.BIN", ovl)) {
+    if (!read(game_root(root) + "/SLUS_009.74", exe) || !read(game_root(root) + "/LEVEL.BIN", ovl)) {
         *err = "no SLUS_009.74 or LEVEL.BIN";
         return false;
     }
@@ -2097,13 +2105,13 @@ bool Engine::load_disc(const std::vector<uint8_t>& game, LevelBuild& out, std::s
     std::copy(exe.begin() + 0x800, exe.begin() + 0x800 + tsize, m.d.begin() + (taddr & Mem::kMask));
     std::copy(ovl.begin(), ovl.end(), m.d.begin() + (0x80039D90 & Mem::kMask));
     if (game.size() >= 0x780) std::copy(game.begin(), game.begin() + 0x780, m.d.begin() + (G_GAME & Mem::kMask));
-    std::string data_dir = root + "/extracted/moh/DATA";
+    std::string data_dir = game_root(root) + "/DATA";
     if (!gte.load(data_dir, err)) return false;
     gte.set_projection(21.0 / 9.0, 110.0);
     audio = std::make_unique<Audio>(*this);
     Loader ld{*this, m, Heap{m}, out, mission_n, level_n, {}};
     if (!ld.load_manifest()) {
-        *err = "no extracted/moh/manifest.json";
+        *err = "no disc image mounted and no extracted/moh/manifest.json";
         return false;
     }
     U hbase = 0x800D17E8;

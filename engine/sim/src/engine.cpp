@@ -1,5 +1,7 @@
 #include "valor/sim/engine.h"
 
+#include "valor/disc.h"
+
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -115,7 +117,7 @@ bool Engine::load(const std::string& seed_path, std::string* err) {
     }
     std::vector<char> data((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     std::copy(data.begin(), data.begin() + std::min(data.size(), m.d.size()), m.d.begin());
-    std::string data_dir = root + "/extracted/moh/DATA";
+    std::string data_dir = game_root(root) + "/DATA";
     if (!gte.load(data_dir, err)) return false;
     // the recording's projection (its settings.ini: 21:9, FOV 110), which aim_update's RTPS reads
     gte.set_projection(21.0 / 9.0, 110.0);

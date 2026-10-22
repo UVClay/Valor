@@ -23,6 +23,7 @@ add_subdirectory(${root}/third_party/godot-cpp ${CMAKE_BINARY_DIR}/godot-cpp)
 add_library(valor_present_core STATIC
     ${root}/engine/core/src/fixed.cpp
     ${root}/engine/core/src/io.cpp
+    ${root}/engine/core/src/disc.cpp
     ${root}/engine/core/src/level.cpp
     ${root}/engine/core/src/render_data.cpp
     ${root}/engine/core/src/gte.cpp

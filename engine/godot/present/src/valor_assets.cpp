@@ -1,5 +1,7 @@
 #include "valor_assets.h"
 
+#include "valor/disc.h"
+
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/packed_color_array.hpp>
@@ -55,6 +57,7 @@ Ref<AudioStreamWAV> wav(const std::vector<int16_t>& pcm, int rate, int loop_from
 
 void ValorAssets::_bind_methods() {
     ClassDB::bind_method(D_METHOD("load", "data_dir", "mission", "level", "american"), &ValorAssets::load);
+    ClassDB::bind_method(D_METHOD("mount_disc", "path"), &ValorAssets::mount_disc);
     ClassDB::bind_method(D_METHOD("get_error"), &ValorAssets::get_error);
     ClassDB::bind_method(D_METHOD("get_level_info"), &ValorAssets::get_level_info);
     ClassDB::bind_method(D_METHOD("level_bin", "addr", "len"), &ValorAssets::level_bin);
@@ -75,6 +78,16 @@ void ValorAssets::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_model_list_faces", "hash"), &ValorAssets::get_model_list_faces);
     ClassDB::bind_method(D_METHOD("bone_point", "hash", "anim", "frame", "bone", "offset"), &ValorAssets::bone_point);
     ClassDB::bind_method(D_METHOD("stick_roles", "rx", "ry", "lx", "ly"), &ValorAssets::stick_roles);
+}
+
+bool ValorAssets::mount_disc(const String& path) {
+    std::string p = path.utf8().get_data(), err;
+    if (valor::disc_mounted()) return true;
+    if (!valor::disc_mount(p, &err)) {
+        error_ = String(err.c_str());
+        return false;
+    }
+    return true;
 }
 
 bool ValorAssets::load(const String& data_dir, int mission, int level, bool american) {

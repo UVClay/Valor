@@ -76,6 +76,9 @@ func setup(m: Node3D, data_dir: String) -> void:
 	page_box.visible = false
 	add_child(page_box)
 	auto = int(main.args.get("shell-auto", "0"))
+	if data.is_empty():
+		show_disc()  # the first run: the disc image to read
+		return
 	show_title()
 	if auto > 0 or main.args.has("shell-brief"):  # tests: a new campaign's first briefing
 		shell.new_game("TESTER")
@@ -121,6 +124,36 @@ func show_title(text := "") -> void:
 	button("SAVE", save_game, started)
 	button("PASSWORD", show_password)
 	button("OPTIONS", show_options)
+	button("QUIT", func(): get_tree().quit())
+
+
+# --- the disc image (the first run, or OPTIONS > DISC): read in place, nothing copied
+
+func show_disc(text := "") -> void:
+	clear("YOUR DISC", text if text else "Medal of Honor (USA) is read from your own disc image: choose its .cue or .bin. It is read where it is; nothing is copied.")
+	var e := LineEdit.new()
+	e.placeholder_text = "/path/to/Medal of Honor (USA).cue"
+	box.add_child(e)
+	var use := func(path: String):
+		if main.use_disc_image(path.strip_edges()):
+			data = main.data
+			show_title("DISC: " + main.game.get_disc_image().get_file())
+		else:
+			show_disc(main.game.get_error())
+	e.text_submitted.connect(use)
+	button("BROWSE", func():
+		var fd := FileDialog.new()
+		fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		fd.access = FileDialog.ACCESS_FILESYSTEM
+		fd.use_native_dialog = true
+		fd.filters = PackedStringArray(["*.cue, *.bin ; Disc images"])
+		fd.file_selected.connect(func(p: String):
+			fd.queue_free()
+			use.call(p))
+		fd.canceled.connect(func(): fd.queue_free())
+		add_child(fd)
+		fd.popup_centered_ratio(0.7))
+	button("USE THIS PATH", func(): use.call(e.text))
 	button("QUIT", func(): get_tree().quit())
 
 

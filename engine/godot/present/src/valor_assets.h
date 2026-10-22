@@ -35,6 +35,9 @@ public:
 
     // The level's BSD, TAF (american: the 1 file, else the German 0) and LEVEL.BIN.
     bool load(const String& data_dir, int mission, int level, bool american);
+    // The user's disc image in this library too (its own copy of the core's reader, valor/disc.h):
+    // "disc:/DATA" paths then read from it.
+    bool mount_disc(const String& path);
     String get_error() const { return error_; }
 
     // The BSD header's presentation fields: sky colour (R +0x58C, G +0x58E, B +0x58D, 0..255),

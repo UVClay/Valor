@@ -104,7 +104,21 @@ func show_menu() -> void:
 	button("VIDEO", show_video)
 	button("CONTROLS", show_controls)
 	button("AUDIO", show_audio)
+	button("DISC", show_disc)
 	button("BACK", close)
+
+
+# --- DISC: the image the game's files are read from (shell/settings.gd)
+
+func show_disc(text := "") -> void:
+	var now: String = main.game.get_disc_image()
+	clear("DISC", text if text else ("Reading " + now if not now.is_empty() else "Reading " + String(main.data)) + "\nA new image is used from the next level on.")
+	var e := LineEdit.new()
+	e.text = Settings.disc_image
+	box.add_child(e)
+	button("USE THIS PATH", func():
+		show_disc("Now reading " + main.game.get_disc_image() if main.use_disc_image(e.text.strip_edges()) else main.game.get_error()))
+	button("BACK", show_menu)
 
 
 func close() -> void:

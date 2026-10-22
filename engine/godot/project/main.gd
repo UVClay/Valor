@@ -3,7 +3,9 @@ extends Node3D
 ## 30 Hz in _physics_process; the camera is interpolated between ticks at the display rate, and
 ## the mouse turns the view at once (its yaw reaches the core on the next tick).
 ##
-## User arguments (after `--`): --data=DIR (extracted/moh/DATA), --level=M:L (1:1),
+## User arguments (after `--`): --disc-image=PATH (the .cue or .bin of the user's Medal of Honor
+## (USA), read in place; else the one chosen before, kept in the settings), --data=DIR (an
+## extracted DATA folder instead, for development), --level=M:L (1:1),
 ## --walk=TICKS (walk forward on its own), --place=X,Y,Z,YAW,PITCH (game units and angles), --screenshot=FILE.png --frames=N (save the frame N and quit),
 ## --engine[=AMMO] (the whole engine live: the level built from the disc, its soldiers and dogs on
 ## their own logic, drawn from the engine's poses; the left mouse button fires, Q switches weapons),
@@ -73,7 +75,6 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else ""
-	data = args.get("data", ProjectSettings.globalize_path("res://").path_join("../../../extracted/moh/DATA").simplify_path())
 	var lv: PackedStringArray = String(args.get("level", "1:1")).split(":")
 	auto_walk = int(args.get("walk", "0"))
 	screenshot = args.get("screenshot", "")
@@ -88,9 +89,10 @@ func _ready() -> void:
 	# the player's settings (shell/settings.gd): the window, the bindings, the volumes
 	Settings.load_and_apply()
 	mouse_units_per_pixel = Settings.mouse_speed
-	apply_present_options()
 
 	game = ValorGame.new()
+	data = find_data()
+	apply_present_options()
 	# With no level asked for (or --shell), the front end first (shell/shell.gd): the title, the
 	# campaign, briefings, results and saves; it starts the levels.
 	if args.has("shell") or not (args.has("level") or args.has("engine") or args.has("scene")):
@@ -104,7 +106,41 @@ func _ready() -> void:
 		shell.setup(self, data)
 		set_physics_process(false)
 		return
+	if data.is_empty():
+		push_error("Valor: no disc image: --disc-image=PATH (the .cue or .bin of Medal of Honor (USA)), or choose it in the front end")
+		get_tree().quit(1)
+		return
 	start_level(int(lv[0]), int(lv[1]), PackedByteArray())
+
+
+## Where the game's files are: --data=DIR (an extracted DATA folder, development), else the disc
+## image (--disc-image=PATH, or the one in the settings) mounted in place, else the repository's
+## extracted/moh/DATA when running from the source tree; "" when there's none (the front end
+## asks for the image).
+func find_data() -> String:
+	if args.has("data"):
+		return String(args.data)
+	var img := String(args.get("disc-image", Settings.disc_image))
+	if not img.is_empty():
+		if game.mount_disc(img):
+			print("Valor: the disc image ", game.get_disc_image())
+			return game.get_disc_data_dir()
+		push_warning("Valor: " + game.get_error())
+	var dev := ProjectSettings.globalize_path("res://").path_join("../../../extracted/moh/DATA").simplify_path()
+	if DirAccess.dir_exists_absolute(dev) and not args.has("no-extracted"):  # (a test: as a package)
+		return dev
+	return ""
+
+
+## A disc image chosen in the front end: mounted, kept in the settings.
+func use_disc_image(path: String) -> bool:
+	if not game.mount_disc(path):
+		return false
+	Settings.disc_image = path
+	Settings.save()
+	data = game.get_disc_data_dir()
+	apply_present_options()
+	return true
 
 
 ## The level's world, actors and view: from the command line, or for the shell (game: the
@@ -216,6 +252,10 @@ func apply_present_options() -> void:
 	if not has_node("/root/Present"):
 		return
 	var pargs: Dictionary = get_node("/root/Present").args
+	if not data.is_empty():
+		pargs["data"] = data  # the presentation layer's files from the same place
+	if not game.get_disc_image().is_empty():
+		pargs["disc-image"] = game.get_disc_image()
 	if Settings.square_stick:
 		pargs["square-stick"] = ""
 	else:

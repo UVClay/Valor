@@ -2,9 +2,12 @@
 
 #include <cstdio>
 
+#include "valor/disc.h"
+
 namespace valor {
 
 bool read_file(const std::string& path, std::vector<uint8_t>& out) {
+    if (path.compare(0, 5, "disc:") == 0) return disc_read(path, out);  // the mounted image (disc.h)
     FILE* f = std::fopen(path.c_str(), "rb");
     if (!f) return false;
     std::fseek(f, 0, SEEK_END);

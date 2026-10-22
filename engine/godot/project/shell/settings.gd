@@ -45,6 +45,7 @@ static var master_volume := 1.0
 static var effects_volume := 4  # the game's Sound Effects setting, 0..6 (g_game+0x88, default 4)
 static var music_volume := 4  # the game's Background setting, 0..6 (g_game+0x80, default 4)
 static var bindings := {}  # action -> [InputEvent]
+static var disc_image := ""  # the user's disc image (.cue or .bin), read in place
 
 
 static func load_and_apply() -> void:
@@ -58,6 +59,7 @@ static func load_and_apply() -> void:
 	square_stick = bool(cf.get_value("input", "square_stick", false)) if ok else false
 	master_volume = float(cf.get_value("audio", "master", 1.0)) if ok else 1.0
 	effects_volume = int(cf.get_value("audio", "effects", 4)) if ok else 4
+	disc_image = String(cf.get_value("disc", "image", "")) if ok else ""
 	music_volume = int(cf.get_value("audio", "music", 4)) if ok else 4
 	bindings.clear()
 	for a in ACTIONS:
@@ -77,6 +79,7 @@ static func save() -> void:
 	cf.set_value("audio", "master", master_volume)
 	cf.set_value("audio", "effects", effects_volume)
 	cf.set_value("audio", "music", music_volume)
+	cf.set_value("disc", "image", disc_image)
 	for a in bindings:
 		cf.set_value("bindings", a, encode(bindings[a]))
 	cf.save(PATH)
