@@ -425,10 +425,10 @@ original's every tick, as `engine.py cmp` does.
 | Level | Ticks | Identical to the original | Identical to the Python engine |
 |---|---|---|---|
 | 1:3 | 7,296 | 7,073 (the other 223: impact-spark positions, one hit face at 1658 and 3454) | all |
-| 2:1 | 8,368 | 6,247 (everything to 768; to 6,279 but for one shot's type 31 at 769) | to tick 7,597 |
-| 2:2 | 7,036 | 5,358 (everything to 5,359) | to tick 5,359 |
+| 2:1 | 8,368 | 8,308 (all but one shot's type 31, 60 ticks from 769) | all |
+| 2:2 | 7,036 | 6,113 (everything to 6,114) | to tick 6,114 |
 
-Synced to the Python engine at 8f1b5cf; the left column is the Python engine's own at that commit.
+Synced to the Python engine at 332ca96; the left column is the Python engine's own at that commit.
 The right column compares with the Python engine's latest traces (`build/engine/eng_*.jsonl`).
 Each run parts from it only after both have parted from the original. The trace now also
 carries the on-screen text list and the hit wedges' timers (`texts`, `hud`), which agree
@@ -444,7 +444,13 @@ wherever the entities do. Since eb3c158:
 - the alarm (`alarm.cpp`: op 49 and `level_set(4)`, `alarm_spawn`, `alarm_think` on the vblank
   counter, `alarm_destroy`), and looping sounds restarting (`sound_restart`);
 - the recording's chunk-slot changes apply to the tick drawn at their vblank (they happen in the
-  idle work before the drawing pass), so 2:2 runs to 5,359.
+  idle work before the drawing pass), so 2:2 runs to 5,359;
+- the recorded runs allocate on the seed's own heap too, with the original's refusals when it is
+  full (2:2's explosion(5) at tick 5379 makes nothing); pickups and destructibles take
+  `model_instance_init`'s block (flags 0x157), attachments' models theirs, and the characters'
+  destructors release their attachments' and parts' instances two frames late. 2:1 runs to 8,308;
+- level explosions 0, 5, 7 and 8, and witnesses picked by flag variable 0x109 and tested within
+  the victim's long range: 2:2 runs to 6,114.
 
 ### Why it keeps the original's memory layout
 
@@ -510,10 +516,9 @@ From the disc it matches the seed-dump run exactly: **7,073 of 7,296 ticks ident
 d337b74: 5,632, as the seed run then). RAM differs from the seed run by a constant 35,996 words at ticks
 1000..1003: the unbuilt library and HUD state above, which nothing in the logic reads.
 
-2:1 from the disc does better than its seed run: 8,308 of 8,368. The other 60 ticks are one
-shot's type 31 from 769, as in the seed run, but the impact at 6280, whose sparks part the seed
-run, agrees (why the disc start gets that impact right is not known yet). 2:2 has no dump from before its tick 1, so
-the timer and `rand`'s seed come a tick late from the seed: 0 identical (5,358 from the seed dump),
+2:1 from the disc matches its seed run: 8,308 of 8,368. Before the seed runs used the game's heap,
+only the disc run agreed at the impact of tick 6280; now both do. 2:2 has no dump from before its tick 1, so
+the timer and `rand`'s seed come a tick late from the seed: 0 identical (6,113 from the seed dump),
 first difference at tick 2 for both.
 
 ### The view test
@@ -557,7 +562,10 @@ From the disc the engine keeps using the exe's allocator (`GameHeap`, load.h) af
 original's RAM. All eight dumps of the session match on every block's address, size and
 allocation serial (ticks 207, 4675, 5000, 5300, 5600, 5823, 6402, 6943: 32 to 62 blocks each).
 It took one fix: a pickup's entity block has room for its model's hit parts, which it then
-drops.
+drops. With the instance blocks of pickups, destructibles and attachments
+(332ca96's sync), the 21 RAM dumps of 1:3 in the session's capture
+(`build/simcheck/2026-10-19_22-22-43_m1l3`, ticks 53 to 6993) all match on every block, 29 to 51
+blocks each.
 
 ### Clean types for the host (`sim/include/valor/sim/views.h`)
 

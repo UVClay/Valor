@@ -196,6 +196,7 @@ void particles_update(Engine& eng, U s) {
 U burst(Engine& eng, U e) {
     Mem& m = eng.m;
     U p = eng.entity_create(0x23, 5 * 0x48 + 0x30);
+    if (!p) return 0;
     U o = U(m.u32(p + 0x388));
     m.w32(o + 4, 3);
     m.w32(o, 10);
@@ -427,6 +428,7 @@ I grenade_hit_part(Engine& eng, U e, I part, U other, I opart) {
 U explosion_spawn(Engine& eng, U src, I fireballs, I puffs, I spread, I scale, I var0, I damage, I reach, U rec) {
     Mem& m = eng.m;
     U e = eng.entity_create(0x31, (fireballs + puffs + 1) * 0x3C + 0x64, 0, 0, 1);
+    if (!e) return 0;
     m.w32(e + 8, 0x31);
     m.w32(e + 0x294, 0xB4);
     m.w32(e + 0x290, 0xB4);

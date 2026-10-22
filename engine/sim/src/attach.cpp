@@ -4,6 +4,7 @@
 
 #include "valor/sim/audio.h"
 #include "valor/sim/engine.h"
+#include "valor/sim/load.h"
 #include "valor/sim/objects.h"
 #include "valor/sim/simgte.h"
 
@@ -27,6 +28,8 @@ constexpr U G_WEAPONS = 0x80093640;
 U attach_template(I k) { return U(TEMPLATES + 0x3C * k); }
 U attach_entry(Mem& m, U e, I k) { return U(m.u32(e + 0x388) + 0x1C + 0x144 * k); }
 
+// func_8006B1C4 -> model_instance_init: a model on an attachment, its block from the game's heap
+// as the flags ask (0 when refused).
 I instance_set(Engine& eng, U inst, U h, I flags) {
     Mem& m = eng.m;
     U model = model_by_hash(eng, h);
@@ -34,13 +37,19 @@ I instance_set(Engine& eng, U inst, U h, I flags) {
         m.w32(inst, 0);
         return 0;
     }
+    if (eng.gheap) return eng.gheap->instance_init(inst, model, flags, 0) ? 1 : 0;
     m.w32(inst + 4, flags);
     m.w32(inst + 8, model);
     m.w32(inst + 0x2C, m.u32(model + 0x88));
     return 1;
 }
 
-void instance_release(Engine& eng, U inst) {
+// func_8006B234 (no entity): its +4 bit 8 given back, the block freed now or after delay frames.
+void instance_release(Engine& eng, U inst, I delay) {
+    if (eng.gheap) {
+        eng.gheap->instance_release(inst, 0, delay);
+        return;
+    }
     Mem& m = eng.m;
     I f = m.u32(inst + 4);
     if (f & 8) m.w32(inst + 4, f & ~I(8));
@@ -377,7 +386,8 @@ U pickup_spawn(Engine& eng, PickupRec& rec, U kind_hash, U model_hash, U) {
         return 0;
     }
     // entity_create(3, ...): room for the model's hit parts, which the pickup then drops (+0x36 0)
-    U p = eng.entity_create(0x65, m.u16(t + 8), model, 0, -1);
+    U p = eng.entity_create(0x65, m.u16(t + 8), model, 0, -1, 0, 0, false, 0x157);
+    if (!p) return 0;
     m.w16(p + 0x36, 0);
     m.w32(p + 8, 0x65);
     m.w32(p + 0x36C, PICKUP_THINK);

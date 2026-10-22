@@ -98,11 +98,12 @@ public:
     void handles_free_removed();
 
     // -- creating and removing
+    // 0 when the heap refuses; with iflags >= 0 (and the game's heap) model_instance_init's block.
     U entity_create(I etype, I obj_size = 0, U model = 0, U addr = 0, I parts = -1, I channels = 0, I list_n = 0,
-                    bool instance = false);
+                    bool instance = false, I iflags = -1);
     void entity_defaults(U e);
     void instance_init(U e, U model);
-    void model_swap(U e, U model, I flags);
+    bool model_swap(U e, U model, I flags);  // false: the heap refused
     // While the level is built from the disc (load.cpp), the original's heap: model_swap releases
     // the old pose buffer and allocates the new one exactly (model_instance_init).
     std::function<void(U e, U model, I flags)> swap_hook;

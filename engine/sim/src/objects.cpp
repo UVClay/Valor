@@ -92,7 +92,8 @@ U door_spawn(Engine& eng, Record& rec, U model) {
 U spawn_by_type(Engine& eng, I t, U model, Record& rec) {
     Mem& m = eng.m;
     if (t == 0x1770 || t == 0x1778) {
-        U e = eng.entity_create(t, 0, model, 0, -1, 0, 6);
+        U e = eng.entity_create(t, 0, model, 0, -1, 0, 6, false, 0x157);
+        if (!e) return 0;
         U r = rec.addr;
         I cull_v = m.s16(r + 0x5E);
         m.w32(e + 0x294, cull_v);
@@ -243,7 +244,22 @@ void level_explosion(Engine& eng, Ent* sub, I sub_obj, I kind) {
         for (int k = 0; k < 3; k++) m.w32(0x800AB920 + 4 * k, pos[k]);
     }
     auto rd = [&]() { return eng.rand.draw({0x80052F14}); };
-    if (kind == 3) {
+    U rec = sub_obj ? U(m.u32(sub_obj + 4)) : 0;
+    if (kind == 0 || kind == 5) {
+        // an explosion (4 fireballs, 4 puffs, spread 60; scale 1.0, var 0x1000, damage 0x40000,
+        // reach 7) and a burst of sparks; 0 also its sound
+        explosion_spawn(eng, e, 4, 4, 0x3C, 0x10000, 0x1000, 0x40000, 7, rec);
+        I n = ((rd() * 5) >> 15) + 0xF;
+        particles_spawn(eng, pos, 5, n, 0x28, 0x19, 0x50, 0x1E, 0x3FF, 0x3F, 0x3E0, 0xFF, 1, 0x17FFF, 0, 0);
+        if (kind == 0) explosion_sound(eng, e);
+    } else if (kind == 7 || kind == 8) {
+        // a small explosion (6, 10, 15; 0x3000, 0x200, 0x20000, 5) with sparks and smoke; 7 its sound
+        explosion_spawn(eng, e, 6, 0xA, 0xF, 0x3000, 0x200, 0x20000, 5, rec);
+        I n = ((rd() * 3) >> 15) + 2;
+        I smoke = ((rd() * 4) >> 15) + 6;
+        particles_spawn(eng, pos, 1, n, 0x1E, 0x19, 0xF, 0x64, 0x3F4, 0xE0, 0x3E0, 0xFE, 0xF, 0x10000, 1, smoke);
+        if (kind == 7) explosion_sound(eng, e);
+    } else if (kind == 3) {
         I n = ((rd() * 5) >> 15) + 0xF;
         particles_spawn(eng, pos, 5, n, 0x28, 0x19, 0xF, 0x64, 0x3F4, 0xE0, 0x3E0, 0xFE, 0xF, 0x17FFF, 0, 0);
     } else if (kind == 1 || kind == 6) {

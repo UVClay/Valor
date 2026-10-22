@@ -55,7 +55,7 @@ struct PickupRec {
 U attach_template(I k);
 U attach_entry(Mem& m, U e, I k);
 I instance_set(Engine& eng, U inst, U h, I flags);
-void instance_release(Engine& eng, U inst);
+void instance_release(Engine& eng, U inst, I delay = 0);
 I m_hash(Engine& eng, U B);
 void knock_off(Engine& eng, U B, U player, I speed, I vy, I ticks, I drag, I gravity, I bounces, I spin, I action);
 I fall_step(Engine& eng, U B, I feet);

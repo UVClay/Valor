@@ -114,6 +114,9 @@ bool Engine::load(const std::string& seed_path, std::string* err) {
         return false;
     }
     audio = std::make_unique<Audio>(*this);
+    // the game's heap as the seed has it (the allocator's state is in RAM): the engine's blocks
+    // come from the exe's allocator from here on, as in a run from the disc
+    gheap = std::make_unique<GameHeap>(*this);
     logic = std::make_unique<LevelLogic>(*this);
     tick_no = m.u32(G_TICK);
     logic->adopt();
@@ -141,13 +144,9 @@ void Engine::note(const std::string& kind, const std::string& detail) {
 
 U Engine::alloc(I n) {
     if (gheap) {
+        // calloc on the game's heap: 0 when it is full, as the original (the caller makes nothing)
         U a = gheap->calloc(n);
-        if (!a) {
-            std::fprintf(stderr, "the game's heap is full (%lld bytes asked) at tick %lld\n", (long long)n, (long long)tick_no);
-            for (auto& [k, v] : stats)
-                if (k.find("destructor") != std::string::npos || k.rfind("created", 0) == 0) std::fprintf(stderr, "  %s: %lld\n", k.c_str(), (long long)v);
-            std::abort();
-        }
+        if (!a) note("heap full", std::to_string(n) + " bytes");
         return a;
     }
     n = (n + 15) & ~I(15);
@@ -254,11 +253,12 @@ void Engine::handles_free_removed() {
     m.w32(G_SLOTS_USED, used);
 }
 
-U Engine::entity_create(I etype, I obj_size, U model, U addr, I parts, I channels, I list_n, bool instance) {
+U Engine::entity_create(I etype, I obj_size, U model, U addr, I parts, I channels, I list_n, bool instance, I iflags) {
     I nparts = parts < 0 ? (model ? m.u16(model + 0xBE) : 0) : parts;
     I inst_size = (model || instance) ? 0xB0 : 0;
     I size = 0x3CC + obj_size + inst_size + 0x48 * nparts + 2 * 0x3C * channels + 0x1C * list_n;
     U e = addr ? addr : alloc(size);
+    if (!e) return 0;
     if (addr) m.zero(e, 0x3CC);
     U p = e + 0x3CC;
     if (obj_size) {
@@ -294,7 +294,16 @@ U Engine::entity_create(I etype, I obj_size, U model, U addr, I parts, I channel
     m.w32(e + 0x39C, 0);
     entity_defaults(e);
     m.w32(e + 8, etype);
-    if (model) instance_init(e, model);
+    if (model && iflags >= 0 && gheap) {
+        if (!gheap->instance_init(U(m.u32(e + 0x100)), model, iflags, e)) {
+            free(e);
+            char nb[48];
+            std::snprintf(nb, sizeof nb, "instance of %llX", (unsigned long long)etype);
+            note("heap full", nb);
+            return 0;
+        }
+    } else if (model)
+        instance_init(e, model);
     char buf[32];
     std::snprintf(buf, sizeof buf, "created %llX", (unsigned long long)etype);
     stats[buf]++;
@@ -368,14 +377,15 @@ void Engine::instance_init(U e, U model) {
     m.w32(e + 0x2D4, m.u32(model + 0xA0));
 }
 
-void Engine::model_swap(U e, U model, I flags) {
+bool Engine::model_swap(U e, U model, I flags) {
     if (swap_hook) {
         swap_hook(e, model, flags);
-        return;
+        return true;
     }
     if (gheap) {
-        gheap->model_swap(e, model, flags);
-        return;
+        if (gheap->model_swap(e, model, flags)) return true;
+        note("heap full", "model swap");
+        return false;
     }
     U inst = U(m.u32(e + 0x100));
     m.w32(inst + 0x6C, 0x80);
@@ -437,6 +447,7 @@ void Engine::model_swap(U e, U model, I flags) {
         m.w32(q + 0x18, inst);
         m.w32(q + 0x3C, 0);
     }
+    return true;
 }
 
 void Engine::remove(U e, const std::string& why) {

@@ -2018,12 +2018,15 @@ void GameHeap::frame() {
     }
 }
 
-void GameHeap::model_swap(U e, U model, I flags) {
+bool GameHeap::model_swap(U e, U model, I flags) {
     Loader& ld = impl_->ld;
     U inst = U(ld.m.u32(e + 0x100));
     ld.instance_release(inst, e, 0);
-    ld.instance_init(inst, model, flags, e);
+    return ld.instance_init(inst, model, flags, e) != 0;
 }
+
+bool GameHeap::instance_init(U inst, U model, I flags, U e) { return impl_->ld.instance_init(inst, model, flags, e) != 0; }
+void GameHeap::instance_release(U inst, U e, I delay) { impl_->ld.instance_release(inst, e, delay); }
 
 void GameHeap::tsp_unload(I slot) {
     Mem& m = impl_->ld.m;

@@ -39,7 +39,11 @@ public:
     void free(U p);
     void free_later(U p, I frames);  // 0x8008A4F8 (frames 0: now)
     void frame();                    // 0x8008A580
-    void model_swap(U e, U model, I flags);
+    bool model_swap(U e, U model, I flags);  // false: the heap refused the instance's block
+    // model_instance_init (0x8006A96C) on an instance (entity e or 0): false when its block
+    // can't be had; 0x8006B234: its block (and e's parts' instances) given back after delay frames.
+    bool instance_init(U inst, U model, I flags, U e);
+    void instance_release(U inst, U e, I delay);
     // The removal's part of the destructors (+0x384) for an entity on the heap: its instance's
     // pose buffers and its brain released, its block freed two frames late.
     void destroy(U e);

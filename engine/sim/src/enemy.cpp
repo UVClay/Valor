@@ -1,6 +1,7 @@
 // Soldiers and dogs (docs/re/enemies.md, soldier.md, enemy_types.md): spawning into the character
 // pool, the think around the scripts (tools/sim/engine_enemy.py). The brain is brain.cpp.
 #include "valor/sim/engine.h"
+#include "valor/sim/load.h"
 #include "valor/sim/objects.h"
 #include "valor/sim/scripts.h"
 
@@ -315,21 +316,24 @@ U dog_spawn(Engine& eng, Record& rec, U model) {
     return e;
 }
 
+// 0x80052AF4: hit this tick (+0x38 0x20/0x40): the victim's handle, up to five other soldiers and
+// dogs in list order whose flag variable 0x109 is set (the scripts' "can witness"), as handles,
+// and the victim's position (enemy_types.md, Witnesses).
 void witness_report(Engine& eng, U e) {
     Mem& m = eng.m;
     if (!(m.u32(e + 0x38) & 0x60)) return;
-    m.w32(WITNESS_VICTIM, e);
-    for (int k = 0; k < 3; k++) m.w16(WITNESS_SPOT + 2 * k, S16(m.s32(e + 0x20C + 4 * k) >> 16));
+    m.w32(WITNESS_VICTIM, m.u32(e));
+    m.w8(WITNESS_COUNT, 0);
     I n = 0;
     for (U o : eng.entities()) {
-        if (n >= 5) break;
         I t = m.s32(o + 8);
-        if (o != e && (t == SOLDIER || t == DOG) && !(m.u32(o + 0xC) & 0x20080000)) {
-            m.w32(WITNESSES + 4 * n, o);
+        if ((t == SOLDIER || t == DOG) && o != e && n < 5 && (m.u32(o + 0xEC) & 0x200)) {
+            m.w32(WITNESSES + 4 * U(n), m.u32(o));
             n++;
+            m.w8(WITNESS_COUNT, n);
         }
     }
-    m.w32(WITNESS_COUNT, n);
+    for (U k = 0; k < 3; k++) m.w16(WITNESS_SPOT + 2 * k, m.s16(e + 0x20E + 4 * k));
 }
 
 void scripts(Engine& eng, U e, I hv) {
@@ -440,20 +444,33 @@ void dog_think(Engine& eng, U e) {
     m.w32(obj, drops_update(eng, e, obj + 0x49C));
 }
 
+// 0x80052C38, once per entities_update: the last witness taken off; both alive, it tests whether
+// it sees the victim (sight_test with blockers) within the victim's long range (its brain +0xB2);
+// if so +0x3C 0x10000.
 void witness_check(Engine& eng) {
     Mem& m = eng.m;
-    I n = m.s32(WITNESS_COUNT);
+    I n = m.u8(WITNESS_COUNT);
     if (n <= 0) return;
-    n--;
-    m.w32(WITNESS_COUNT, n);
-    U w = U(m.u32(WITNESSES + 4 * n)), v = U(m.u32(WITNESS_VICTIM));
-    if (!w || !v) return;
-    if (sees(eng, w, v, true)) m.w32(w + 0x3C, m.u32(w + 0x3C) | 0x10000);
+    I vh = m.u32(WITNESS_VICTIM), wh = m.u32(WITNESSES + 4 * U(n - 1));
+    U v = eng.resolve(vh), w = eng.resolve(wh);
+    if (v && w && !eng.handle_dead(vh) && !eng.handle_dead(wh) && sight_test(eng, w, v, m.s16(U(m.u32(v + 0x38C)) + 0xB2), true))
+        m.w32(w + 0x3C, m.u32(w + 0x3C) | 0x10000);
+    m.w8(WITNESS_COUNT, n - 1);
+}
+
+// 0x800506B0, from the characters' destructors: every attachment's instance released two frames
+// late (its model's first-user bit given back); then the character's own instance's parts.
+static void attachments_release(Engine& eng, U e) {
+    Mem& m = eng.m;
+    U obj = U(m.u32(e + 0x388));
+    for (I k = 0; k < imax(0, m.s32(obj + 0x18)); k++) instance_release(eng, obj + 0x1C + 0x144 * U(k) + 0x94, 2);
+    if (m.u32(e + 0x100) && eng.gheap) eng.gheap->instance_release(U(m.u32(e + 0x100)), e, 2);
 }
 
 void enemy_destroy(Engine& eng, U e) {
     Mem& m = eng.m;
     m.w32(G_SOLDIER_COUNT, imax(m.s32(G_SOLDIER_COUNT) - 1, 0));
+    attachments_release(eng, e);
     if (m.u32(e + 0x100)) pose_release(eng, U(m.u32(e + 0x100)));
     U b = U(m.u32(e + 0x38C));
     if (b) eng.free(b);
@@ -464,6 +481,7 @@ void dog_destroy(Engine& eng, U e) {
     Mem& m = eng.m;
     m.w32(G_SOLDIER_COUNT, imax(m.s32(G_SOLDIER_COUNT) - 1, 0));
     m.w32(G_DOG_COUNT, imax(m.s32(G_DOG_COUNT) - 1, 0));
+    attachments_release(eng, e);
     if (m.u32(e + 0x100)) pose_release(eng, U(m.u32(e + 0x100)));
     U b = U(m.u32(e + 0x38C));
     if (b) eng.free(b);

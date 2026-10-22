@@ -196,9 +196,13 @@ U projectile_create(Engine& eng, U owner, I etype, I model, I speed, I bone_a, I
     if (model != -1) {
         // entity_create(1, ..., the model, 0x147, 2): an instance, model_instance_init (its parts)
         p = eng.entity_create(etype, extra + 0x90, 0, 0, 2, 0, 0, true);
-        eng.model_swap(p, U(model), 0x147);
+        if (p && !eng.model_swap(p, U(model), 0x147)) {
+            eng.free(p);
+            p = 0;
+        }
     } else
         p = eng.entity_create(etype, extra + 0x90, 0, 0, 2);
+    if (!p) return 0;  // the heap refused
     U o = U(m.u32(p + 0x388));
     m.w32(p + 0x36C, PROJECTILE_THINK);
     m.w32(p + 0x370, PROJECTILE_DRAW);
@@ -366,6 +370,7 @@ I decal(Engine& eng, U rec) {
 U impact_effect_spawn(Engine& eng, const V3& pos, const V3&, const I c0[3], const I*, I n, I life) {
     Mem& m = eng.m;
     U p = eng.entity_create(0x23, 0x130);
+    if (!p) return 0;
     U o = U(m.u32(p + 0x388));
     m.w8(o + 1, life);
     m.w8(o, n);
@@ -892,6 +897,7 @@ U particles_spawn(Engine& eng, const V3& pos, I spread, I n, I vel_xz, I vel_y, 
     Mem& m = eng.m;
     I size = n * 0x34 + 0x64 + (smoke_on ? smoke_n * 0x34 : 0);
     U p = eng.entity_create(0x31, size);
+    if (!p) return 0;
     U o = U(m.u32(p + 0x388));
     auto rd = [&]() { return eng.rand.draw({0x80073BA8}); };
     m.w32(p + 8, 0x31);
@@ -1007,6 +1013,7 @@ U casing_spawn(Engine& eng, U owner, const V3& pos, I pitch) {
     Mem& m = eng.m;
     if (m.u32(G_CASINGS) >= 5) return 0;
     U p = eng.entity_create(0x66, 0xC, 0, 0, -1, 0, 0, true);
+    if (!p) return 0;
     U o = U(m.u32(p + 0x388));
     m.w32(p + 8, 0x66);
     m.w32(p + 0xC, 0x07020000);
