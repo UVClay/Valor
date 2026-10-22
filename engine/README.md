@@ -266,7 +266,9 @@ through `ValorShell`:
 - **Password**: the 61 passwords of `password_enter`, applied to the campaign (unlocks, cheats);
   unknown and refused words say so.
 - **Briefing**: the level's pages from the disc (`data\scr2\mbrief\mM\L.rsc`), each a left and
-  a right 8-bit TIM of 256 × 240, shown side by side at 4:3. Cross or a click turns the page;
+  a right 8-bit TIM of 256 × 240, shown side by side at 4:3. M is the campaign's slot + 1, not
+  the mission's directory (by the pages' text: `m6` is MSN7's Mountain Pass, `m8` MSN9's Buzz
+  Bomb Assembly, `m7` a near-copy of `m8` for the absent MSN8). Cross or a click turns the page;
   after the last one (or Circle/Esc) the level starts.
 - **The level** runs on the engine from the campaign's save data (`start_engine_game`: the row's
   carried ammo and health, the cheats). Dying fades and restarts in place as before, and the
@@ -292,6 +294,16 @@ says, and a save loads back. `--shell-auto=N
 --end-every=T` plays N levels unattended: `--shell-auto=4 --end-every=60` goes through the
 briefings of 1:1, 1:2, 1:3 and 2:1 (three pages each), each level, its results and CONTINUE,
 then saves "MOH-TESTER (16%)". `--shell-brief` opens the first briefing (for screenshots).
+After the last slot's last level CONTINUE ends the campaign (`campaign_advance` stays put) and
+returns to the title; the game shows the mission's ending film there, which isn't played.
+
+The whole campaign through the front end: `--shell-auto=26 --shell-cheats=0xC0 --end-every=3000
+--aimbot --walk=100000` (unlimited ammo and no damage, turned on with SMPSMDMILK and URLINGAMBE as
+a player would) plays all 24 levels for 3,001 ticks each, 1:1 to 9:4. It shows every briefing
+(three pages each) and the results, continues, and ends with "the campaign is complete", the
+Bronze Star and a save. There was no error, crash or hang. Each level took 1.0 to 1.6 s of wall
+time headless.
+
 With `--aimbot --walk=100000`, `--shell-auto=3 --end-every=2700` plays 1:1, 1:2 and 1:3 for
 2,701 ticks each with no error. 1:1: 64 shots, a kill. 1:2: none, its carried ammo is spent.
 1:3: none, it walks into the wall ahead of its start. At `--end-every=700`, 1:2 has 6 shots and

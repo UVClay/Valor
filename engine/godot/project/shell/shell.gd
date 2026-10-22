@@ -32,7 +32,10 @@ var page_box: AspectRatioContainer
 var pages := []
 var page := 0
 var auto := 0  # --shell-auto=N (a test): a new campaign played through N levels on its own (with
-# --end-every), each briefing skipped, CONTINUE after each, a save at the end
+# --end-every), each briefing skipped, CONTINUE after each, a save at the end; --shell-cheats=MASK
+# turns the game's cheats on as a player would (SMPSMDMILK, URLINGAMBE unlock them: 0x40 unlimited ammo,
+# 0x80 no damage)
+var auto_clock := 0
 
 
 func setup(m: Node3D, data_dir: String) -> void:
@@ -76,6 +79,11 @@ func setup(m: Node3D, data_dir: String) -> void:
 	show_title()
 	if auto > 0 or main.args.has("shell-brief"):  # tests: a new campaign's first briefing
 		shell.new_game("TESTER")
+		if main.args.has("shell-cheats"):
+			shell.password("SMPSMDMILK")  # arms URLINGAMBE (shell.md, Passwords)
+			shell.password("URLINGAMBE")
+			shell.set_cheats_on(String(main.args["shell-cheats"]).hex_to_int() if String(main.args["shell-cheats"]).begins_with("0x") else int(main.args["shell-cheats"]))
+			print("Valor shell: cheats on %X" % shell.get_cheats_on())
 		started = true
 		call_deferred("briefing", 0, 0)
 
@@ -216,7 +224,9 @@ func show_load() -> void:
 func briefing(slot: int, level: int) -> void:
 	pending_level = {"slot": slot, "level": level}
 	var where: Dictionary = shell.begin_level(slot, level)
-	pages = shell.load_briefing(data, int(where.mission), int(where.level))
+	# the briefings' folders go by the campaign's slot, not the mission's directory: mbrief\m6 is
+	# MSN7's (Mountain Pass), m8 MSN9's (Buzz Bomb Assembly), m7 the absent MSN8's
+	pages = shell.load_briefing(data, slot + 1, int(where.level))
 	page = 0
 	if pages.is_empty():
 		play()
@@ -249,6 +259,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func play() -> void:
+	auto_clock = Time.get_ticks_msec()
 	visible = false
 	page_box.visible = false
 	playing = true
@@ -288,7 +299,7 @@ func level_over(res: Dictionary, game_after: PackedByteArray) -> void:
 	button("WAR ROOM", post_war_room)
 	if auto > 0:
 		var now: Dictionary = main.game.get_state()
-		print("Valor shell: ended at tick %d at (%d, %d, %d)" % [int(now.get("tick", 0)), int(now.get("x", 0)), int(now.get("y", 0)), int(now.get("z", 0))])
+		print("Valor shell: ended at tick %d at (%d, %d, %d) after %.1f s" % [int(now.get("tick", 0)), int(now.get("x", 0)), int(now.get("y", 0)), int(now.get("z", 0)), (Time.get_ticks_msec() - auto_clock) / 1000.0])
 		print("Valor shell: " + "; ".join(lines))
 		auto -= 1
 		if auto > 0:
@@ -304,6 +315,16 @@ func level_over(res: Dictionary, game_after: PackedByteArray) -> void:
 func post_continue() -> void:
 	commit(true)
 	var n: Dictionary = shell.get_next()
+	if int(n.slot) == int(pending_level.slot) and int(n.level) == int(pending_level.level):
+		# campaign_advance stays on the last slot's last level: the campaign is over (the game
+		# plays the mission's ending film, m_movie_g8; the films aren't shown here)
+		show_title("THE CAMPAIGN IS COMPLETE")
+		if auto > 0:
+			print("Valor shell: the campaign is complete")
+			post_save()
+			print("Valor shell: %s (medals %X)" % [info.text, shell.get_medals()])
+			get_tree().quit()
+		return
 	briefing(int(n.slot), int(n.level))
 
 
