@@ -244,6 +244,15 @@ func _physics_process(_delta: float) -> void:
 	# moving the mouse up (negative y) looks up.
 	turn += int(mouse_turn * 65536.0)
 	var pitch_role := int(mouse_pitch * 2.0 * 65536.0)
+	# The presentation layer's gamepad (present/present.gd): its buttons, and its sticks through the
+	# game's analog curve as roles.
+	var pad: Dictionary = get_node("/root/Present").pad_input() if has_node("/root/Present") else {}
+	var pad_buttons: int = pad.get("buttons", 0)
+	if pad.has("roles"):
+		fwd += pad.roles[0]
+		strafe += pad.roles[1]
+		pitch_role += pad.roles[2]
+		turn += pad.roles[3]
 	sent_turn = mouse_turn
 	sent_pitch = mouse_pitch
 	mouse_turn = 0.0
@@ -256,7 +265,7 @@ func _physics_process(_delta: float) -> void:
 		while n < 50 and game.get_state().tick < skip_to - 1:
 			game.engine_tick(0, 0, 0, 0, 0)
 			n += 1
-		var buttons := held_buttons() | tapped
+		var buttons := held_buttons() | tapped | pad_buttons
 		if aimbot:
 			var aim := aim_at_nearest()
 			if aim[0]:
@@ -268,7 +277,7 @@ func _physics_process(_delta: float) -> void:
 					buttons |= PAD_CROSS
 		game.engine_tick(buttons, fwd, strafe, turn, pitch_role)
 	else:
-		game.tick(held_buttons() | tapped, fwd, strafe, turn, pitch_role)
+		game.tick(held_buttons() | tapped | pad_buttons, fwd, strafe, turn, pitch_role)
 	tapped = 0
 	cur_eye = game.get_eye_position()
 	if first_tick:  # nothing to blend from before the first tick (the engine's camera starts at 0)

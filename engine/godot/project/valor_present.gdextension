@@ -1,0 +1,9 @@
+[configuration]
+
+entry_symbol = "valor_present_init"
+compatibility_minimum = "4.7"
+
+[libraries]
+
+linux.debug.x86_64 = "res://bin/libvalor_present.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://bin/libvalor_present.linux.template_release.x86_64.so"
