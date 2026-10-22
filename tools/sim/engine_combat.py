@@ -710,6 +710,13 @@ def enemy_weapon(eng, e):
             pull_back_enemy(m, p, e)
         return p
 
+    rocket = m.s32(w + 4) == 0x1773
+
+    def rocket_flight(p, speed):
+        m.w32(p + 0x200, speed)
+        o = m.u32(p + 0x388)
+        m.w16(o + 0x3A, (m.u16(o + 0x3A) * 2) & 0xFFFF)
+
     def middle():
         return [m.s16(player + 0x20E), s16(s32(m.s32(player + 0x210) - (m.s32(player + 0x2D4) >> 1)) >> 16),
                 m.s16(player + 0x216)]
@@ -721,7 +728,19 @@ def enemy_weapon(eng, e):
             m.w8(obj + 0x12, m.u8(obj + 0x12) - 1)
     elif state == 2:
         p = shoot(middle())
-        if p:
+        if p and rocket:
+            # a Panzerfaust round aimed at the player: the spread both ways (no crouch case),
+            # speed 130, life doubled, its sound (class 3)
+            spread(p, 0x228)
+            spread(p, 0x22C)
+            rocket_flight(p, 0x820000)
+            snd = m.s32(w + 0x28)
+            if snd >= 0:
+                bank = m.s32(w + 0x2C)
+                if bank < 0:
+                    bank = m.u16(m.u32(m.u32(e + 0x100) + 8) + 0xC8)
+                eng.audio.play(s16(bank), snd, e, 0x10000, 0, 0x10000, 0x1800, 0, 0, 3, 0)
+        elif p:
             if crouched:
                 a = m.s32(p + 0x228)
                 d = (E >> 1) if E == 0 else ((-E) >> 1) + ((rd() * E) >> 15)
@@ -748,10 +767,16 @@ def enemy_weapon(eng, e):
             from engine_sense import angle_to
             if abs(angle_to(m, e, player)) < 0x15E or state in (3, 4):
                 if state == 3:
-                    shoot(None)
+                    p = shoot(None)
+                    if p and rocket:
+                        rocket_flight(p, 0x960000)
                 else:
                     p = shoot(middle())
-                    if p:
+                    if p and rocket:
+                        spread(p, 0x228)
+                        spread(p, 0x22C)
+                        rocket_flight(p, 0x960000)
+                    elif p:
                         if crouched:
                             m.w32(p + 0x228, s32(m.s32(p + 0x228) + ((((rd() * 0x28) >> 15) - 0x14) << 16)))
                             m.w32(p + 0x22C, s32(m.s32(p + 0x22C) + ((((rd() * 0xB4) >> 15) - 0x5A) << 16)))

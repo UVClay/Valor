@@ -371,8 +371,12 @@ the weapon attachment (weapon block +0x1C), 0, 0, damage, 0, 0, 0x13F4, flags A 
 0x08000401)`: its start and direction come from the weapon model's two vertices through the
 attachment's drawn matrix (combat.md, Shots not aimed at the aim point), then `0x800514E8`
 pulls the start back along the bullet's forward column by d - d/4 (d = max + min/4 of the
-horizontal offsets from the shooter) and sets object `+0x38` 0x2000. Rockets (type 0x1773):
-not reached in 1:3 (speed 130 (state 2) or 150, life doubled).
+horizontal offsets from the shooter) and sets object `+0x38` 0x2000. **Rockets** (weapon type
+0x1773, the Panzerfaust): `rocket_spawn(enemy, W+8, W+0xC, target or none, no attachment,
+0x13F1, flags A 0x800, B 0x10000, mask 0x08000451)` (player.md) with no pull-back; state 2: the
+error on pitch and yaw (±E, no crouched case), speed 130 (0x820000), life doubled, and the weapon
+sound (class 3) at once; states 1 and 4: the error, speed 150, life doubled; state 3: speed 150,
+life doubled (then the common flash, sound and round count). Checked on a 7:3 monkey tape.
 
 The brain's `+0xB0` and `+0xB2` (1500 and 3000 for most soldiers) are the ranges `query` tests
 (sight, and the second, long sight range of queries 0x10/0x12 and the witness check; hearing uses `+0xB0`).

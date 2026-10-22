@@ -371,7 +371,8 @@ For a character: `bullet_touch` returns 0 (its exact test `0x8004B624` needs pla
 `+0x2EE`, which characters don't have), the bullet's hit_part (`0x80043E38`) removes the bullet
 and returns 1 unless the entity is its shooter's (`handle_same(obj+0x54)`), another projectile
 (0x13F0..0x13F9) or type 0x25, and the victim's hit_part applies the damage (below). Explosive
-rounds (obj+0x38 & 0x100) explode there (`explosion_spawn(.., 6, 6, 75, ..)`). An object with
+rounds (obj+0x38 & 0x100) explode there (the normal `+0x364..` zeroed, `explosion_spawn(round,
+6, 6, 75, 1.0, 0x1000, 4.0, 5, none)`, `explosion_sound`, the round removed; no hit sound). An object with
 plane shapes is hit through `bullet_touch` (moved to the hit point, removed; type 0x1402
 rings); type 0x1777 is damaged by its own touch handler and the bullet flies on.
 

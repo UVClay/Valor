@@ -1252,7 +1252,14 @@ def projectile_hit_part(eng, e, part, other, opart):
     from engine_combat import damage_from_hit
     damage_from_hit(eng, e, part, other, opart)
     if m.u16(o + 0x38) & 0x100:
-        eng.note("explosive round's hit not implemented")
+        # an explosive round (a rocket): the explosion (6, 6, 75) with no normal, its sound
+        from engine_explosion import explosion_spawn, explosion_sound
+        for k in range(3):
+            m.w16(e + 0x364 + 2 * k, 0)
+        explosion_spawn(eng, e, 6, 6, 0x4B, 0x10000, 0x1000, 0x40000, 5, 0)
+        explosion_sound(eng, e)
+        eng.remove(e, "explosive round hit")
+        return 1
     if t == 0x1402:
         snd = (eng.rand.draw(*FN["hit"]) >> 15) + 0xC
         eng.audio.play(0, snd, e, 0x20000, 0, 0x10000, 0x4CCD, 0, 0, 0, 0)
