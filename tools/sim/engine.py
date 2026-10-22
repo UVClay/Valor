@@ -782,7 +782,8 @@ def level_lines(trace, feed, level):
     """The original's trace lines of one level (the marks split them)."""
     marks = feed.marks
     i = [k for k, (v, l) in enumerate(marks) if l == level][0]
-    lo, hi = marks[i][0], marks[i + 1][0] if i + 1 < len(marks) else 1 << 40
+    # the mark (the level's first 3D drawn) can come a vblank after its first tick
+    lo, hi = marks[i][0] - 4, marks[i + 1][0] - 4 if i + 1 < len(marks) else 1 << 40
     return [d for d in trace if lo <= d["vblank"] < hi]
 
 
