@@ -166,7 +166,7 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
 - chunks stream as the original streams them: entering a streaming record (class 0x4D078F23)
   runs `chunk_stream`, and so do the idle jobs 2 and 3. The record's chunks that aren't loaded
   replace the slots it doesn't list, one read at a time. The slot being read is left out of
-  collision until the read ends. A read takes 125 frames, an approximation (below). In a
+  collision until the read ends. A read ends at the second music refill after its request (below). In a
   recorded run from the disc the same logic
   runs, with the reads ending when the CD's did. The slot table matches the original's at the
   dumps of ticks 4675, 5000 and 6943, and so do the slots' parsed headers. The chunk files'
@@ -175,10 +175,10 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
 
 ### Live play's approximations
 
-Two timings in live play are fixed numbers where the original's depend on things the engine
-doesn't run: the CD drive and the CPU's time.
+Two timings in live play depend on things the engine doesn't run: the CD drive and the CPU's
+time. The chunk reads now follow the original's rule; the idle jobs stay a fixed number.
 
-**The chunk read (125 frames).** The 1:3 recording's timing log watches the loading slot
+**The chunk read: the music's refills.** The 1:3 recording's timing log watches the loading slot
 (`0x800AA184`) through 18 reads: 223 to 388 vblanks each (median 287), and one of 658. The
 chunks are 71 to 85 KB (35 to 42 sectors), which a double-speed drive reads in about 16 vblanks,
 so the files' sizes don't explain the times, and a fit to size would not help. The read's own
@@ -191,12 +191,25 @@ code does:
 - Only the music's refill (`0x80049854`, called from `music_transfer_done` once both 0x5000-byte
   ring halves have gone to the SPU) sets that flag, after it asks for its 20 sectors.
 
-So a chunk is read just after a music refill and finishes at the refill after that. The refills
-come every two ring halves: 2 × 35,840 samples at 22,050 Hz = 3.25 s = 195 vblanks. That predicts
-195 to 390 vblanks per read, and 17 of the 18 fall in that window (223 to 388). The 658 isn't
-explained yet. **A better model exists:** in live play, start the music's refill clock when the
-level starts its track (`level_set(1, 1)`), and end each read at the second refill after its
-request. The 125 frames (250 vblanks) sit in the window, near its middle.
+So a chunk is read just after a music refill and finishes at the refill after that. A refill
+comes every two ring halves, 2 × 35,840 samples at 22,050 Hz = 3.2508 s. At the PS1's NTSC field
+rate of 59.826 Hz (not 59.94) that is 194.48 vblanks, counted from the music's start and stopped
+while paused (the pause zeroes the music voice's pitch, so the ring doesn't drain). The
+recording bears this out:
+- each read ends 0 to 3 vblanks after a refill on that clock, from the level's start;
+- 1:3's six reads hold that phase over 7,400 vblanks. With 59.94 Hz's 194.85 it would drift
+  14 vblanks, which is what the first fit showed;
+- the phase jumps in 2:1 and 2:2 (79.5, 6.5 and 126.1 vblanks) equal the paused time between the
+  reads, mod 194.48 (81.6, 7.5, 128.0: the frame log's frames with no tick);
+- 17 of the 18 reads take one to two refills (223 to 388 vblanks, against 194.5 to 389);
+- the 658 also ends on the clock but waited two refills more (why is not known).
+
+**Live play uses it** (`Engine::refill_after`): the music's start (`music_start`, at the end of
+`level_start`) sets the clock. A read starts at the first refill after its request and ends at
+the next one. The live engine's vblanks don't run while Godot is paused, so the pause is covered.
+A level with no music would have no refills, and the original's reads would never run; the
+engine then counts from vblank 0. On 2:1 (`coretest --live 2:1 --aimbot --forward -0x22DD00`) the
+first read runs from tick 48 to tick 195: 294 vblanks, the first refill at 194.5, the second at 389.
 
 **The idle jobs (1 + 189 a frame).** `frame_wait_vblank` runs idle jobs until the second vblank,
 so their number depends on how long the frame's work took. 189 is the 1:3 recording's median for

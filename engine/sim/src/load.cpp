@@ -1820,6 +1820,7 @@ void Loader::music_start() {
     m.w32(s + 0x14, m.u32(s + 0x18));
     stream();
     m.w32(0x800939F0, 1);
+    eng.music_vblank = eng.vblank;  // the refills' clock (Engine::refill_after)
     note("music_start: the SPU side (the ring's two halves, voice 0) not modelled");
 }
 

@@ -120,7 +120,10 @@ public:
     // record last entered, the read's end at a frame's start (0x8008C798), the collision slots
     // following the slot table.
     void chunk_stream();
-    I stream_frames_left = 0, stream_slot = -1;
+    I stream_slot = -1;
+    double stream_done = 0;   // live: the vblank the read under way ends (the music's refills)
+    I music_vblank = -1;      // the vblank the level's music started (music_start), -1 none
+    double refill_after(double v) const;
     void chunks_apply();
     void stream_end();
     // level_restart (0x800624AC), for live play after a death (the level flags' bit 2): every

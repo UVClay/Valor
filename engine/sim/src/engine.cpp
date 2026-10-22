@@ -1,5 +1,6 @@
 #include "valor/sim/engine.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -668,17 +669,30 @@ void Engine::chunks_apply() {
     if (0 <= ld && ld < 4) world.w.slots[size_t(ld)] = nullptr;
 }
 
-// A chunk's read: in the session the four reads took 244 to 353 vblanks each, the music's
-// reads sharing the CD; live play takes 250 (125 frames).
-constexpr I STREAM_READ_FRAMES = 125;
+// The music's refills pace the chunk reads (README, Live play's approximations). The CD read
+// callback (0x800493A8) issues the chunk's read (stream channel 0, at most 50 sectors: the whole
+// chunk) only when 0x800939F0 is set, and only the music's refill (0x80049854, channel 1, 20
+// sectors) sets it; the callback ends the read when nothing is left, at the next refill. A
+// refill comes every two 0x5000-byte ring halves: 2 x 35,840 samples at 22,050 Hz = 3.2508 s =
+// 194.48 vblanks at the PS1's 59.826 Hz, counted from the music's start and stopped while paused
+// (the ring's pitch is 0). In the session every read but one ends 0 to 3 vblanks after such a
+// refill, and the phase shifts between them equal the paused time; one took 658 (three refills).
+constexpr double REFILL_VBLANKS = 2.0 * 35840.0 / 22050.0 * 59.826;
+
+// The first refill after vblank v (from the music's start; without music, from the level's).
+double Engine::refill_after(double v) const {
+    double t0 = music_vblank >= 0 ? double(music_vblank) : 0.0;
+    if (v < t0) return t0;
+    return t0 + (std::floor((v - t0) / REFILL_VBLANKS) + 1.0) * REFILL_VBLANKS;
+}
 
 // game_frame: a chunk read that has ended is parsed and its slot opened (0x8008C798).
-// Live play counts the read's frames down; a recorded run ends it when the CD did (the timing
-// log clears the loading slot).
+// Live play ends it at the second refill after its request (it starts at the first); a
+// recorded run ends it when the CD did (the timing log clears the loading slot).
 void Engine::stream_end() {
     if (!gheap || stream_slot < 0) return;
     if (live_view) {
-        if (--stream_frames_left > 0) return;
+        if (double(vblank) < stream_done) return;
     } else if (m.s32(G_CHUNK_LOADING) != -1)
         return;
     gheap->tsp_load(m.s32(0x80098970 + 4 * stream_slot), stream_slot);
@@ -741,7 +755,7 @@ bool Engine::load_next(const std::vector<uint8_t>& game, std::string* err) {
     m.w8(0x80093B78, 1);
     m.w32(G_VBL_TIMER, timer);
     stream_slot = -1;
-    stream_frames_left = 0;
+    stream_done = 0;
     start_live(view);
     level_changes++;
     stats["level transitions"]++;
@@ -792,7 +806,7 @@ void Engine::level_restart() {
     handles_free_removed();
     gheap->level_start();
     stream_slot = -1;
-    stream_frames_left = 0;
+    stream_done = 0;
     chunks_apply();
     restarts++;
     stats["level restarts"]++;
@@ -844,7 +858,7 @@ void Engine::chunk_stream() {
     if (gheap) gheap->tsp_unload(slot);
     m.w32(G_CHUNK_LOADING, slot);  // tsp_load_async (0x8008C718): the read under way
     m.w32(0x80098970 + 4 * slot, file);
-    stream_frames_left = STREAM_READ_FRAMES;
+    stream_done = refill_after(double(vblank)) + REFILL_VBLANKS;
     stream_slot = slot;
     stats["chunk reads"]++;
     if (live_view) chunks_apply();
