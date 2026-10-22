@@ -2049,6 +2049,7 @@ void GameHeap::destroy(U e) {
         m.w32(o + 0x2C, 1);
         d = (m.u16(o + 0x38) & 0x80) ? 0x8006A318 : 0x8006A37C;
     }
+    if (d == 0x8005F008) d = 0x8006A318;  // the alarm's: its own part (alarm_destroy), then this
     bool instance = d == 0x8006A37C || d == 0x8007BA00 || d == 0x8007192C;
     if (instance && m.u32(e + 0x100)) ld.instance_release(U(m.u32(e + 0x100)), e, 2);
     if (d == 0x8006A318 || instance) {

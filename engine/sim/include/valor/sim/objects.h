@@ -170,6 +170,13 @@ void ammo_hud_init(Engine& eng, U e);             // 0x80046874: the icon quad, 
 void hit_indicator(Engine& eng, U victim, U attacker);  // 0x80060FC4
 void hit_wedges(Engine& eng);                     // 0x80060B04, every drawn frame
 
+// The alarm (alarm.cpp; engine_alarm.py).
+constexpr U ALARM_THINK = 0x8005EDF8;
+void op_alarm(Engine& eng, U e, I node, I sound, I pitch, I pspread, I volume, I vspread, I bank);  // op 49
+void alarm_from_level(Engine& eng, I nid);  // level_set(4, id)
+void alarm_think(Engine& eng, U e);
+void alarm_destroy(Engine& eng, U e);
+
 // Grenades and explosions (grenade.cpp; engine_grenade.py, engine_explosion.py).
 I dist2d_approx(Mem& m, U a, U b);
 U grenade_spawn(Engine& eng, U owner, U model_hash, I bone_a, I bone_b, I fuse, I speed, U off_a, U off_b);

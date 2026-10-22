@@ -37,9 +37,12 @@ bool Collision::load(Engine& eng, const std::string& data_dir, const std::string
     return true;
 }
 
+// The table as the original had it while running the frame at vblank vb. The watch logs each
+// frame's drawing pass, and the slots change in the idle work before it (chunk_stream from
+// frame_idle_job, tsp_parse): changes logged at vb apply.
 void Collision::at(I vb) {
     bool changed = false;
-    while (i_ < events_.size() && events_[i_].vblank < vb) {
+    while (i_ < events_.size() && events_[i_].vblank <= vb) {
         const Event& e = events_[i_];
         if (e.name == 0) {
             words_[e.off] = e.value;

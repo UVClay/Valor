@@ -21,6 +21,7 @@ public:
     void update();
     void release(int v);
     void fade_entity(U e, I frames);
+    I restart(I bank, I sound, U ent, I volume, I vspread, I pitch, I pspread, I loop, int v, I cls);  // 0x80042250
 
 private:
     struct Voice {

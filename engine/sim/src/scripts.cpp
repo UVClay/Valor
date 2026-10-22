@@ -581,6 +581,8 @@ void VM::effect(const char* name, const I* a, int) {
         save_pose(*this);
     else if (n == "behaviour")
         behaviour(*this, a[0], a[1], a[2], a[3], a[4]);
+    else if (n == "alarm")
+        op_alarm(eng, e, a[0], a[1], a[2], a[3], a[4], a[5], a[6]);
     else
         eng.note("script effect " + n + " not implemented");
 }
@@ -1059,7 +1061,12 @@ U VM::base_step(U pc, I chn, U c) {
             return pc + 4;
         }
         case 0x48: effect("run_message", nullptr, 0); return pc + 8;
-        case 0x49: effect("alarm", nullptr, 0); return pc + 0x20;
+        case 0x49: {
+            I a[7];
+            for (int k = 0; k < 7; k++) a[k] = operand(k + 1, mask, m.s32(pc + 4 * U(k + 1)));
+            effect("alarm", a, 7);
+            return pc + 0x20;
+        }
         // 0x33, 0x35, 0x36, 0x37, 0x3A, 0x3E, 0x46: the world ops above
         default: eng.note("script op " + std::to_string(op) + " unknown"); return 0;
     }

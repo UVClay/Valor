@@ -24,6 +24,7 @@ bool run_think(Engine& eng, U fn, U e) {
         case SCRIPTED_THINK: scripted_think(eng, e); return true;
         case EXPLOSION_THINK: explosion_think(eng, e); return true;
         case BURST_THINK: burst_think(eng, e); return true;
+        case ALARM_THINK: alarm_think(eng, e); return true;
         default: return false;
     }
 }
@@ -74,6 +75,8 @@ void run_destroy(Engine& eng, I type, U e) {
         enemy_destroy(eng, e);
     else if (type == DOG)
         dog_destroy(eng, e);
+    else if (type == 0x20)
+        alarm_destroy(eng, e);
 }
 
 }  // namespace valor::sim

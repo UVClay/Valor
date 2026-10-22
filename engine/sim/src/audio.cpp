@@ -164,13 +164,43 @@ void Audio::update() {
         }
         if (m.u8(a + 0xE)) {
             m.w8(a + 0xE, 0);
-            eng_.note("looping sounds (restart) not implemented");
+            I h = m.u32(a + 4);
+            restart(m.s16(a + 0xC), m.s32(a + 8), eng_.resolve(h), m.s32(a + 0x18), m.s32(a + 0x1C), m.s32(a + 0x20), m.s32(a + 0x24), 1, v, 0);
         } else {
             m.w32(a + 4, 0);
             m.w8(a + 0x12, 0);
             m.w16(a + 0x28, 0);
         }
     }
+}
+
+// sound_restart (0x80042250): a looping voice that ended is started again in place: the volume
+// (with its spread, a draw by sound_restart), loop, age 0, class, the position from the entity
+// (none or not positional: 0 and flag 1), voice_start.
+I Audio::restart(I bank, I sound, U ent, I volume, I vspread, I pitch, I pspread, I loop, int v, I cls) {
+    Mem& m = eng_.m;
+    if ((bank & 0xFFFF) >= 8 || sound < 0 || !m.u32(G_BANK_SPU + 4 * S16(bank) + 0x40)) return -1;
+    U a = G_VOICES + 0x34 * U(v);
+    I vol = (volume << 7) <= 0xFF0000 ? imin(volume << 7, 0xFF0000) : 0xFF0000;
+    m.w32(a + 0x14, vol);
+    m.w8(a + 0xE, loop);
+    m.w16(a + 0x28, 0);
+    m.w8(a + 0x13, cls);
+    if (vspread) {
+        I lo = S32(vol * vspread);
+        I r = eng_.rand.draw({0x80042250});
+        m.w32(a + 0x14, S32(vol + (lo - (lo ? pmod(r, S32(lo * 2)) : 0))));
+    }
+    m.w8(a + 0x12, 0);
+    m.w8(a + 0x10, 0);
+    if (ent && !(m.u32(ent + 0xC) & 0x40000000)) {
+        for (U k = 0; k < 3; k++) m.w16(a + 0x2C + 2 * k, m.s16(ent + 0x20E + 4 * k));
+    } else {
+        for (U k = 0; k < 3; k++) m.w16(a + 0x2C + 2 * k, 0);
+        m.w32(a, m.u32(a) | 1);
+    }
+    start(bank & 0xFFFF, sound, v, pitch, pspread);
+    return v;
 }
 
 void Audio::release(int v) {

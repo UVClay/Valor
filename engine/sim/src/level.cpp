@@ -1128,10 +1128,6 @@ void LevelLogic::builtin(I n, Ctx& c, std::vector<SVal>& st, U base, I sid) {
         set_home(eng_, tgt, src);
         return;
     }
-    if (n == 13) {
-        I what = st.size() > 1 ? as_int(st[st.size() - 2]) : 0;
-        if (what == 4) eng_.note("level_set(4): alarm from level not implemented");
-    }
     if (n == 8) {
         // bi_show_text (0x80069FC4) -> show_text (0x80053464)
         I v = as_int(popv());
@@ -1293,9 +1289,10 @@ void LevelLogic::builtin_base(I n, Ctx& c, std::vector<SVal>& st, U, I sid) {
         stats["unknown built-in"]++;
 }
 
+// level_set(4, id): alarm_from_level (alarm.cpp).
 void LevelLogic::alarm_level(I node_id) {
     stats["alarm from level"]++;
-    alarm_requests.push_back(node_id);
+    alarm_from_level(eng_, S32(node_id));
 }
 
 }  // namespace valor::sim
