@@ -244,7 +244,7 @@ struct DrawnLog {
 
 DrawnLog& drawn_log(Engine& eng) {
     static DrawnLog log;
-    if (!log.loaded) log.load(eng.root + "/build/engine/drawn.log");
+    if (!log.loaded) log.load(eng.input_log("drawn.log"));
     return log;
 }
 
@@ -507,6 +507,25 @@ bool entity_in_view(Engine& eng, U e) {
     return box_in_view(eng, vd, co, mn, mx);
 }
 
+// flash_draw (0x8006DD54)'s state: a positive counter (+2) is drawn and goes down by one,
+// otherwise it is set to 0.
+static void flash_countdown(Mem& m, U f) {
+    I c = m.s16(f + 2);
+    m.w16(f + 2, c > 0 ? c - 1 : 0);
+}
+
+static void player_draw_state(Mem& m, U e) {
+    U o = U(m.u32(e + 0x388));
+    if (m.s32(o + 0xA4) != 0x190 || (m.u32(o) & 0xC000)) return;
+    U inst = U(m.u32(e + 0x100));
+    I b = m.u32(inst + 0x6C);
+    if (m.u32(e + 0x10) & 0x400) {
+        if (b >= 0x41) m.w32(inst + 0x6C, b - 2);
+    } else
+        m.w32(inst + 0x6C, b < 0x80 ? b + 2 : 0x80);
+    flash_countdown(m, o + 0x1D4);
+}
+
 void draw_pass(Engine& eng) {
     Mem& m = eng.m;
     m.w32(G_FRAME_COUNT, m.u32(G_FRAME_COUNT) + 1);
@@ -588,6 +607,14 @@ void draw_pass(Engine& eng) {
                     m.w32(e + 0x290, m.s32(e + 0x290) - 1);
                 }
         }
+        // enemy_draw (0x8005608C): in view this frame, or dead, its muzzle flash drawn: the
+        // counter (object +0xB68+2) down by one while positive (flash_draw 0x8006DD54)
+        if (m.u32(e + 0x370) == 0x8005608C && (m.u32(e + 0x29C) || m.s32(e + 0x4C + 4 * 0xD) == -1))
+            flash_countdown(m, U(m.u32(e + 0x388)) + 0xB68);
+        // player_draw (0x8007B8F4): with the view object's +0xA4 at 400 and no 0xC000 in its +0,
+        // the held model's brightness (+0x6C) toward 0x40 with flags B 0x400, else back to 0x80,
+        // and its muzzle flash (inv +0x1D4)
+        if (m.u32(e + 0x370) == 0x8007B8F4) player_draw_state(m, e);
         if (d && (*d)[2] != m.s32(e + 0x290) && (fa & 0x8000)) eng.note("out-of-sight counter differs from the original's");
         if ((fa & 0x8000) && m.s32(e + 0x290) <= 0 && m.u32(e + 0x298)) {
             auto en = eng.ents.find(e);
@@ -595,6 +622,8 @@ void draw_pass(Engine& eng) {
             eng.remove(e, "out of sight");
         }
     }
+    // draw_level: the explosion's scorch flag lasts one drawn frame (objects.md, the light)
+    m.w32(0x800AA160, 0);
 }
 
 }  // namespace valor::sim

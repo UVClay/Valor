@@ -2128,7 +2128,7 @@ bool Engine::load_disc(const std::vector<uint8_t>& game, LevelBuild& out, std::s
     logic = std::make_unique<LevelLogic>(*this);
     ents.clear();
     logic->adopt();
-    if (!world.load(*this, data_dir, root + "/build/engine/timing.log", mission_n, level_n)) {
+    if (!world.load(*this, data_dir, input_log("timing.log"), mission_n, level_n)) {
         *err = "the level's collision";
         return false;
     }

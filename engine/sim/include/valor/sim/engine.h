@@ -62,6 +62,11 @@ public:
     bool load_disc(const std::vector<uint8_t>& game, struct LevelBuild& out, std::string* err);
 
     std::string root, level;
+    // The recording's inputs: build/engine (the session), or ENG_INPUTS=DIR for another recording
+    // (orig.log, orig.jsonl, seed/; frames.log, timing.log and drawn.log if kept apart from
+    // orig.log). input_log(name): that file, else orig.log.
+    std::string inputs() const;
+    std::string input_log(const std::string& name) const;
     int mission_n = 0, level_n = 0;
     const Feed& feed;
     std::vector<std::pair<I, std::vector<I>>> frames;  // (vblank, [tick, ...])

@@ -451,9 +451,12 @@ original's every tick, as `engine.py cmp` does.
 |---|---|---|---|
 | 1:3 | 7,296 | 7,073 (the other 223: impact-spark positions, one hit face at 1658 and 3454) | all |
 | 2:1 | 8,368 | 8,308 (all but one shot's type 31, 60 ticks from 769) | all |
-| 2:2 | 7,036 | 6,113 (everything to 6,114) | to tick 6,114 |
+| 2:2 | 7,036 | 7,036 (all of it) | to tick 6,114 (Python's earlier trace) |
+| 3:1 (coverage tape) | 4,525 | 3,016 (everything to 1,454) | |
+| 5:4 (coverage tape) | 10,339 | 679 (everything to 680) | |
+| 9:4 (coverage tape) | 9,901 | 650 (everything to 651) | |
 
-Synced to the Python engine at 332ca96; the left column is the Python engine's own at that commit.
+Synced to the Python engine at 874c759; the left column is the Python engine's own at that commit.
 The right column compares with the Python engine's latest traces (`build/engine/eng_*.jsonl`).
 Each run parts from it only after both have parted from the original. The trace now also
 carries the on-screen text list and the hit wedges' timers (`texts`, `hud`), which agree
@@ -475,7 +478,15 @@ wherever the entities do. Since eb3c158:
   `model_instance_init`'s block (flags 0x157), attachments' models theirs, and the characters'
   destructors release their attachments' and parts' instances two frames late. 2:1 runs to 8,308;
 - level explosions 0, 5, 7 and 8, and witnesses picked by flag variable 0x109 and tested within
-  the victim's long range: 2:2 runs to 6,114.
+  the victim's long range: 2:2 runs to 6,114;
+- scoped shots from the camera toward its look point: 2:2 is identical throughout;
+- the muzzle flashes' countdown and the player's held-model brightness (enemy_draw, player_draw),
+  the scorch flag cleared each drawn frame;
+- other recordings: `ENG_INPUTS=DIR coretest --engine M:L` reads DIR's orig.log, orig.jsonl and
+  seed/ (the dump at the level's first tick's vblank + 1), and its frames, timing and drawn logs
+  when they're kept apart. A level's trace lines start 4 vblanks before its mark (the mark can
+  come a vblank after the first tick). The coverage tapes in `build/engine/in_m3l1`, `in_m5l4`
+  and `in_m9l4` give the rows above, the Python engine's own first runs.
 
 ### Why it keeps the original's memory layout
 

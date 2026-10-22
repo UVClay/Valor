@@ -97,6 +97,16 @@ Engine::Engine(const std::string& r, const std::string& lvl, const Feed& f) : ro
 
 Engine::~Engine() = default;
 
+std::string Engine::inputs() const {
+    const char* d = std::getenv("ENG_INPUTS");
+    return d && *d ? std::string(d) : root + "/build/engine";
+}
+
+std::string Engine::input_log(const std::string& name) const {
+    std::string p = inputs() + "/" + name;
+    return std::ifstream(p).good() ? p : inputs() + "/orig.log";
+}
+
 bool Engine::load(const std::string& seed_path, std::string* err) {
     std::ifstream f(seed_path, std::ios::binary);
     if (!f) {
@@ -110,7 +120,7 @@ bool Engine::load(const std::string& seed_path, std::string* err) {
     // the recording's projection (its settings.ini: 21:9, FOV 110), which aim_update's RTPS reads
     gte.set_projection(21.0 / 9.0, 110.0);
     L.load(m, level);
-    if (!world.load(*this, data_dir, root + "/build/engine/timing.log", mission_n, level_n)) {
+    if (!world.load(*this, data_dir, input_log("timing.log"), mission_n, level_n)) {
         *err = "the level's collision";
         return false;
     }

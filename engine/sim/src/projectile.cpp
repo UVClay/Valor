@@ -139,7 +139,19 @@ void projectile_aim(Engine& eng, U owner, U p, I bone_a, I bone_b, const V3* tar
     Mem& m = eng.m;
     if (aimed) return projectile_aim_at_point(eng, owner, p);
     if ((m.u32(owner + 0xC) & 1) && (m.u32(m.u32(owner + 0x388)) & 0x100)) {
-        eng.note("scoped shot (copy_camera_pos) not implemented");
+        // through the scope: from the camera entity's position (copy_camera_pos 0x80045160)
+        // toward the camera's look point, its object's first three words (angles_to_camera_look
+        // 0x80045184)
+        U cam = U(m.u32(G_PLAYER));
+        V3 start, look;
+        for (U k = 0; k < 3; k++) start[k] = m.s32(cam + 0x20C + 4 * k);
+        for (U k = 0; k < 3; k++) m.w32(p + 0x20C + 4 * k, start[k]);
+        U co = U(m.u32(cam + 0x388));
+        for (U k = 0; k < 3; k++) look[k] = m.s32(co + 4 * k);
+        I pitch, yaw;
+        angles_from_to(eng.gte, start, look, pitch, yaw);
+        m.w32(p + 0x228, S32(pitch << 16));
+        m.w32(p + 0x22C, S32(yaw << 16));
         return;
     }
     I t = m.s32(p + 8);

@@ -246,24 +246,25 @@ int run_engine(int argc, char** argv) {
             dumps[a.substr(0, c)] = a.substr(c + 1);
         }
     }
-    static const std::map<std::string, I> seeds = {{"1:3", 1714}, {"2:1", 20496}, {"2:2", 40737}};
-    if (!seeds.count(level)) {
-        std::fprintf(stderr, "coretest --engine: no seed for %s\n", level.c_str());
-        return 2;
-    }
+    // the recording's inputs: build/engine (the session), or ENG_INPUTS=DIR (Engine::inputs)
+    const char* env_inputs = std::getenv("ENG_INPUTS");
     std::string root = ".";
+    std::string inputs = env_inputs && *env_inputs ? std::string(env_inputs) : root + "/build/engine";
+    static const std::map<std::string, I> session_seeds = {{"1:3", 1714}, {"2:1", 20496}, {"2:2", 40737}};
+    std::map<std::string, I> seeds = env_inputs && *env_inputs ? std::map<std::string, I>{} : session_seeds;
     Feed feed;
-    if (!feed.load(root, root + "/build/engine/orig.log")) {
-        std::fprintf(stderr, "coretest --engine: build/engine/orig.log or the recompiler's tables missing\n");
+    if (!feed.load(root, inputs + "/orig.log")) {
+        std::fprintf(stderr, "coretest --engine: %s/orig.log or the recompiler's tables missing\n", inputs.c_str());
         return 2;
     }
-    std::vector<StateLine> trace = read_trace(root + "/build/engine/orig.jsonl");
+    std::vector<StateLine> trace = read_trace(inputs + "/orig.jsonl");
     // level_lines: the original's lines of this level (the marks split them)
     I lo = -1, hi = I(1) << 40;
     for (size_t k = 0; k < feed.marks.size(); k++)
         if (feed.marks[k].second == level) {
-            lo = feed.marks[k].first;
-            if (k + 1 < feed.marks.size()) hi = feed.marks[k + 1].first;
+            // the mark (the level's first 3D drawn) can come a vblank after its first tick
+            lo = feed.marks[k].first - 4;
+            if (k + 1 < feed.marks.size()) hi = feed.marks[k + 1].first - 4;
             break;
         }
     std::vector<StateLine> lines;
@@ -274,8 +275,13 @@ int run_engine(int argc, char** argv) {
             lines.resize(i);
             break;
         }
-    I seed_v = seed_arg ? seed_arg : seeds.at(level);
-    std::string seed = root + "/build/engine/seed/d" + std::to_string(seed_v) + ".bin";
+    // the seed: the dump just after the level's first tick was stamped (its vblank + 1)
+    if (!seed_arg && !seeds.count(level) && lines.empty()) {
+        std::fprintf(stderr, "coretest --engine: no seed for %s\n", level.c_str());
+        return 2;
+    }
+    I seed_v = seed_arg ? seed_arg : seeds.count(level) ? seeds.at(level) : lines[0].vblank + 1;
+    std::string seed = inputs + "/seed/d" + std::to_string(seed_v) + ".bin";
     if (const char* sf = std::getenv("VALOR_SEED_FILE")) seed = sf;
     Engine eng(root, level, feed);
     std::string err;
@@ -286,7 +292,7 @@ int run_engine(int argc, char** argv) {
         Mem pre;
         // (or, when there's none, the seed itself: the save data is the same; the timer and the
         // seed then a tick late)
-        std::ifstream f(root + "/build/engine/seed/d" + std::to_string(seed_v - 1) + ".bin", std::ios::binary);
+        std::ifstream f(inputs + "/seed/d" + std::to_string(seed_v - 1) + ".bin", std::ios::binary);
         if (!f) f.open(seed, std::ios::binary);
         f.read(reinterpret_cast<char*>(pre.d.data()), 0x200000);
         std::vector<uint8_t> game(pre.ptr(0x800385CC), pre.ptr(0x800385CC) + 0x780);
@@ -311,7 +317,7 @@ int run_engine(int argc, char** argv) {
     I t0 = eng.tick_no;
     std::vector<StateLine> before, after;
     for (auto& d : lines) (d.tick <= t0 ? before : after).push_back(d);
-    eng.frames = frames_of(root + "/build/engine/frames.log", after);
+    eng.frames = frames_of(eng.input_log("frames.log"), after);
     eng.dumps = dumps;
     {
         // ticks with no line in the trace (a disc-built start's tick 1): their own frame first
