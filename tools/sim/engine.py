@@ -802,6 +802,37 @@ FRAME_ONLY = re.compile(r"^watch (\d+) fc\+0: ")
 FRAME_WATCH = re.compile(r"^watch (\d+) fc\+4: ([0-9A-F]+) -> ([0-9A-F]+)")
 
 
+def frame_ends():
+    """The ticks that end a frame (the tick counter's value at each drawing pass)."""
+    out = set()
+    if os.path.exists(FRAMES_LOG):
+        for line in open(FRAMES_LOG, errors="replace"):
+            mm = FRAME_WATCH.match(line)
+            if mm:
+                out.add(int(mm[3], 16))
+    return out
+
+
+def pick_seed(prefix, vb, first_tick, ends):
+    """A dump of the recording near a (re)start: seed/{prefix}{V}.bin with V from vb + 1 on, the
+    first holding a whole frame (its tick the last of a frame, or the start's own tick when
+    that ran alone); the vb + 1 name if there is none."""
+    d = os.path.join(INPUTS, "seed")
+    best = os.path.join(d, f"{prefix}{vb + 1}.bin")
+    if not os.path.isdir(d):
+        return best, vb + 1
+    cands = []
+    for name in os.listdir(d):
+        mm = re.match(rf"^{prefix}(\d+)\.bin$", name)
+        if mm and vb < int(mm[1]) <= vb + 60:
+            cands.append(int(mm[1]))
+    for v in sorted(cands):
+        t = Mem(open(os.path.join(d, f"{prefix}{v}.bin"), "rb").read()).u32(G_TICK)
+        if t >= first_tick and (t in ends or (t == first_tick and v == vb + 1)):
+            return os.path.join(d, f"{prefix}{v}.bin"), v
+    return best, vb + 1
+
+
 def frames_of(lines):
     """The frames of the level's ticks, (vblank, [ticks]). From a watch of the frame and tick
     counters (`VALOR_WATCH="fc=8009A5D8:8"`, build/engine/frames.log: one line per frame, the
@@ -868,8 +899,12 @@ def main():
     # restarts the level in place (level_restart -> level_start, shell.md): level_start isn't
     # rebuilt here, so a restart is seeded again like a level start, from the dump just after
     # the first tick after it (seed/r{vblank}.bin).
-    seed_v = LEVEL_SEED.get(level) or lines[0]["vblank"] + 1
-    seed = os.path.join(INPUTS, "seed", f"d{seed_v}.bin")
+    ends = frame_ends()
+    if LEVEL_SEED.get(level):
+        seed_v = LEVEL_SEED[level]
+        seed = os.path.join(INPUTS, "seed", f"d{seed_v}.bin")
+    else:
+        seed, seed_v = pick_seed("d", lines[0]["vblank"], lines[0]["tick"], ends)
     stats, notes = Counter(), defaultdict(list)
     append = False
     eng, merged = None, False
@@ -910,8 +945,7 @@ def main():
             nxt = [d for d in lines if d["tick"] > eng.tick_no]
             if not nxt or (to and nxt[0]["tick"] > to):
                 break
-            seed_v = nxt[0]["vblank"] + 1
-            seed = os.path.join(INPUTS, "seed", f"r{seed_v}.bin")
+            seed, seed_v = pick_seed("r", nxt[0]["vblank"], nxt[0]["tick"], ends)
             stats["level restarts"] += 1
             if not os.path.exists(seed):
                 print(f"restart after tick {eng.tick_no}: no seed {seed} (a dump at vblank {seed_v})")

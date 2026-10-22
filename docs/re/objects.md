@@ -642,6 +642,16 @@ Level `explosion(1)`, `(6)` are sparks and a sound, `(2)` a smoke emitter (`0x80
 `(3)` debris particles: no damage. Scale is 1.0 for all but `explosion(4)` (4.0) and 7/8
 (0.1875); var0 0x1000 (0x5000, 0x200): the first tick's particle burst (`0x80070DEC`).
 
+The smoke emitter of `explosion(2)` (`0x80074A60` → `0x80074898`): `entity_create(0, object
+0xB64, no model, 2 hit parts)`, type 0x1644, flags B | 0x200, placed at the script's entity (or
+record) and linked at the front; its think (`0x80074A38`) keeps its emitter endless (`+0x504` =
+0x7FFF) and updates the particles (`0x8006F7AC`, `0x8006EAC0`: drawing); it is never removed by
+itself. `explosion(4)` also makes its explosion's collide mask 0x88004450 and starts a **screen
+flash** (`0x8004FE84(1, 1, 2, 2, (192, 192, 192) → (128, 128, 128))`): an entity of type 0
+(object 0x64; flags A 0x20000, B 0x203; linked at the front) whose think (`0x8004FC14`) waits
+the delay, steps its colour by (end − start) / length per tick for the length (mode 1), holds,
+and removes itself: 1 + 2 + 2 + 1 ticks.
+
 So a grenade's 9 ticks × 4.0 = **36 damage** to anyone within 425 (more than 4.0 per tick if
 two explosions overlap), and a soldier (6 health in 1:3) dies on the second tick.
 
