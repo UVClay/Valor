@@ -56,11 +56,12 @@ class Collision:
         self._apply()
 
     def at(self, vb):
-        """The table as the original had it while running the frame at vblank vb (the watch logs
-        each frame's end: changes logged before vb apply)."""
+        """The table as the original had it while running the frame at vblank vb. The watch logs
+        each frame's drawing pass, and the slots change in the idle work before it (chunk_stream
+        from frame_idle_job, tsp_parse): changes logged at vb apply."""
         ev = self.tl.events
         changed = False
-        while self.i < len(ev) and ev[self.i][0] < vb:
+        while self.i < len(ev) and ev[self.i][0] <= vb:
             v, name, off, new = ev[self.i]
             if name == "k":
                 self.words[off] = new

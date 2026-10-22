@@ -739,6 +739,10 @@ reimplementation); integer coordinates are the 16.16 position's whole parts.
 
 - **Chunks**: the loaded slots in slot order (`0x80090DE8`, skipping the one being streamed,
   `0x800AA184`) whose rectangle holds (x, z), bounds included.
+  The slot table and the streamed slot change only in the frame's idle work (`chunk_stream`
+  from `frame_idle_job`, which also parses a finished chunk), so a chunk whose load finished in
+  the wait after one tick's drawing is there for the next tick's moves (2:2 tick 3480: a soldier
+  steps onto the new chunk's floor at once).
 - **Leaf** (`floor_leaf`, `0x80060034`): from the root, a split on x goes to child b (and the
   cell's x min becomes x min + split) when x >= x min + split, else to child a; a split on z goes
   to child a when z < z min + split, else to ~b (z min moves up). Split offsets are relative to
