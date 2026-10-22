@@ -167,6 +167,20 @@ struct Voice {
     int status() const { return m->u8(0x800910D0 + index); }
 };
 
+// One sprite of a particle effect (combat.md, Particles; objects.md, Explosions): the sparks and
+// smoke of particles_spawn (type 0x31, think 0x80073B08: 0x34-byte particles) and the fireballs
+// and smoke puffs of explosions (type 0x31, think 0x800715D4: 0x3C-byte records), each system
+// with its texture in its header (+0x18: VRAM x, y, CLUT x, y, width, height; +0x26 2: additive).
+struct Sprite {
+    std::array<double, 3> pos{};  // whole units
+    double size = 0;              // the quad's side, world units (approximate, README)
+    uint8_t rgb[3]{128, 128, 128};
+    uint16_t rot = 0;             // 4096 per turn
+    uint16_t tex_x = 0, tex_y = 0, clut_x = 0, clut_y = 0, w = 0, h = 0;
+    bool additive = false;
+    bool fireball = false;
+};
+
 // The objectives (levels.md, Objectives: the list the pause menu shows).
 struct Objective {
     uint32_t id = 0;
@@ -188,6 +202,8 @@ uint32_t tick(const Mem& m);
 // The effect voices 1..23, as the sound driver keeps them.
 std::vector<Voice> voices(const Mem& m);
 std::vector<Objective> objectives(const Mem& m);
+// Every live particle and fireball of the effect entities, for drawing.
+std::vector<Sprite> sprites(const Mem& m);
 // The level script started the music (level_set(1, 1): music_start's 0x8009CC74).
 bool music_started(const Mem& m);
 // A NUL-terminated string in the engine's memory.
