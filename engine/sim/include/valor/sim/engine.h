@@ -173,6 +173,10 @@ public:
     void idle_loop();        // frame_idle_loop (0x80090AEC)
     void idle_work();        // a frame's idle work as the recording has it
     const std::array<uint8_t, 24>* spu_keys();  // the frame's SPU key status as recorded
+    // The seed frame's sound_update: in the seed already when its voice states are the SPU
+    // record's (the record is passed over); otherwise (a dump that landed in the frame's wait, as
+    // after a restart's long first frame) it runs now.
+    void seed_sound_update();
     // Every frame of the recording's level (to: the last tick, 0 all); each tick's state line goes
     // to `line`.
     void run(I to, const std::function<void(const StateLine&)>& line);

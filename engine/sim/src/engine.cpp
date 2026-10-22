@@ -636,6 +636,19 @@ const std::array<uint8_t, 24>* Engine::spu_keys() {
     return &it->second[used++];
 }
 
+void Engine::seed_sound_update() {
+    auto it = feed.keys.find({level, tick_no});
+    size_t used = keys_used_[tick_no];
+    if (it == feed.keys.end() || used >= it->second.size()) return;
+    const auto& rec = it->second[used];
+    bool same = true;
+    for (int v = 1; v < 24; v++) same &= m.u8(0x800910D0 + U(v)) == rec[size_t(v)];
+    if (same)
+        keys_used_[tick_no]++;
+    else
+        audio->update();
+}
+
 // The frame's wait for the vblank as recorded: frame_idle_job / frame_idle_loop calls.
 void Engine::idle_work() {
     auto it = feed.idle.find({level, tick_no});

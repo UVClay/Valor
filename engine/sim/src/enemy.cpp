@@ -112,7 +112,37 @@ void char_instance_init(Engine& eng, U e, U inst, U model, U pool) {
     m.w32(e + 0x2D4, m.u32(model + 0xA0));
 }
 
-U character_create(Engine& eng, U model, I channels) {
+// The character's instance flags and hit parts as model_instance_init (0x8006A96C) sets them: the
+// flags, the model's first-user bit (+0x1C, instance flag 8), and each part from its template
+// (+8 from the template's +0xC; with flag 0x200 the radii +0x30..+0x38 doubled: auto aim's bigger
+// hit parts, shell.md).
+static void char_parts_init(Mem& m, U e, U inst, U model, I flags) {
+    if ((flags & 1) || !m.u32(model + 0x1C)) {
+        if (!m.u32(model + 0x1C)) {
+            m.w32(model + 0x1C, 1);
+            flags |= 8;
+        }
+    }
+    m.w32(inst + 4, flags);
+    U pp = U(m.u32(e + 0x304)), tp = U(m.u32(model + 0xC0));
+    for (I i = 0; i < m.u16(e + 0x36); i++) {
+        U q = pp + 0x48 * U(i), t = tp + 0x48 * U(i);
+        m.w32(q + 4, m.u32(t + 4));
+        m.w32(q + 8, m.u32(t + 0xC));
+        m.w32(q + 0xC, m.u32(t + 0xC));
+        m.w16(q + 0x1C, m.u16(t + 0x1C));
+        m.w16(q + 0x1E, m.u16(t + 0x1E));
+        for (U o : {0x34u, 0x30u, 0x38u, 0x10u, 0x14u}) {
+            I v = m.u32(t + o);
+            m.w32(q + o, ((flags & 0x200) && (o == 0x30 || o == 0x34 || o == 0x38)) ? S32(v * 2) : v);
+        }
+        for (U o : {0x40u, 0x42u, 0x44u}) m.w16(q + o, m.u16(t + o));
+        m.w32(q + 0x18, inst);
+        m.w32(q + 0x3C, 0);
+    }
+}
+
+U character_create(Engine& eng, U model, I channels, I iflags) {
     U a;
     int i = char_alloc(eng, a);
     if (i < 0) return 0;
@@ -135,6 +165,7 @@ U character_create(Engine& eng, U model, I channels) {
     }
     m.w32(a + 0x1EC, channels);
     char_instance_init(eng, a, inst, model, nbones(m, model) ? pose_alloc(eng) : 0);
+    char_parts_init(m, a, inst, model, iflags);
     return a;
 }
 
@@ -151,7 +182,8 @@ void ev_set_var(Mem& m, U e, I v, I value) {
 U soldier_spawn(Engine& eng, Record& rec, U model, U tmpl) {
     Mem& m = eng.m;
     U r = rec.addr;
-    U e = character_create(eng, model, 0x28);
+    // enemy_spawn's instance flags: 0x85, 0x285 with auto aim (g_params+0x12, 0x80093A06)
+    U e = character_create(eng, model, 0x28, m.u8(0x80093A06) ? 0x285 : 0x85);
     if (!e) return 0;
     ev_set_var(m, e, 0x101, 0);
     U weapon = U(m.u32(0x8003C19C)), head = U(m.u32(0x8003C19C + 4)), grenade = U(m.u32(0x8003C19C + 8));
@@ -258,7 +290,7 @@ U soldier_spawn(Engine& eng, Record& rec, U model, U tmpl) {
 U dog_spawn(Engine& eng, Record& rec, U model) {
     Mem& m = eng.m;
     U r = rec.addr;
-    U e = character_create(eng, model, 0x14);
+    U e = character_create(eng, model, 0x14, m.u8(0x80093A06) ? 0x205 : 0x5);  // dog_spawn's: 0x5, 0x205 with auto aim
     if (!e) return 0;
     m.w32(G_LAST_DOG, e);
     U b = eng.alloc(0x124);

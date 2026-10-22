@@ -340,8 +340,8 @@ int run_engine(int argc, char** argv) {
     // the seed frame's own wait (its idle work as recorded)
     eng.tick_no = t0;
     eng.idle_work();
-    // its sound_update is in the seed already: its record of the SPU is passed over
-    eng.spu_keys();
+    // its sound_update: in the seed already, or (a dump in the frame's wait) run now
+    eng.seed_sound_update();
     Compare cmp;
     cmp.maxn = maxn;
     for (auto& d : after) cmp.orig[d.tick] = &d;
