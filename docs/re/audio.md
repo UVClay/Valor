@@ -320,6 +320,19 @@ Pitch 0.5 on the voice bank is what plays its 11025 Hz recordings at their own s
 pitch 0x800 × 0.5 = 0x400). The player's soldier model plays only 0:0x21; no call or player-model script
 playing a footstep for the player was found (inferred: the player is silent when walking).
 
+**Footsteps** are model-script sounds only: no code calls `sound_play` with 0x0F (the immediates
+0xF passed in `enemy_spawn` and `player_death_start` are other arguments). The soldier's (and
+dog's) movement scripts play animations in frame ranges and put a step between them: the walk
+loop (anim 7: frames 0..4, `call 53`, 5..14, `call 53`, 15..end, repeat; 25 calls of 53 in 2:2's
+soldier model) and the strafes and turns call one-line scripts (46..50, 53: `sound 0x0F` with
+their own volume and pitch, e.g. 53: pitch 0.5 ± 0x3333, volume 0xC000, bank 0, then return);
+scripted moves (7, 8: anims 40, 42) put `sound 0x0F` inline at their foot-fall frames. So a step
+is heard at the animation frame the script waits for, positional on the soldier (op 02 plays on
+its entity, follows it), one voice each, through the normal voice rules above (the player hears
+it through `sound_pan`; soldiers through hearing, query 0x11). The sample is the level's bank-0
+0x0F (one recording per level). The player plays none (above): the engine's voices match the
+original's in the 1:3, 2:1 and 2:2 sessions with that rule.
+
 **Level scripts, built-in 19 `sound`** (`0x80069B94` → `lvl_sound` `0x800533D4`): 7 values,
 in push order `volume_spread, volume, pitch_spread, pitch, sound, bank + 1, mode` (bank 0 when
 given 0). Played on the script's entity; mode 3 = loop, and the voice is pushed as a handle.
