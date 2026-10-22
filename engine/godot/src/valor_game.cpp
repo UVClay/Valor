@@ -60,6 +60,7 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("debug_end_level"), &ValorGame::debug_end_level);
     ClassDB::bind_method(D_METHOD("get_engine_voices"), &ValorGame::get_engine_voices);
     ClassDB::bind_method(D_METHOD("get_engine_sprites"), &ValorGame::get_engine_sprites);
+    ClassDB::bind_method(D_METHOD("get_engine_effects"), &ValorGame::get_engine_effects);
     ClassDB::bind_method(D_METHOD("set_engine_replay", "log_path"), &ValorGame::set_engine_replay);
     ClassDB::bind_method(D_METHOD("build_engine_actor_mesh", "handle"), &ValorGame::build_engine_actor_mesh);
     ClassDB::bind_static_method("ValorGame", D_METHOD("to_godot", "x", "y", "z"), &ValorGame::to_godot);
@@ -675,6 +676,54 @@ Array ValorGame::get_engine_sprites() const {
         out.push_back(d);
     }
     return out;
+}
+
+Dictionary ValorGame::get_engine_effects() const {
+    Dictionary d;
+    if (!engine_) return d;
+    namespace view = valor::sim::view;
+    const valor::sim::Mem& m = engine_->m;
+    auto col = [](const uint8_t* c) { return Color(c[0] / 128.0f, c[1] / 128.0f, c[2] / 128.0f); };
+    Array streaks;
+    for (const view::Streak& s : view::streaks(m)) {
+        Dictionary e;
+        e["p0"] = to_godot(s.p0[0], s.p0[1], s.p0[2]);
+        e["p1"] = to_godot(s.p1[0], s.p1[1], s.p1[2]);
+        e["c0"] = col(s.c0), e["c1"] = col(s.c1);
+        e["tpage"] = int((s.tex_x / 64) | ((s.tex_y / 256) << 4));
+        e["clut"] = int((s.clut_x / 16) | (s.clut_y << 6));
+        e["u"] = int((s.tex_x % 64) * 4), e["v"] = int(s.tex_y % 256);
+        e["w"] = int(s.w), e["h"] = int(s.h);
+        e["mode"] = s.mode, e["quad"] = s.quad;
+        streaks.push_back(e);
+    }
+    d["streaks"] = streaks;
+    Array puffs;
+    for (const view::Puff& f : view::puffs(m)) {
+        Dictionary e;
+        e["pos"] = to_godot(f.pos[0], f.pos[1], f.pos[2]);
+        e["scale"] = f.scale, e["angle"] = int(f.angle);
+        e["color"] = col(f.rgb), e["drop"] = f.drop, e["on_floor"] = f.on_floor;
+        puffs.push_back(e);
+    }
+    d["puffs"] = puffs;
+    Array shots;
+    for (const view::Shot& s : view::enemy_shots(m)) {
+        Dictionary e;
+        e["handle"] = int64_t(s.handle);
+        e["from"] = to_godot(s.from[0], s.from[1], s.from[2]);
+        shots.push_back(e);
+    }
+    d["enemy_shots"] = shots;
+    view::ExplosionLight l = view::explosion_light(m);
+    if (l.on) {
+        Dictionary e;
+        e["pos"] = to_godot(l.pos[0], l.pos[1], l.pos[2]);
+        e["color"] = Color(l.rgb[0] / 255.0f, l.rgb[1] / 255.0f, l.rgb[2] / 255.0f);
+        e["radius"] = l.radius, e["radius2"] = l.radius2, e["scorch"] = l.scorch;
+        d["light"] = e;
+    }
+    return d;
 }
 
 Dictionary ValorGame::get_engine_actors() const {

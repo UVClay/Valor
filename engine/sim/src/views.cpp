@@ -194,3 +194,109 @@ std::vector<Sprite> sprites(const Mem& m) {
 }
 
 }  // namespace valor::sim::view
+
+namespace valor::sim::view {
+
+namespace {
+std::array<double, 3> whole(const Mem& m, U a) { return {m.s32(a) / 65536.0, m.s32(a + 4) / 65536.0, m.s32(a + 8) / 65536.0}; }
+}  // namespace
+
+std::vector<Streak> streaks(const Mem& m) {
+    std::vector<Streak> out;
+    for (const Entity& e : entities(m)) {
+        if (e.removed() || e.type() != 0x23) continue;
+        U think = U(m.u32(e.a + 0x36C)), o = e.object_addr();
+        if (!o) continue;
+        if (think == 0x800701DC) {
+            // impact_effect_spawn: count o+0, header o+2.. (w, h, VRAM x, y, CLUT x, y, mode),
+            // particles of 0x24 from o+0x10: +4 p0, +0x10 p1 (16.16), +0x1C c0, +0x20 c1
+            int n = int(m.u8(o));
+            for (int i = 0; i < n && i < 16; i++) {
+                U q = o + 0x10 + 0x24 * U(i);
+                Streak s;
+                s.p0 = whole(m, q + 4), s.p1 = whole(m, q + 0x10);
+                for (int k = 0; k < 3; k++) s.c0[k] = uint8_t(m.u8(q + 0x1C + k)), s.c1[k] = uint8_t(m.u8(q + 0x20 + k));
+                s.w = uint16_t(m.u16(o + 2)), s.h = uint16_t(m.u16(o + 4));
+                s.tex_x = uint16_t(m.u16(o + 6)), s.tex_y = uint16_t(m.u16(o + 8));
+                s.clut_x = uint16_t(m.u16(o + 0xA)), s.clut_y = uint16_t(m.u16(o + 0xC));
+                s.mode = int(m.u16(o + 0xE));
+                out.push_back(s);
+            }
+        } else if (think == 0x800702A4) {
+            // the burst (0x800708F0): count o+0, particles of 0x24 at [o+0x2C], +0 kind 1 or 2; the
+            // two kinds' templates as 0x800708F0 sets them (+0xC.., +0x1C..; constants: the engine
+            // doesn't keep them)
+            int n = int(m.s32(o));
+            U arr = U(m.u32(o + 0x2C));
+            for (int i = 0; arr && i < n && i < 16; i++) {
+                U q = arr + 0x24 * U(i);
+                int kind = int(m.u32(q) & 3);
+                if (!kind) continue;
+                Streak s;
+                s.quad = true;
+                s.p0 = whole(m, q + 4), s.p1 = whole(m, q + 0x10);
+                for (int k = 0; k < 3; k++) s.c0[k] = uint8_t(m.u8(q + 0x1C + k)), s.c1[k] = uint8_t(m.u8(q + 0x20 + k));
+                s.w = s.h = 0x1F;
+                s.tex_x = 0x3F0, s.tex_y = kind == 1 ? 0x20 : 0x40;
+                s.clut_x = 0x3F0, s.clut_y = kind == 1 ? 0xFC : 0xFD;
+                s.mode = 2;
+                out.push_back(s);
+            }
+        }
+    }
+    return out;
+}
+
+std::vector<Puff> puffs(const Mem& m) {
+    std::vector<Puff> out;
+    for (const Entity& e : entities(m)) {
+        if (e.removed() || (e.type() != 0x1402 && e.type() != 0x1405)) continue;
+        U o = e.object_addr();
+        if (!o) continue;
+        for (int i = 0; i < 5; i++) {
+            U p = o + 0x3E8 + 0x24 * U(i);
+            if (!(m.u32(p) & 1)) continue;
+            Puff f;
+            f.pos = whole(m, p + 0x10);
+            f.scale = (m.s32(p + 0x1C) >> 4) / 4096.0;
+            f.angle = uint16_t(m.u32(p + 8));
+            for (int k = 0; k < 3; k++) f.rgb[k] = uint8_t(m.u8(p + 0x20 + k));
+            out.push_back(f);
+        }
+        for (int i = 0; i < 15; i++) {
+            U p = o + 0x49C + 0x74 * U(i);
+            if (!(m.u32(p) & 1)) continue;
+            Puff f;
+            f.drop = true;
+            f.on_floor = m.u32(p) & 8;
+            f.pos = whole(m, p + 0x34);
+            f.scale = 1.0;
+            f.angle = uint16_t(m.u32(p + 8));
+            for (int k = 0; k < 3; k++) f.rgb[k] = uint8_t(m.u8(p + 0x4C + k));
+            out.push_back(f);
+        }
+    }
+    return out;
+}
+
+std::vector<Shot> enemy_shots(const Mem& m) {
+    std::vector<Shot> out;
+    for (const Entity& e : entities(m))
+        if (!e.removed() && e.type() == 0x13F4) out.push_back({e.handle(), whole(m, e.a + 0x258)});
+    return out;
+}
+
+ExplosionLight explosion_light(const Mem& m) {
+    ExplosionLight l;
+    U src = U(m.u32(0x8009D650));  // g_last_explosion
+    if (!src) return l;
+    l.on = true;
+    l.pos = {double(m.s16(src + 0x20E)), double(m.s16(src + 0x212)), double(m.s16(src + 0x216))};
+    for (int k = 0; k < 3; k++) l.rgb[k] = uint8_t(m.u8(0x800AA188 + k));
+    l.radius = int32_t(m.u16(0x800AA18C));
+    l.radius2 = int32_t(m.u32(0x800AA190));
+    l.scorch = m.u32(0x800AA160) != 0;
+    return l;
+}
+
+}  // namespace valor::sim::view

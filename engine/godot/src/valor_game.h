@@ -112,6 +112,10 @@ public:
     // The engine's particle effects (views::sprites): { pos (Godot), half (metres), color (1 = as
     // stored), rot (4096 per turn), tpage, clut, u, v, w, h, additive, billboard, triangle }.
     Array get_engine_sprites() const;
+    // The engine's other effects through the views: { streaks: [{p0, p1, c0, c1, tpage, clut, u, v,
+    // w, h, mode, quad}], puffs: [{pos, scale, angle, color, drop, on_floor}], enemy_shots:
+    // [{handle, from}], light: {pos, color (0..1 of 255), radius, radius2, scorch} (absent: none) }.
+    Dictionary get_engine_effects() const;
     // Drive the engine with a recording's input (build/engine/orig.log) instead of the host's:
     // only the pad and the roles; everything else stays live. An empty path returns to the host's.
     bool set_engine_replay(const String& log_path);

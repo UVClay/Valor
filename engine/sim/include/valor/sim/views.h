@@ -188,6 +188,38 @@ struct Sprite {
     bool triangle = false;
 };
 
+// A streak of the impact effects (impact_effect_spawn: type 0x23, think 0x800701DC, drawn by
+// 0x8006F7BC) and the explosions' first-tick bursts (0x800708F0, drawn by 0x8006FBF0): from p0 to
+// p1, coloured c0 at p0 and c1 at p1, with its system's texture and semi-transparency mode.
+struct Streak {
+    std::array<double, 3> p0{}, p1{};  // whole units
+    uint8_t c0[3]{}, c1[3]{};
+    uint16_t tex_x = 0, tex_y = 0, clut_x = 0, clut_y = 0, w = 0, h = 0;
+    int mode = 0;     // the template's semi value: 0 opaque, else ABR (mode - 1) & 3
+    bool quad = false;  // the bursts' four-cornered streaks (POLY_GT4); impacts are triangles
+};
+
+// A hit reaction on a soldier or dog (attach.cpp hit_reaction): the puffs (object +0x3E8, 5 of
+// 0x24 bytes, drawn by 0x80072310) and the drops (+0x49C, 15 of 0x74, drawn by 0x800729C0).
+struct Puff {
+    std::array<double, 3> pos{};
+    double scale = 0;    // +0x1C >> 4, 4096 = 1
+    uint16_t angle = 0;  // +0x8
+    uint8_t rgb[3]{};    // +0x20, fading by 1/8 a tick
+    bool drop = false;   // a drop (blood): pos +0x34, colour +0x4C, on the floor with flag 8
+    bool on_floor = false;
+};
+
+// The explosion light (objects.md, Explosions: The light), applied by the world's face drawer
+// (func_800114B0) to the vertex colours of faces near it: colour + light * (1 - d^2 / r^2).
+struct ExplosionLight {
+    bool on = false;
+    std::array<double, 3> pos{};  // the latest explosion's (or rocket's) position, whole units
+    uint8_t rgb[3]{};
+    int32_t radius = 0, radius2 = 0;
+    bool scorch = false;  // 0x800AA160: this frame also darkens the faces' colours for good
+};
+
 // The objectives (levels.md, Objectives: the list the pause menu shows).
 struct Objective {
     uint32_t id = 0;
@@ -223,6 +255,16 @@ std::array<int, 3> fade(const Mem& m);
 // The effect voices 1..23, as the sound driver keeps them.
 std::vector<Voice> voices(const Mem& m);
 std::vector<Objective> objectives(const Mem& m);
+std::vector<Streak> streaks(const Mem& m);
+std::vector<Puff> puffs(const Mem& m);
+// The enemy bullets (type 0x13F4) alive now: handle, the point they left from (their previous
+// tick's position, +0x258: the muzzle on the tick they were fired), for the muzzle flash.
+struct Shot {
+    uint32_t handle = 0;
+    std::array<double, 3> from{};
+};
+std::vector<Shot> enemy_shots(const Mem& m);
+ExplosionLight explosion_light(const Mem& m);
 std::vector<Text> texts(const Mem& m);
 // The hit wedges' timers (0x8009A590: right, left, front, behind; 40 when hit, counting down).
 std::array<int32_t, 4> hit_timers(const Mem& m);
