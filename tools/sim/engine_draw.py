@@ -14,7 +14,7 @@ import combat_sim as cs
 from engine import s16, s32
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-DRAWN = os.path.join(ROOT, "build", "engine", "drawn.log")
+DRAWN = None          # engine.input_log("drawn.log"), on first use
 G_FRAME_COUNT = 0x8009A5D8
 LINE = re.compile(r"^drawn (\d+) (\d+):(.*)$")
 
@@ -25,7 +25,8 @@ class Drawn:
     @classmethod
     def get(cls):
         if cls._cache is None:
-            cls._cache = cls(DRAWN)
+            from engine import input_log
+            cls._cache = cls(DRAWN or input_log("drawn.log"))
         return cls._cache
 
     def __init__(self, path):

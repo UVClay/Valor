@@ -8,7 +8,7 @@ import struct
 import move_sim as ms
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
-TIMING = os.path.join(ROOT, "build", "engine", "timing.log")
+TIMING = None         # engine.input_log("timing.log"), on first use
 WATCH = re.compile(r"^watch (\d+) (\w+)\+([0-9A-F]+): ([0-9A-F]+) -> ([0-9A-F]+)")
 
 
@@ -30,7 +30,8 @@ class Timeline:
     @classmethod
     def get(cls):
         if cls._cache is None:
-            cls._cache = cls(TIMING)
+            from engine import input_log
+            cls._cache = cls(TIMING or input_log("timing.log"))
         return cls._cache
 
     def __init__(self, path):

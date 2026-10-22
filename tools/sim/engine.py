@@ -764,9 +764,18 @@ class Engine:
 
 # ---------------------------------------------------------------- the recording
 
-LEVEL_SEED = {"1:3": 1714, "2:1": 20496, "2:2": 40737}
-ORIG_TRACE = os.path.join(ROOT, "build", "engine", "orig.jsonl")
-ORIG_LOG = os.path.join(ROOT, "build", "engine", "orig.log")
+# The recording's inputs: build/engine (the session), or ENG_INPUTS=DIR for another recording
+# (one replay's log with the traces and watches, orig.log; its state trace, orig.jsonl; the level
+# start dumps in seed/; frames.log, timing.log and drawn.log only if kept apart from orig.log).
+INPUTS = os.environ.get("ENG_INPUTS") or os.path.join(ROOT, "build", "engine")
+LEVEL_SEED = {"1:3": 1714, "2:1": 20496, "2:2": 40737} if not os.environ.get("ENG_INPUTS") else {}
+ORIG_TRACE = os.path.join(INPUTS, "orig.jsonl")
+ORIG_LOG = os.path.join(INPUTS, "orig.log")
+
+
+def input_log(name):
+    p = os.path.join(INPUTS, name)
+    return p if os.path.exists(p) else ORIG_LOG
 
 
 def level_lines(trace, feed, level):
@@ -777,7 +786,7 @@ def level_lines(trace, feed, level):
     return [d for d in trace if lo <= d["vblank"] < hi]
 
 
-FRAMES_LOG = os.path.join(ROOT, "build", "engine", "frames.log")
+FRAMES_LOG = input_log("frames.log")
 FRAME_ONLY = re.compile(r"^watch (\d+) fc\+0: ")
 FRAME_WATCH = re.compile(r"^watch (\d+) fc\+4: ([0-9A-F]+) -> ([0-9A-F]+)")
 
@@ -834,8 +843,9 @@ def main():
     feed = Feed(ORIG_LOG)
     trace = read_trace(ORIG_TRACE)
     lines = level_lines(trace, feed, level)
-    seed_v = LEVEL_SEED[level]
-    seed = os.path.join(ROOT, "build", "engine", "seed", f"d{seed_v}.bin")
+    # the seed: the dump just after the level's first tick was stamped (its vblank + 1)
+    seed_v = LEVEL_SEED.get(level) or lines[0]["vblank"] + 1
+    seed = os.path.join(INPUTS, "seed", f"d{seed_v}.bin")
     sm = Mem(open(seed, "rb").read())
     t0 = sm.u32(G_TICK)
     # the level's lines end where the tick counter starts again (the next level's first tick can
