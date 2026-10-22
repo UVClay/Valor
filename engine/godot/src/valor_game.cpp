@@ -5,6 +5,7 @@
 #include "valor/sim/load.h"
 #include "valor/sim/views.h"
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 
@@ -49,6 +50,12 @@ void ValorGame::_bind_methods() {
     ClassDB::bind_method(D_METHOD("engine_tick", "buttons", "forward", "strafe", "turn", "pitch"), &ValorGame::engine_tick);
     ClassDB::bind_method(D_METHOD("get_engine_actors"), &ValorGame::get_engine_actors);
     ClassDB::bind_method(D_METHOD("take_level_change"), &ValorGame::take_level_change);
+    ClassDB::bind_method(D_METHOD("start_engine_game", "game"), &ValorGame::start_engine_game);
+    ClassDB::bind_method(D_METHOD("is_level_over"), &ValorGame::is_level_over);
+    ClassDB::bind_method(D_METHOD("get_level_results"), &ValorGame::get_level_results);
+    ClassDB::bind_method(D_METHOD("get_engine_game"), &ValorGame::get_engine_game);
+    ClassDB::bind_method(D_METHOD("continue_engine", "game"), &ValorGame::continue_engine);
+    ClassDB::bind_method(D_METHOD("get_fade"), &ValorGame::get_fade);
     ClassDB::bind_method(D_METHOD("is_campaign_done"), &ValorGame::is_campaign_done);
     ClassDB::bind_method(D_METHOD("debug_end_level"), &ValorGame::debug_end_level);
     ClassDB::bind_method(D_METHOD("get_engine_voices"), &ValorGame::get_engine_voices);
@@ -422,6 +429,8 @@ Dictionary ValorGame::get_state() const {
             objs.push_back(od);
         }
         d["objectives"] = objs;
+        auto fc = view::fade(m);
+        d["fade"] = float(std::max({fc[0], fc[1], fc[2]})) / 255.0f;  // hud.md's fades: the black's opacity now
         int alive = 0, dead = 0;
         for (const view::Entity& e : view::entities(m))
             if (e.type() == 0x1402 || e.type() == 0x1405) (e.dead() ? dead : alive)++;
@@ -450,6 +459,20 @@ Dictionary ValorGame::get_state() const {
 // ---------------------------------------------------------------- the engine, live
 
 bool ValorGame::start_engine(int ammo) {
+    return start_engine_with(valor::sim::game_defaults(mission_, level_, ammo), true);
+}
+
+bool ValorGame::start_engine_game(const PackedByteArray& game) {
+    std::vector<uint8_t> g(size_t(game.size()));
+    if (g.size() != 0x780) {
+        error_ = "the save data must be 0x780 bytes";
+        return false;
+    }
+    memcpy(g.data(), game.ptr(), g.size());
+    return start_engine_with(g, false);
+}
+
+bool ValorGame::start_engine_with(const std::vector<uint8_t>& game, bool auto_advance) {
     if (!loaded_) return false;
     // the repository root: the data directory is <root>/extracted/moh/DATA
     std::string root = data_dir_ + "/../../..";
@@ -460,7 +483,8 @@ bool ValorGame::start_engine(int ammo) {
     valor::sim::LevelBuild lb;
     lb.rand_seed = 0x2468ACE1;
     std::string err;
-    if (!engine_->load_disc(valor::sim::game_defaults(mission_, level_, ammo), lb, &err)) {
+    engine_->auto_advance = auto_advance;
+    if (!engine_->load_disc(game, lb, &err)) {
         error_ = String(("the engine: " + err).c_str());
         engine_.reset();
         return false;
@@ -490,23 +514,77 @@ void ValorGame::engine_tick(int64_t buttons, int64_t forward, int64_t strafe, in
         }
     }
     engine_->live_frame();
-    if (engine_->level_changes != level_changes_seen_) {
-        // the engine went on to the next level: its files for drawing (the engine itself is built)
-        level_changes_seen_ = engine_->level_changes;
-        std::string err;
-        int mi = engine_->mission_n, li = engine_->level_n;
-        if (session_.load(data_dir_, mi, li, &err) && render_.load(data_dir_, session_.info(), &err) && models_.load(data_dir_, mi, li, &err)) {
-            mission_ = mi, level_ = li;
-            pages_.unref();
-            layer_of_.clear();
-            page_images_.clear();
-            actors_.clear();
-            level_changed_ = true;
-        } else
-            error_ = String(("the next level: " + err).c_str());
-    }
+    sync_engine_level();
     session_.vblanks(2);  // the world's animated lights
     session_.end_frame();
+}
+
+// The engine went on to another level: its files for drawing (the engine itself is built).
+void ValorGame::sync_engine_level() {
+    if (!engine_ || engine_->level_changes == level_changes_seen_) return;
+    level_changes_seen_ = engine_->level_changes;
+    std::string err;
+    int mi = engine_->mission_n, li = engine_->level_n;
+    if (session_.load(data_dir_, mi, li, &err) && render_.load(data_dir_, session_.info(), &err) && models_.load(data_dir_, mi, li, &err)) {
+        mission_ = mi, level_ = li;
+        pages_.unref();
+        layer_of_.clear();
+        page_images_.clear();
+        actors_.clear();
+        level_changed_ = true;
+    } else
+        error_ = String(("the next level: " + err).c_str());
+}
+
+bool ValorGame::is_level_over() const { return engine_ && engine_->level_over; }
+
+Dictionary ValorGame::get_level_results() const {
+    Dictionary d;
+    if (!engine_) return d;
+    const valor::sim::LevelResults& r = engine_->results;
+    d["exit"] = int64_t(r.exit_code);
+    d["objectives"] = int64_t(r.objectives);
+    d["done"] = int64_t(r.done);
+    d["primary_complete"] = r.primary_complete;
+    d["health"] = int64_t(r.health);
+    PackedInt32Array ammo, wk, stats;
+    for (auto v : r.ammo) ammo.push_back(int32_t(v));
+    for (auto v : r.weapon_kills) wk.push_back(int32_t(v));
+    for (auto v : r.stats) stats.push_back(int32_t(v));
+    d["ammo"] = ammo;
+    d["weapon_kills"] = wk;
+    d["stats"] = stats;
+    return d;
+}
+
+PackedByteArray ValorGame::get_engine_game() const {
+    PackedByteArray out;
+    if (!engine_) return out;
+    std::vector<uint8_t> g = engine_->save_data();
+    out.resize(int64_t(g.size()));
+    memcpy(out.ptrw(), g.data(), g.size());
+    return out;
+}
+
+bool ValorGame::continue_engine(const PackedByteArray& game) {
+    if (!engine_ || game.size() != 0x780) return false;
+    std::vector<uint8_t> g(0x780);
+    memcpy(g.data(), game.ptr(), g.size());
+    std::string err;
+    if (!engine_->load_next(g, &err)) {
+        error_ = String(("the next level: " + err).c_str());
+        return false;
+    }
+    sync_engine_level();
+    return true;
+}
+
+Color ValorGame::get_fade() const {
+    if (!engine_) return Color(0, 0, 0, 0);
+    auto c = valor::sim::view::fade(engine_->m);
+    // subtractive: a channel's colour darkens it; the fades are grey levels, drawn as black
+    int k = std::max({c[0], c[1], c[2]});
+    return Color(0, 0, 0, float(k) / 255.0f);
 }
 
 bool ValorGame::take_level_change() {

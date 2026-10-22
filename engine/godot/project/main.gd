@@ -60,14 +60,17 @@ var shot_tick := 0  # --shot-tick=T: the screenshot once the core reaches tick T
 var camtrace: FileAccess = null  # --camtrace=FILE: the camera per drawn frame (smoothness checks)
 var spin := 0.0  # --spin=UNITS: a constant mouse turn per drawn frame, in game angle units
 var aimbot := false  # --aimbot (with --engine): turn to the nearest living soldier and fire
+var args := {}
+var data := ""
+var shell_mode := false  # the front end runs the levels (shell/shell.gd)
+var shell: Control
 
 
 func _ready() -> void:
-	var args := {}
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else ""
-	var data: String = args.get("data", ProjectSettings.globalize_path("res://").path_join("../../../extracted/moh/DATA").simplify_path())
+	data = args.get("data", ProjectSettings.globalize_path("res://").path_join("../../../extracted/moh/DATA").simplify_path())
 	var lv: PackedStringArray = String(args.get("level", "1:1")).split(":")
 	auto_walk = int(args.get("walk", "0"))
 	screenshot = args.get("screenshot", "")
@@ -81,7 +84,26 @@ func _ready() -> void:
 	spin = float(args.get("spin", "0"))
 
 	game = ValorGame.new()
-	if not game.load_level(data, int(lv[0]), int(lv[1])):
+	# With no level asked for (or --shell), the front end first (shell/shell.gd): the title, the
+	# campaign, briefings, results and saves; it starts the levels.
+	if args.has("shell") or not (args.has("level") or args.has("engine") or args.has("scene")):
+		shell_mode = true
+		engine_mode = true
+		shell = preload("res://shell/shell.gd").new()
+		var layer := CanvasLayer.new()
+		layer.layer = 5
+		add_child(layer)
+		layer.add_child(shell)
+		shell.setup(self, data)
+		set_physics_process(false)
+		return
+	start_level(int(lv[0]), int(lv[1]), PackedByteArray())
+
+
+## The level's world, actors and view: from the command line, or for the shell (game: the
+## campaign's save data, which the engine starts from).
+func start_level(mission: int, lvl: int, save: PackedByteArray) -> void:
+	if not game.load_level(data, mission, lvl):
 		push_error("Valor: " + game.get_error())
 		get_tree().quit(1)
 		return
@@ -99,10 +121,11 @@ func _ready() -> void:
 	add_child(world)
 	# The models the records name, posed by the core; skinned ones are rebuilt every tick. With
 	# --scene=FILE (engine/tools/scene_from_dump.py), the view and the characters of a RAM dump.
-	engine_mode = args.has("engine")
+	engine_mode = engine_mode or args.has("engine")
 	if engine_mode:
-		var ammo := int(args.engine) if String(args.engine) != "" else 99
-		if not game.start_engine(ammo):
+		var ammo := int(args.get("engine", "")) if String(args.get("engine", "")) != "" else 99
+		var ok := game.start_engine_game(save) if not save.is_empty() else game.start_engine(ammo)
+		if not ok:
 			push_error("Valor: " + game.get_error())
 			get_tree().quit(1)
 			return
@@ -228,7 +251,30 @@ func held_buttons() -> int:
 	return b
 
 
+## The shell's level (its save data): the first builds the scene, the next go through the engine's
+## next level (the world rebuilt as for a level transition).
+func play_level(save: PackedByteArray) -> void:
+	var mission := save.decode_s32(0x94) + 1
+	var lvl := save.decode_s32(0x98) + 1
+	if world == null:
+		start_level(mission, lvl, save)
+	elif game.continue_engine(save):
+		next_level()
+	else:
+		push_error("Valor: " + game.get_error())
+	set_physics_process(true)
+	if DisplayServer.get_name() != "headless":
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
 func _physics_process(_delta: float) -> void:
+	if shell_mode and (game.is_level_over() or Input.is_physical_key_pressed(KEY_BACKSPACE)):
+		# the level's end (or a quit: Backspace) goes back to the front end
+		var res: Dictionary = game.get_level_results() if game.is_level_over() else {"exit": 1}
+		set_physics_process(false)
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		shell.level_over(res, game.get_engine_game())
+		return
 	# The analog roles, as the runtime's keyboard gives them: the forward role is negative forward.
 	var fwd := 0
 	var strafe := 0
@@ -299,7 +345,7 @@ func _physics_process(_delta: float) -> void:
 		mi.mesh = game.build_actor_mesh(i)
 		apply_materials(mi)
 	if engine_mode:
-		if game.take_level_change():
+		if game.take_level_change() and not shell_mode:
 			next_level()
 		update_engine_actors()
 
@@ -376,6 +422,13 @@ func update_engine_actors() -> void:
 
 
 func _process(_delta: float) -> void:
+	if cam == null:  # the front end before the first level
+		frames += 1
+		if not screenshot.is_empty() and frames == screenshot_frame:
+			get_viewport().get_texture().get_image().save_png(screenshot)
+			print("Valor: saved ", screenshot)
+			get_tree().quit()
+		return
 	mouse_turn += spin
 	var f := Engine.get_physics_interpolation_fraction()
 	cam.position = prev_eye.lerp(cur_eye, f)
@@ -405,5 +458,5 @@ func _process(_delta: float) -> void:
 
 
 func _exit_tree() -> void:
-	if game:
+	if game and cam:
 		print("Valor: quit at ", game.get_state())

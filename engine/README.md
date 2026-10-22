@@ -141,12 +141,49 @@ With `--engine[=AMMO]` the level runs on the engine (`sim/`), not the typed core
 - chunks stream as the original streams them: entering a streaming record (class 0x4D078F23)
   runs `chunk_stream`, and so do the idle jobs 2 and 3. The record's chunks that aren't loaded
   replace the slots it doesn't list, one read at a time. The slot being read is left out of
-  collision until the read ends. A read takes 125 frames: the session's four took 244 to 353
-  vblanks, the music's reads sharing the CD. In a recorded run from the disc the same logic
+  collision until the read ends. A read takes 125 frames, an approximation (below). In a
+  recorded run from the disc the same logic
   runs, with the reads ending when the CD's did. The slot table matches the original's at the
   dumps of ticks 4675, 5000 and 6943, and so do the slots' parsed headers. The chunk files'
   bytes differ only where the world's animated faces and lights write into them, which the
   engine doesn't model.
+
+### Live play's approximations
+
+Two timings in live play are fixed numbers where the original's depend on things the engine
+doesn't run: the CD drive and the CPU's time.
+
+**The chunk read (125 frames).** The 1:3 recording's timing log watches the loading slot
+(`0x800AA184`) through 18 reads: 223 to 388 vblanks each (median 287), and one of 658. The
+chunks are 71 to 85 KB (35 to 42 sectors), which a double-speed drive reads in about 16 vblanks,
+so the files' sizes don't explain the times, and a fit to size would not help. The read's own
+code does:
+- `tsp_load_async` (`0x8008C718`) only queues the read on channel 0 of the CD stream table at
+  `0x80093B14`. Channel 1 is the music.
+- The CD read callback (`0x800493A8`, registered through `0x80019640`) issues channel 0's next
+  piece, at most 50 sectors and so the whole chunk, only when the flag at `0x800939F0` is set.
+  It ends the read when nothing is left.
+- Only the music's refill (`0x80049854`, called from `music_transfer_done` once both 0x5000-byte
+  ring halves have gone to the SPU) sets that flag, after it asks for its 20 sectors.
+
+So a chunk is read just after a music refill and finishes at the refill after that. The refills
+come every two ring halves: 2 × 35,840 samples at 22,050 Hz = 3.25 s = 195 vblanks. That predicts
+195 to 390 vblanks per read, and 17 of the 18 fall in that window (223 to 388). The 658 isn't
+explained yet. **A better model exists:** in live play, start the music's refill clock when the
+level starts its track (`level_set(1, 1)`), and end each read at the second refill after its
+request. The 125 frames (250 vblanks) sit in the window, near its middle.
+
+**The idle jobs (1 + 189 a frame).** `frame_wait_vblank` runs idle jobs until the second vblank,
+so their number depends on how long the frame's work took. 189 is the 1:3 recording's median for
+frames that ran past their first vblank (2:1's is 204, 2:2's 498; a tenth of 1:3's frames ran
+fewer than 78). The jobs are a three-step round robin (`0x800AB8E8`): one message each, a spawn
+retry on step 1, the removed handles, a second message and `chunk_stream` on step 2, and
+`chunk_stream` on step 3. Even 78 jobs run each step 26 times. So the count changes what
+happens only through the round robin's phase at the next frame (the count mod 3), and on frames
+whose message queue is longer than the jobs can drain (not measured). A model of the
+frame's CPU time, fitted to the recorded counts against what each frame did, could at best guess
+the phase. **No better model is worth it:** recorded runs take each frame's count from the
+recording, and live play has no original to agree with.
 
 The HUD line adds health, weapon, clip and reserve, and the soldiers alive and down. Testing
 options:
@@ -171,6 +208,52 @@ and dogs skinned from poses the core builds every tick (a walk or their first an
 the scripts that choose animations aren't ported). The characters' textures aren't right yet: their
 faces point at VRAM (640, 256), where 1:3's TAF puts the dog's skin, so the soldiers' own textures
 reach VRAM some other way (not found yet).
+
+### The front end (`--shell`)
+
+```sh
+build/godot/Godot_v4.7.2-stable_linux.x86_64 --path engine/godot/project
+```
+
+With no `--level`, `--engine` or `--scene` (or with `--shell`), the project starts in the front
+end (`project/shell/shell.gd`), drawn with Godot's own controls but in the original's flow
+(shell.md). The rules are the game's, ported from SHELL.BIN into `sim/campaign.cpp` and reached
+through `ValorShell`:
+- **Title**: CONTINUE (the campaign's next level), NEW GAME (a codename of up to 10 letters,
+  then `new_game`: MSN1 LVL1 open), MISSIONS, LOAD, SAVE, PASSWORD, QUIT.
+- **Missions**: the campaign's slots (`campaign_init`: MSN1–5, 7, 8, 9; MSN8 isn't on the disc)
+  and the levels each has unlocked, with the best rating's stars. Choosing one runs
+  `level_begin`, which also handles MSN9's third level being LVL4 and the cheats for a level not
+  yet completed.
+- **Password**: the 61 passwords of `password_enter`, applied to the campaign (unlocks, cheats);
+  unknown and refused words say so.
+- **Briefing**: the level's pages from the disc (`data\scr2\mbrief\mM\L.rsc`), each a left and
+  a right 8-bit TIM of 256 × 240, shown side by side at 4:3. Cross or a click turns the page;
+  after the last one (or Circle/Esc) the level starts.
+- **The level** runs on the engine from the campaign's save data (`start_engine_game`: the row's
+  carried ammo and health, the cheats). Dying fades and restarts in place as before, and the
+  presentation layer draws the engine's own fade entities (state `fade`: the black's opacity
+  from the latest type 0x32 entity; `fade_start` now also keeps its end colour at `+0x24`, bytes
+  only the prims use). At the level's end the engine stops (`is_level_over`) instead of going on
+  by itself; Backspace leaves the level.
+- **Results**: the level's results (`g_level_end` and the statistics at `0x80039CA8`): the
+  objectives, kills, shots, hits and accuracy, hit locations, wounds and health, and
+  `level_rating`'s stars. Then the post-mission choices: CONTINUE (only with the primary
+  objectives done), REPLAY, SAVE and WAR ROOM. CONTINUE, SAVE and WAR ROOM after a success run
+  `progress_commit` once (carry, career, medals, rewards, `campaign_advance`), and the medals it
+  awards are listed. The next level is built on the carried save data (`continue_engine`).
+- **Saves**: one file per save holding what the memory card file holds (0x2000 bytes: `SC`, the
+  Shift-JIS title "MOH-CODENAME (n%)", `g_game` at +0x200), named as the card names them
+  (`BASLUS-00974` + the codename's first six letters + a number + `.sav`). They live in Godot's
+  user folder (`user://valor_saves`, on Linux `~/.local/share/godot/app_userdata/Valor/`), never
+  in the recordings' `saves/`. LOAD checks them as `load_screen_update` does.
+
+`coretest --campaign` plays the rules alone. A perfect campaign earns the medals 0xFBF, a poor
+one 0x200, the passwords it tries (URLINGAMBE, CAPTAINDYE, an unknown word) do what shell.md
+says, and a save loads back. `--shell-auto=N
+--end-every=T` plays N levels unattended: `--shell-auto=4 --end-every=60` goes through the
+briefings of 1:1, 1:2, 1:3 and 2:1 (three pages each), each level, its results and CONTINUE,
+then saves "MOH-TESTER (16%)". `--shell-brief` opens the first briefing (for screenshots).
 
 ## Checking the core against the original
 
@@ -442,7 +525,8 @@ in the recordings: the pad words and the control roles' values per tick.
 
 ## What's next
 
-1. **Live play**: the shell between levels (briefings, results, saving), level transitions' fade.
+1. **Live play**: the chunk reads on the music's refill clock (above); the shell's options
+   (controls, audio) and the pause menu; the war room's medal case.
 3. **Presentation**: the first-person weapon, pickups and effects (tracers, explosions' particle
    systems), sounds and music from the engine's voice table, the HUD.
 4. **2:2 from the disc**: a dump from before its tick 1 (the capture's earlier vblank), so its

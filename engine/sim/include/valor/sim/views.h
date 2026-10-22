@@ -199,6 +199,10 @@ Entity camera(const Mem& m);
 Camera camera_view(const Mem& m);
 Player player(const Mem& m);
 uint32_t tick(const Mem& m);
+// The fades on screen (hud.md, Fades): the subtractive colour the latest type 0x32 entity shows
+// now (nothing during its delay, its start colour for its duration, then its end colour), as
+// 0..255 per channel; {0, 0, 0} for none.
+std::array<int, 3> fade(const Mem& m);
 // The effect voices 1..23, as the sound driver keeps them.
 std::vector<Voice> voices(const Mem& m);
 std::vector<Objective> objectives(const Mem& m);

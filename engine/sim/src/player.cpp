@@ -683,6 +683,7 @@ U fade_start(Engine& eng, I mode, I delay, I len, I hold, const I c0[3], const I
     m.w32(o + 0xC, hold);
     for (int k = 0; k < 3; k++) {
         m.w8(o + 0x18 + k, c0[k]);
+        m.w8(o + 0x24 + k, c1[k]);  // the end colour (the prims' bytes: drawing only), for a host's fade
         m.w16(o + 0x10 + 2 * k, len ? (c1[k] - c0[k]) / len : 0);
     }
     if (mode & 4) {

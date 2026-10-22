@@ -1841,6 +1841,7 @@ void Loader::fade_start() {
     m.w32(o + 8, d);
     m.w32(o + 0xC, 0);
     m.w8(o + 0x18, r0), m.w8(o + 0x19, g0), m.w8(o + 0x1A, b0);
+    m.w8(o + 0x24, r1), m.w8(o + 0x25, g1), m.w8(o + 0x26, b1);  // the end colour, for a host's fade
     m.w16(o + 0x10, (r1 - r0) / d);
     m.w16(o + 0x12, (g1 - g0) / d);
     m.w16(o + 0x14, (b1 - b0) / d);
@@ -1865,6 +1866,7 @@ void Loader::fade_start() {
     static const U xy[][2] = {{0x24, 0}, {0x26, 0}, {0x2C, 0}, {0x2E, 0xF0}, {0x34, 0x200}, {0x36, 0}, {0x3C, 0x200}, {0x3E, 0xF0},
                               {0x4C, 0}, {0x4E, 0}, {0x54, 0}, {0x56, 0xF0}, {0x5C, 0x200}, {0x5E, 0}, {0x64, 0x200}, {0x66, 0xF0}};
     for (auto& p : xy) m.w16(o + p[0], p[1]);
+    m.w8(o + 0x24, r1), m.w8(o + 0x25, g1), m.w8(o + 0x26, b1);
     link_front(e);
 }
 

@@ -9,6 +9,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/godot-cpp ${CMAKE
 add_library(valor_godot SHARED
     src/register_types.cpp
     src/valor_game.cpp
+    src/valor_shell.cpp
 )
 target_link_libraries(valor_godot PRIVATE valor_core valor_sim godot-cpp)
 get_target_property(GODOTCPP_SUFFIX godot-cpp GODOTCPP_SUFFIX)

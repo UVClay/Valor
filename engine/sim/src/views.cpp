@@ -1,6 +1,8 @@
 // The accessor layer (views.h).
 #include "valor/sim/views.h"
 
+#include <algorithm>
+
 namespace valor::sim::view {
 
 uint32_t Entity::model_hash() const {
@@ -56,6 +58,18 @@ Player player(const Mem& m) {
 }
 
 uint32_t tick(const Mem& m) { return uint32_t(m.u32(G_TICK)); }
+
+std::array<int, 3> fade(const Mem& m) {
+    std::array<int, 3> c{0, 0, 0};
+    for (U e : m.entities()) {
+        if (m.s32(e + 8) != 0x32 || (m.u32(e + 0xC) & 0x80000)) continue;
+        U o = U(m.u32(e + 0x388));
+        if (!(m.u32(o) & 1) || m.s32(o + 4) > 0) continue;
+        U col = m.s32(o + 8) > 0 ? o + 0x18 : o + 0x24;
+        for (int k = 0; k < 3; k++) c[size_t(k)] = std::max(c[size_t(k)], int(m.u8(col + k)));
+    }
+    return c;
+}
 
 std::vector<Voice> voices(const Mem& m) {
     std::vector<Voice> out;

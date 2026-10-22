@@ -5,7 +5,9 @@
 #include <godot_cpp/classes/array_mesh.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/classes/texture2d_array.hpp>
+#include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_vector3_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/vector3.hpp>
@@ -91,6 +93,16 @@ public:
     // after each, when the world's meshes and textures are to be rebuilt (get_level_info is the
     // new level's).
     bool take_level_change();
+    // With a shell (shell.gd): the level started from the campaign's save data; at its end the
+    // engine stops (is_level_over) with its results, and continue_engine builds the level the
+    // campaign chose next (on its carried save data).
+    bool start_engine_game(const PackedByteArray& game);
+    bool is_level_over() const;
+    Dictionary get_level_results() const;
+    PackedByteArray get_engine_game() const;
+    bool continue_engine(const PackedByteArray& game);
+    // The fades (hud.md): black at the opacity the latest fade entity shows now.
+    Color get_fade() const;
     bool is_campaign_done() const;
     void debug_end_level();  // as the level script's level_set(3, 1): for testing the transitions
     // The engine's effect voices 1..23 (audio.md, Voices) through the accessor layer: { voice, status
@@ -137,6 +149,8 @@ private:
     uint32_t prev_buttons_ = 0;
     int64_t level_changes_seen_ = 0;
     bool level_changed_ = false;
+    bool start_engine_with(const std::vector<uint8_t>& game, bool auto_advance);
+    void sync_engine_level();
     Ref<ArrayMesh> mesh_of(const valor::Model& m, const std::vector<valor::Quat>* pose,
                            const std::vector<std::array<int16_t, 3>>* joints);
 };

@@ -5,12 +5,14 @@
 #include <godot_cpp/godot.hpp>
 
 #include "valor_game.h"
+#include "valor_shell.h"
 
 using namespace godot;
 
 static void initialize_valor(ModuleInitializationLevel level) {
     if (level != MODULE_INITIALIZATION_LEVEL_SCENE) return;
     GDREGISTER_CLASS(ValorGame);
+    GDREGISTER_CLASS(ValorShell);
 }
 
 static void uninitialize_valor(ModuleInitializationLevel) {}
