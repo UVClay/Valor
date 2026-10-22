@@ -694,9 +694,11 @@ class Engine:
         """msg_run_one: the queue's first context, if any."""
         self.logic.run_one()
 
-    def run(self, to=None, out=None, compare=None):
-        """Every frame of the recording's level: vblanks advance the timer, ticks run."""
-        f = open(out, "w") if out else None
+    def run(self, to=None, out=None, compare=None, append=False):
+        """Every frame of the recording's level: vblanks advance the timer, ticks run. Stops after
+        a frame that lost the level (0x8009C840 bit 2: the restart, self.restarted)."""
+        self.restarted = False
+        f = open(out, "a" if append else "w") if out else None
         for fi, (vb, ticks) in enumerate(self.frames):
             if to and ticks and ticks[0] > to:
                 break
@@ -732,6 +734,10 @@ class Engine:
             path = getattr(self, "dumps", {}).get(f"{self.tick_no}a")
             if path:
                 open(path, "wb").write(bytes(self.m.d))
+            if self.m.u32(0x8009C840) & 2:
+                # level_main: the frame loop ends and level_restart runs (shell.md)
+                self.restarted = True
+                break
         if f:
             f.close()
 
@@ -846,44 +852,72 @@ def main():
     feed = Feed(ORIG_LOG)
     trace = read_trace(ORIG_TRACE)
     lines = level_lines(trace, feed, level)
-    # the seed: the dump just after the level's first tick was stamped (its vblank + 1)
-    seed_v = LEVEL_SEED.get(level) or lines[0]["vblank"] + 1
-    seed = os.path.join(INPUTS, "seed", f"d{seed_v}.bin")
-    sm = Mem(open(seed, "rb").read())
-    t0 = sm.u32(G_TICK)
     # the level's lines end where the tick counter starts again (the next level's first tick can
     # come before its mark)
     for i in range(1, len(lines)):
         if lines[i]["tick"] < lines[i - 1]["tick"]:
             lines = lines[:i]
             break
-    before = [d for d in lines if d["tick"] <= t0]
-    lines = [d for d in lines if d["tick"] > t0]
-    eng = Engine(level, seed, feed, frames_of(lines))
-    # --dump TICK:PATH writes RAM after the tick's update, TICKa:PATH after its frame's end (drawn)
-    eng.dumps = {(int(k) if k.isdigit() else k): v for k, v in
-                 (a.split(":", 1) for i, a in enumerate(args) if i and args[i - 1] == "--dump")}
-    # the seed is the state at the drawing of tick t0's frame: the frame's end comes first
-    # the seed's own tick's vblank (the dump at vblank V holds the tick stamped V - 1)
-    vb0 = before[-1]["vblank"] if before else seed_v - 1
-    eng.vblank_prev = vb0
-    eng.world.skip_to(vb0)
-    eng.audio.adopt(vb0)
-    # the seed frame's own wait (its idle work as recorded)
-    eng.tick_no = t0
-    eng.idle_work()
-    # its sound_update is in the seed already: its record of the SPU is passed over
-    if feed.keys.get((level, t0)):
-        feed.keys[(level, t0)].pop(0)
+    dumps = {(int(k) if k.isdigit() else k): v for k, v in
+             (a.split(":", 1) for i, a in enumerate(args) if i and args[i - 1] == "--dump")}
     from engine_cmp import Compare
     cmpr = Compare(lines, maxn=int(args[args.index("--max") + 1]) if "--max" in args else 20) if cmd == "cmp" else None
+    # the seed: the dump just after the level's first tick was stamped (its vblank + 1). A death
+    # restarts the level in place (level_restart -> level_start, shell.md): level_start isn't
+    # rebuilt here, so a restart is seeded again like a level start, from the dump just after
+    # the first tick after it (seed/r{vblank}.bin).
+    seed_v = LEVEL_SEED.get(level) or lines[0]["vblank"] + 1
+    seed = os.path.join(INPUTS, "seed", f"d{seed_v}.bin")
+    stats, notes = Counter(), defaultdict(list)
+    append = False
+    eng, merged = None, False
     try:
-        eng.run(to=to, out=out, compare=cmpr.line if cmpr else None)
+        while True:
+            sm = Mem(open(seed, "rb").read())
+            t0 = sm.u32(G_TICK)
+            before = [d for d in lines if d["tick"] <= t0]
+            rest = [d for d in lines if d["tick"] > t0]
+            eng, merged = Engine(level, seed, feed, frames_of(rest)), False
+            # --dump TICK:PATH writes RAM after the tick's update, TICKa:PATH after its frame's end
+            eng.dumps = dumps
+            # the seed is the state at the drawing of tick t0's frame: the frame's end comes
+            # first; the seed's own tick's vblank (the dump at vblank V holds the tick stamped V-1)
+            vb0 = before[-1]["vblank"] if before else seed_v - 1
+            eng.vblank_prev = vb0
+            eng.world.skip_to(vb0)
+            eng.audio.adopt(vb0)
+            # the seed frame's own wait (its idle work as recorded)
+            eng.tick_no = t0
+            eng.idle_work()
+            # its sound_update is in the seed already: its record of the SPU is passed over
+            if feed.keys.get((level, t0)):
+                feed.keys[(level, t0)].pop(0)
+            eng.run(to=to, out=out, compare=cmpr.line if cmpr else None, append=append)
+            stats.update(eng.stats)
+            for k, v in eng.notes.items():
+                notes[k] = (notes[k] + v)[:5]
+            merged = True
+            if not eng.restarted:
+                break
+            nxt = [d for d in lines if d["tick"] > eng.tick_no]
+            if not nxt or (to and nxt[0]["tick"] > to):
+                break
+            seed_v = nxt[0]["vblank"] + 1
+            seed = os.path.join(INPUTS, "seed", f"r{seed_v}.bin")
+            stats["level restarts"] += 1
+            if not os.path.exists(seed):
+                print(f"restart after tick {eng.tick_no}: no seed {seed} (a dump at vblank {seed_v})")
+                break
+            append = True
     finally:
-        print(f"ran to tick {eng.tick_no}; trace {out}")
-        for k, v in sorted(eng.stats.items()):
-            if k.startswith("think") or "not" in k:
-                print(f"  {k}: {v}  {eng.notes.get(k, '')}")
+        if eng is not None and not merged:
+            stats.update(eng.stats)
+            for k, v in eng.notes.items():
+                notes[k] = (notes[k] + v)[:5]
+        print(f"ran to tick {eng.tick_no if eng else 0}; trace {out}")
+        for k, v in sorted(stats.items()):
+            if k.startswith("think") or "not" in k or k == "level restarts":
+                print(f"  {k}: {v}  {notes.get(k, '')}")
         if cmpr:
             cmpr.report()
 
