@@ -9,6 +9,7 @@ after that reads it as 3 (keyed off, releasing), the next as 0."""
 from engine import s16, s32
 
 G_VOICES = 0x8009115C
+G_KEYON = 0x80090FC8                # g_keyon_pending
 G_ENABLED = 0x800910D0
 G_BANK_SPU = 0x800910E8        # per bank slot: SPU address (+0x40: loaded flag at 0x80091128)
 G_SIZES = 0x8009263C           # per slot 0x200: u16 VAG sizes in 8-byte units (entry n+1 = VAG n)
@@ -52,8 +53,10 @@ class Audio:
         self.pan_phase = 0
 
     def adopt(self, vb):
-        """The voices playing in the seed: keyed on, their remaining time from their age."""
+        """The voices playing in the seed: keyed on, their remaining time from their age; the
+        key-ons still queued (0x80090FC8: sounds started in the seed's frame)."""
         m = self.eng.m
+        self.keyon = m.u32(G_KEYON)
         for v in range(1, 24):
             if m.u8(G_ENABLED + v) & 1:
                 a = G_VOICES + 0x34 * v
@@ -130,6 +133,7 @@ class Audio:
             p += (lo >> 16) - (eng.rand.draw(*FN["sound"]) % sp)
         p &= 0xFFFF
         self.keyon |= 1 << v
+        m.w32(G_KEYON, self.keyon)
         m.w8(G_ENABLED + v, 1)
         samples = size * 8 // 16 * 28
         dur = samples * 60.0 / (44100.0 * max(p, 1) / 4096.0)
@@ -183,6 +187,7 @@ class Audio:
                     self.spu[v] = ("on", vb, vb + dur)
                     m.w8(G_ENABLED + v, 1)
             self.keyon = 0
+            m.w32(G_KEYON, 0)
         for v in range(1, 24):
             a = G_VOICES + 0x34 * v
             en = m.u8(G_ENABLED + v)
